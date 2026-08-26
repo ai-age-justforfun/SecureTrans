@@ -24,7 +24,7 @@ SecureTrans 是面向中小企业的轻量级单向跨网文件审批摆渡系�
 ### 本地开发
 
 ```bash
-cd backend-flask
+cd Phase1-PSF/sprint-3/backend-flask
 python -m venv venv
 # Windows: venv\Scripts\activate
 # Linux:   source venv/bin/activate
@@ -37,6 +37,7 @@ python app.py
 ### 运行测试
 
 ```bash
+cd Phase1-PSF/sprint-3/backend-flask
 python test_api.py
 # 预期：35项测试全部通过，通过率100%
 ```
@@ -45,7 +46,7 @@ python test_api.py
 
 ```bash
 # 上传部署包并解压
-tar xzf securetrans-deploy.tar.gz
+tar xzf Phase1-PSF/sprint-4/securetrans-deploy.tar.gz
 cd securetrans-deploy
 
 # 一键部署
@@ -55,7 +56,7 @@ sudo bash deploy.sh
 bash verify.sh
 ```
 
-详见 [部署指南](securetrans-deploy/DEPLOY.md)。
+详见 [Sprint 4 部署指南](Phase1-PSF/sprint-4/README.md) 和 [DEPLOY.md](Phase1-PSF/sprint-4/securetrans-deploy/DEPLOY.md)。
 
 ---
 
@@ -63,35 +64,46 @@ bash verify.sh
 
 ```
 SecureTrans/
-├── README.md                          # 本文件
-├── AGENTS.md                          # AI协作指南
-├── SecureTrans_PRD_v1.4.md            # 产品需求文档（最新）
-├── SecureTrans_PSF标准流程_v1.0.md    # PSF阶段流程
-├── SecureTrans_PMF标准流程_v1.0.md    # PMF阶段流程（下一阶段准备）
-├── SecureTrans_测试用例_v1.0.md       # 测试用例（15个场景）
-├── docs/                              # 研发过程文档
-│   ├── 00-lean-startup-phase-map.md   # Lean Startup三阶段映射与决策门
-│   ├── 01-scrum-io-definition.md      # Scrum各阶段输入输出定义
-│   ├── 02-psf-sprint1-retrospective.md # PSF Sprint1 迭代小结
-│   └── 03-test-report.md              # 测试报告（35项全通过）
-├── backend-flask/                     # 最新后端代码（Flask）
-│   ├── app.py                         # Flask主程序（单文件，含所有API）
-│   ├── requirements.txt               # Python依赖
-│   ├── test_api.py                    # 全量API测试脚本（35项）
-│   ├── .env.example                   # 环境变量示例
-│   ├── start.sh                       # Linux启动脚本
-│   └── static/                        # 前端静态文件
-│       ├── index.html                 # 主应用SPA
-│       └── login.html                 # 登录页
-├── backend/                           # 第一版后端（FastAPI，已废弃，保留参考）
-├── securetrans-deploy/                # 服务器部署包
-│   ├── deploy.sh                      # 一键部署脚本
-│   ├── verify.sh                      # 部署验证脚本
-│   ├── DEPLOY.md                      # 详细部署指南
-│   ├── backend-flask/                 # 清理后的后端（不含venv/测试数据）
-│   └── config/                        # 生产配置模板（nginx/systemd/.env）
-├── securetrans-deploy.tar.gz          # 部署包压缩文件
-└── ferry-mvp-prototype.html           # 早期HTML原型（localStorage模拟，保留参考）
+├── README.md                              # 本文件（项目入口）
+├── AGENTS.md                              # AI协作指南
+├── SecureTrans_PRD_v1.4.md                # 产品需求文档（最新）
+├── SecureTrans_PRD_v1.3.md                # PRD历史版本
+├── SecureTrans_PSF标准流程_v1.0.md        # PSF阶段流程
+├── SecureTrans_PMF标准流程_v1.0.md        # PMF阶段流程（下一阶段准备）
+├── SecureTrans_测试用例_v1.0.md           # 测试用例（15个场景）
+├── docs/                                  # 研发过程文档
+│   ├── 00-lean-startup-phase-map.md       # Lean Startup三阶段映射与决策门
+│   ├── 01-scrum-io-definition.md          # Scrum各阶段输入输出定义
+│   ├── 02-psf-sprint4-retrospective.md    # PSF Sprint4 迭代小结
+│   └── 03-test-report.md                  # 测试报告（35项全通过）
+└── Phase1-PSF/                            # 第一阶段：PSF（问题-方案匹配验证）
+    ├── sprint-1/                          # Sprint 1：前端原型（HTML/JS/CSS）
+    │   ├── ferry-mvp-prototype.html       # 前端原型（主版本）
+    │   ├── ferry-mvp-prototype-offline.html # 离线版原型
+    │   ├── ferry-mvp-debug.html           # 调试版原型
+    │   ├── vue.global.js / vue.global.prod.js # Vue3运行时
+    │   └── element-plus.min.js / .css     # Element Plus UI库
+    ├── sprint-2/                          # Sprint 2：后端第一版（FastAPI，已废弃）
+    │   └── backend/                       # FastAPI实现（保留参考）
+    ├── sprint-3/                          # Sprint 3：后端第二版（Flask，当前主力）
+    │   └── backend-flask/                 # Flask实现
+    │       ├── app.py                     # Flask主程序（单文件，含所有API）
+    │       ├── requirements.txt           # Python依赖
+    │       ├── test_api.py                # 全量API测试脚本（35项）
+    │       ├── .env.example               # 环境变量示例
+    │       ├── start.sh                   # Linux启动脚本
+    │       └── static/                    # 前端静态文件
+    │           ├── index.html             # 主应用SPA
+    │           └── login.html             # 登录页
+    └── sprint-4/                          # Sprint 4：服务器部署包（封闭数据中心交付）
+        ├── README.md                      # Sprint 4 交付说明（核心问题+部署指南）
+        ├── securetrans-deploy.tar.gz      # 部署包压缩文件（38.7KB）
+        └── securetrans-deploy/            # 部署包源码
+            ├── deploy.sh                  # 一键部署脚本（9步自动化）
+            ├── verify.sh                  # 部署验证脚本（35项全量测试）
+            ├── DEPLOY.md                  # 详细部署指南
+            ├── backend-flask/             # 清理后的后端（不含venv/测试数据）
+            └── config/                    # 生产配置模板（nginx/systemd/.env）
 ```
 
 ---
@@ -162,12 +174,19 @@ SecureTrans/
 - **交付**：DevOps（轻量CI/CD，蓝绿部署）
 
 ### 当前阶段
-**PSF（问题-方案匹配验证）**— Sprint 1 已完成，技术验证全部通过，待用户验证。
+**PSF（问题-方案匹配验证）**— Sprint 1~4 已完成，技术验证全部通过，部署包就绪，待用户验证。
+
+Sprint 演进线：
+- **Sprint 1**：前端原型（HTML/JS/CSS，Vue3 + Element Plus）
+- **Sprint 2**：后端第一版（FastAPI，已废弃，保留参考）
+- **Sprint 3**：后端第二版（Flask，当前主力，35项测试全通过）
+- **Sprint 4**：服务器部署包（封闭数据中心一键部署 + 部署验证）
 
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
 - [Scrum各阶段输入输出定义](docs/01-scrum-io-definition.md)
-- [PSF Sprint1迭代小结](docs/02-psf-sprint1-retrospective.md)
+- [PSF Sprint4迭代小结](docs/02-psf-sprint4-retrospective.md)
+- [Sprint 4 部署交付说明](Phase1-PSF/sprint-4/README.md)
 
 ### 下一阶段
 **PMF（产品-市场匹配验证）**— 流程文档已就绪，核心是AD/LDAP集成和真实部署试点。
