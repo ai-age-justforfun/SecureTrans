@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>跨网文件审批摆渡系统 - MVP原型</title>
+<link rel="stylesheet" href="https://cdn.staticfile.org/element-plus/2.6.1/index.min.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #app { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  .app-container { display: flex; flex-direction: column; height: 100%; }
+  .app-header { height: 56px; background: linear-gradient(90deg, #1d4ed8, #2563eb); color: #fff; display: flex; align-items: center; padding: 0 20px; justify-content: space-between; flex-shrink: 0; }
+  .app-header .logo { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .app-header .logo .badge { background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: normal; }
+  .app-header .user-info { display: flex; align-items: center; gap: 16px; font-size: 14px; }
+  .app-body { display: flex; flex: 1; overflow: hidden; }
+  .app-sidebar { width: 200px; background: #1e293b; color: #cbd5e1; flex-shrink: 0; overflow-y: auto; }
+  .app-sidebar .menu-item { padding: 12px 20px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 14px; transition: all 0.2s; border-left: 3px solid transparent; }
+  .app-sidebar .menu-item:hover { background: #334155; color: #fff; }
+  .app-sidebar .menu-item.active { background: #2563eb; color: #fff; border-left-color: #60a5fa; }
+  .app-sidebar .menu-group-title { padding: 16px 20px 8px; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+  .app-content { flex: 1; overflow-y: auto; padding: 20px; background: #f1f5f9; }
+  .page-title { font-size: 20px; font-weight: 600; color: #1e293b; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+  .page-title .desc { font-size: 13px; color: #64748b; font-weight: normal; }
+  .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .card-title { font-size: 15px; font-weight: 600; color: #1e293b; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 16px; }
+  .stat-card { background: #fff; border-radius: 8px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .stat-card .label { font-size: 13px; color: #64748b; margin-bottom: 6px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; color: #1e293b; }
+  .stat-card .value.blue { color: #2563eb; }
+  .stat-card .value.green { color: #16a34a; }
+  .stat-card .value.orange { color: #ea580c; }
+  .upload-zone { border: 2px dashed #cbd5e1; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.2s; background: #f8fafc; }
+  .upload-zone:hover { border-color: #2563eb; background: #eff6ff; }
+  .upload-zone .icon { font-size: 48px; color: #94a3b8; margin-bottom: 12px; }
+  .upload-zone .text { font-size: 15px; color: #475569; }
+  .upload-zone .hint { font-size: 12px; color: #94a3b8; margin-top: 6px; }
+  .file-list { margin-top: 16px; }
+  .file-item { display: flex; align-items: center; padding: 10px 12px; background: #f8fafc; border-radius: 6px; margin-bottom: 6px; gap: 12px; }
+  .file-item .file-icon { font-size: 24px; }
+  .file-item .file-info { flex: 1; }
+  .file-item .file-name { font-size: 14px; color: #1e293b; font-weight: 500; }
+  .file-item .file-meta { font-size: 12px; color: #64748b; margin-top: 2px; }
+  .file-item .file-md5 { font-size: 11px; color: #94a3b8; font-family: monospace; margin-top: 2px; }
+  .timeline { position: relative; padding-left: 24px; }
+  .timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: #e2e8f0; }
+  .timeline-item { position: relative; margin-bottom: 20px; }
+  .timeline-item::before { content: ''; position: absolute; left: -20px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #cbd5e1; border: 2px solid #fff; }
+  .timeline-item.done::before { background: #16a34a; }
+  .timeline-item.current::before { background: #2563eb; box-shadow: 0 0 0 4px rgba(37,99,235,0.2); }
+  .timeline-item .time { font-size: 12px; color: #94a3b8; }
+  .timeline-item .title { font-size: 14px; font-weight: 600; color: #1e293b; margin: 2px 0; }
+  .timeline-item .desc { font-size: 13px; color: #64748b; }
+  .arch-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+  .arch-badge.pending { background: #fef3c7; color: #92400e; }
+  .arch-badge.approving { background: #dbeafe; color: #1e40af; }
+  .arch-badge.approved { background: #dcfce7; color: #166534; }
+  .arch-badge.rejected { background: #fee2e2; color: #991b1b; }
+  .arch-badge.ferrying { background: #e0e7ff; color: #3730a3; }
+  .arch-badge.ready { background: #d1fae5; color: #065f46; }
+  .arch-badge.auto { background: #f3e8ff; color: #6b21a8; }
+  .flow-diagram { background: #f8fafc; border-radius: 8px; padding: 20px; font-family: monospace; font-size: 12px; line-height: 1.8; color: #475569; overflow-x: auto; white-space: pre; }
+  .config-section { margin-bottom: 24px; }
+  .config-section h4 { font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; }
+  .empty-state { text-align: center; padding: 40px; color: #94a3b8; }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+  .demo-tip { background: #eff6ff; border-left: 3px solid #2563eb; padding: 10px 14px; border-radius: 4px; font-size: 13px; color: #1e40af; margin-bottom: 16px; }
+  .link-path { font-family: monospace; font-size: 11px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="app-container">
+    <div class="app-header">
+      <div class="logo">
+        <span>🔐</span>
+        <span>跨网文件审批摆渡系统</span>
+        <span class="badge">MVP原型 v1.2</span>
+      </div>
+      <div class="user-info">
+        <span style="opacity:0.8;">当前角色：</span>
+        <el-select v-model="currentRole" size="small" style="width:180px;" @change="onRoleChange">
+          <el-option v-for="r in roles" :key="r.key" :label="r.label" :value="r.key"></el-option>
+        </el-select>
+        <el-button size="small" type="primary" plain @click="resetDemoData" style="margin-left:8px;">重置演示数据</el-button>
+      </div>
+    </div>
+
+    <div class="app-body">
+      <div class="app-sidebar">
+        <template v-for="group in menuGroups" :key="group.title">
+          <div class="menu-group-title" v-if="group.title">{{ group.title }}</div>
+          <div v-for="item in group.items" :key="item.key"
+               class="menu-item" :class="{active: currentPage===item.key}"
+               @click="currentPage=item.key"
+               v-if="item.roles.includes(currentRole)">
+            <span>{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+          </div>
+        </template>
+      </div>
+
+      <div class="app-content">
+        <!-- 仪表盘 -->
+        <div v-if="currentPage==='dashboard'">
+          <div class="page-title">📊 系统概览 <span class="desc">单服务器 · 单NAS挂载 · 软链接零拷贝摆渡</span></div>
+          <div class="demo-tip">💡 这是 MVP 原型，用于客户验证（PSF）。数据存储在浏览器 localStorage，刷新不丢失。点击右上角切换不同角色体验完整流程。</div>
+          <div class="stat-grid">
+            <div class="stat-card"><div class="label">今日提交单数</div><div class="value blue">{{ stats.todaySubmitted }}</div></div>
+            <div class="stat-card"><div class="label">待审批</div><div class="value orange">{{ stats.pendingApproval }}</div></div>
+            <div class="stat-card"><div class="label">已摆渡就绪</div><div class="value green">{{ stats.ready }}</div></div>
+            <div class="stat-card"><div class="label">免审批通过率</div><div class="value">{{ stats.autoApprovalRate }}%</div></div>
+            <div class="stat-card"><div class="label">归档文件总数</div><div class="value">{{ stats.archivedFiles }}</div></div>
+            <div class="stat-card"><div class="label">平均摆渡耗时</div><div class="value green">~0.1s</div></div>
+          </div>
+          <div class="card">
+            <div class="card-title">🏗️ 系统架构（单服务器双网卡 + 单NAS挂载 + 软链接零拷贝）</div>
+            <div class="flow-diagram">┌─────────────────────────────────────────────────────────────┐
+│                    单台服务器（双网卡）                         │
+│  eth0(内网) ◄───►  Web应用(单实例)  ◄───► eth1(外网)        │
+│                   │                                          │
+│                   ▼                                          │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  /mnt/nas/  (单个NAS挂载)                             │   │
+│  │  ├── archive/     ← 唯一真实存储（永久保留）          │   │
+│  │  │   └── {提交单ID}_{时间戳}/files/ + manifest.json   │   │
+│  │  ├── internal/    ← 仅存软链接（审批用）              │   │
+│  │  │   └── pending/{提交单ID}/ → symlink → archive     │   │
+│  │  └── external/    ← 仅存软链接（下载用）              │   │
+│  │      └── published/{提交单ID}/ → symlink → archive   │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+
+  摆渡 = 创建软链接(ln -s) → 0拷贝 · 毫秒级 · 与文件大小无关
+  时效清理 = 删除软链接 → 0成本 · 归档真实文件永久保留</div>
+          </div>
+          <div class="card">
+            <div class="card-title">🔄 核心业务流程</div>
+            <el-steps :active="6" align-center finish-status="success" style="margin-top:10px;">
+              <el-step title="上传提交" description="文件写入归档"></el-step>
+              <el-step title="清单+MD5" description="压缩包自动解包"></el-step>
+              <el-step title="免审批判定" description="特征码匹配"></el-step>
+              <el-step title="分级审批" description="合作方一级/非合作方二级"></el-step>
+              <el-step title="零拷贝摆渡" description="创建外网软链接"></el-step>
+              <el-step title="外网下载" description="时效到期清理软链接"></el-step>
+            </el-steps>
+          </div>
+        </div>
+
+        <!-- 提交文件 -->
+        <div v-if="currentPage==='submit'">
+          <div class="page-title">📤 提交文件外发 <span class="desc">内网用户 · 文件一次性写入归档目录</span></div>
+          <div class="demo-tip">💡 点击上传区域选择模拟文件（原型仅记录文件名/大小/模拟MD5，不上传真实文件）。支持模拟压缩包解包列清单。</div>
+          <div class="card">
+            <div class="card-title">1. 上传文件</div>
+            <div class="upload-zone" @click="simulateUpload">
+              <div class="icon">📁</div>
+              <div class="text">点击选择文件，或拖拽文件到此处</div>
+              <div class="hint">支持多文件批量上传 · 单文件最大10GB · 压缩包自动解包列清单</div>
+            </div>
+            <div class="file-list" v-if="submitForm.files.length">
+              <div class="file-item" v-for="(f,idx) in submitForm.files" :key="idx">
+                <span class="file-icon">{{ getFileIcon(f.name) }}</span>
+                <div class="file-info">
+                  <div class="file-name">{{ f.name }} <el-tag v-if="f.isArchive" size="small" type="warning" style="margin-left:6px;">压缩包({{f.innerFiles.length}}个文件)</el-tag></div>
+                  <div class="file-meta">{{ formatSize(f.size) }} · {{ f.type || '未知类型' }}</div>
+                  <div class="file-md5">MD5: {{ f.md5 }}</div>
+                </div>
+                <el-button type="danger" text @click="submitForm.files.splice(idx,1)">移除</el-button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" v-if="submitForm.files.length">
+            <div class="card-title">2. 文件清单（自动生成）</div>
+            <el-table :data="manifestRows" size="small" border style="width:100%">
+              <el-table-column prop="idx" label="#" width="50"></el-table-column>
+              <el-table-column prop="path" label="文件路径/名称" min-width="200"></el-table-column>
+              <el-table-column prop="size" label="大小" width="100"></el-table-column>
+              <el-table-column prop="type" label="类型" width="100"></el-table-column>
+              <el-table-column prop="md5" label="MD5" width="200">
+                <template #default="s"><span style="font-family:monospace;font-size:11px;">{{ s.row.md5 }}</span></template>
+              </el-table-column>
+              <el-table-column prop="matched" label="特征码匹配" width="120">
+                <template #default="s">
+                  <el-tag v-if="s.row.matched" type="success" size="small">✓ 匹配</el-tag>
+                  <el-tag v-else type="danger" size="small">✗ 不匹配</el-tag>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+
+          <div class="card" v-if="submitForm.files.length">
+            <div class="card-title">3. 外发申请信息</div>
+            <el-form :model="submitForm" label-width="100px" size="default">
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="接收方姓名"><el-input v-model="submitForm.receiverName" placeholder="输入接收方姓名"></el-input></el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="接收方邮箱"><el-input v-model="submitForm.receiverEmail" placeholder="输入接收方邮箱"></el-input></el-form-item>
+                </el-col>
+              </el-row>
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="接收方类型">
+                    <el-radio-group v-model="submitForm.receiverType">
+                      <el-radio value="partner">合作方（一级审批）</el-radio>
+                      <el-radio value="non-partner">非合作方（二级审批）</el-radio>
+                    </el-radio-group>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="文件密级">
+                    <el-select v-model="submitForm.securityLevel" style="width:100%;">
+                      <el-option label="公开" value="public"></el-option>
+                      <el-option label="内部" value="internal"></el-option>
+                      <el-option label="秘密" value="secret"></el-option>
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-form-item label="外发事由"><el-input v-model="submitForm.reason" type="textarea" :rows="2" placeholder="简要说明外发原因"></el-input></el-form-item>
+              <el-form-item label="外网有效期">
+                <el-select v-model="submitForm.expiryDays" style="width:200px;">
+                  <el-option label="7天" :value="7"></el-option>
+                  <el-option label="15天" :value="15"></el-option>
+                  <el-option label="30天（默认）" :value="30"></el-option>
+                  <el-option label="90天" :value="90"></el-option>
+                </el-select>
+              </el-form-item>
+            </el-form>
+          </div>
+
+          <div class="card" v-if="submitForm.files.length">
+            <div class="card-title">4. 免审批预判</div>
+            <div v-if="autoApprovalResult.canAutoApprove" style="background:#dcfce7;padding:16px;border-radius:6px;">
+              <div style="font-size:16px;font-weight:600;color:#166534;">✅ 可免审批自动通过</div>
+              <div style="font-size:13px;color:#15803d;margin-top:6px;">提交单内所有文件（共{{ autoApprovalResult.totalFiles }}个）均匹配特征码规则，免审批开关已开启。提交后将自动摆渡到外网。</div>
+              <div style="font-size:12px;color:#16a34a;margin-top:8px;">匹配规则：{{ autoApprovalResult.matchedRules.join('、') }}</div>
+            </div>
+            <div v-else style="background:#fef3c7;padding:16px;border-radius:6px;">
+              <div style="font-size:16px;font-weight:600;color:#92400e;">⚠️ 需要人工审批</div>
+              <div style="font-size:13px;color:#a16207;margin-top:6px;">{{ autoApprovalResult.reason }}</div>
+              <div style="font-size:12px;color:#b45309;margin-top:8px;" v-if="autoApprovalResult.unmatchedFiles.length">不匹配的文件：{{ autoApprovalResult.unmatchedFiles.join('、') }}</div>
+            </div>
+            <div style="margin-top:16px;text-align:right;">
+              <el-button @click="resetSubmitForm">重置</el-button>
+              <el-button type="primary" size="large" @click="submitApplication" :disabled="!submitForm.receiverName">提交申请</el-button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 我的提交 -->
+        <div v-if="currentPage==='my-submissions'">
+          <div class="page-title">📋 我的提交 <span class="desc">查看提交单状态、审批进度、摆渡状态</span></div>
+          <div class="card">
+            <el-table :data="mySubmissions" size="default" border style="width:100%">
+              <el-table-column prop="id" label="提交单ID" width="200">
+                <template #default="s"><span style="font-family:monospace;font-size:12px;">{{ s.row.id.substring(0,13) }}...</span></template>
+              </el-table-column>
+              <el-table-column prop="submitTime" label="提交时间" width="160"></el-table-column>
+              <el-table-column prop="fileName" label="文件（首个）" min-width="150"></el-table-column>
+              <el-table-column prop="fileCount" label="文件数" width="80" align="center"></el-table-column>
+              <el-table-column prop="receiverName" label="接收方" width="120"></el-table-column>
+              <el-table-column prop="statusText" label="状态" width="110">
+                <template #default="s"><span class="arch-badge" :class="s.row.statusClass">{{ s.row.statusText }}</span></template>
+              </el-table-column>
+              <el-table-column label="操作" width="100" fixed="right">
+                <template #default="s"><el-button type="primary" link @click="viewSubmission(s.row)">详情</el-button></template>
+              </el-table-column>
+            </el-table>
+            <div class="empty-state" v-if="!mySubmissions.length"><div class="icon">📭</div><div>暂无提交记录</div></div>
+          </div>
+        </div>
+
+        <!-- 提交详情 -->
+        <div v-if="currentPage==='submission-detail' && currentSubmission">
+          <div class="page-title">
+            <el-button text @click="currentPage='my-submissions'" style="padding:0;">← 返回</el-button>
+            提交单详情
+          </div>
+          <div class="card">
+            <div class="card-title">📄 基本信息</div>
+            <el-descriptions :column="2" border size="small">
+              <el-descriptions-item label="提交单ID"><span style="font-family:monospace;">{{ currentSubmission.id }}</span></el-descriptions-item>
+              <el-descriptions-item label="提交时间">{{ currentSubmission.submitTime }}</el-descriptions-item>
+              <el-descriptions-item label="提交人">{{ currentSubmission.submitter }}</el-descriptions-item>
+              <el-descriptions-item label="接收方">{{ currentSubmission.receiverName }} ({{ currentSubmission.receiverType==='partner'?'合作方':'非合作方' }})</el-descriptions-item>
+              <el-descriptions-item label="外发事由">{{ currentSubmission.reason }}</el-descriptions-item>
+              <el-descriptions-item label="文件密级">{{ currentSubmission.securityLevel }}</el-descriptions-item>
+              <el-descriptions-item label="状态"><span class="arch-badge" :class="currentSubmission.statusClass">{{ currentSubmission.statusText }}</span></el-descriptions-item>
+              <el-descriptions-item label="外网有效期">{{ currentSubmission.expiryDays }}天</el-descriptions-item>
+            </el-descriptions>
+          </div>
+          <div class="card">
+            <div class="card-title">📑 文件清单（含MD5）</div>
+            <el-table :data="currentSubmission.manifest" size="small" border>
+              <el-table-column prop="idx" label="#" width="50"></el-table-column>
+              <el-table-column prop="path" label="文件路径/名称" min-width="180"></el-table-column>
+              <el-table-column prop="size" label="大小" width="90"></el-table-column>
+              <el-table-column prop="type" label="类型" width="90"></el-table-column>
+              <el-table-column prop="md5" label="MD5" width="200">
+                <template #default="s"><span style="font-family:monospace;font-size:11px;">{{ s.row.md5 }}</span></template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div class="card">
+            <div class="card-title">🔄 审批与摆渡流程</div>
+            <div class="timeline">
+              <div class="timeline-item done">
+                <div class="time">{{ currentSubmission.submitTime }}</div>
+                <div class="title">文件提交 · 写入归档目录</div>
+                <div class="desc">归档路径：<span class="link-path">{{ currentSubmission.archivePath }}</span></div>
+              </div>
+              <div class="timeline-item done">
+                <div class="time">{{ currentSubmission.submitTime }}</div>
+                <div class="title">文件清单生成 · MD5计算</div>
+                <div class="desc">共 {{ currentSubmission.manifest.length }} 个文件，manifest.json 已保存</div>
+              </div>
+              <div class="timeline-item done" v-if="currentSubmission.autoApproved">
+                <div class="time">{{ currentSubmission.submitTime }}</div>
+                <div class="title"><span class="arch-badge auto">免审批</span> 特征码匹配通过，自动放行</div>
+                <div class="desc">所有文件均匹配特征码规则，无需人工审批</div>
+              </div>
+              <template v-else>
+                <div class="timeline-item done" v-if="currentSubmission.approval1">
+                  <div class="time">{{ currentSubmission.approval1.time }}</div>
+                  <div class="title">一级审批 · {{ currentSubmission.approval1.approver }}</div>
+                  <div class="desc">{{ currentSubmission.approval1.action==='approve'?'✅ 通过':'❌ 驳回' }}<span v-if="currentSubmission.approval1.comment"> - {{ currentSubmission.approval1.comment }}</span></div>
+                </div>
+                <div class="timeline-item current" v-else>
+                  <div class="title">一级审批 · 等待部门主管审批</div>
+                  <div class="desc">合作方场景仅需一级审批</div>
+                </div>
+                <div class="timeline-item done" v-if="currentSubmission.approval2">
+                  <div class="time">{{ currentSubmission.approval2.time }}</div>
+                  <div class="title">二级审批 · {{ currentSubmission.approval2.approver }}（公司高管）</div>
+                  <div class="desc">{{ currentSubmission.approval2.action==='approve'?'✅ 通过':'❌ 驳回' }}<span v-if="currentSubmission.approval2.comment"> - {{ currentSubmission.approval2.comment }}</span></div>
+                </div>
+                <div class="timeline-item current" v-else-if="currentSubmission.receiverType==='non-partner' && currentSubmission.approval1 && currentSubmission.approval1.action==='approve'">
+                  <div class="title">二级审批 · 等待公司高管审批</div>
+                  <div class="desc">非合作方场景需要二级审批</div>
+                </div>
+              </template>
+              <div class="timeline-item done" v-if="currentSubmission.ferryTime">
+                <div class="time">{{ currentSubmission.ferryTime }}</div>
+                <div class="title">🚀 零拷贝摆渡完成</div>
+                <div class="desc">外网软链接已创建 → 指向归档（0拷贝，耗时~0.1s）</div>
+              </div>
+            </div>
+          </div>
+          <div class="card" v-if="currentSubmission.status==='ready'">
+            <div class="card-title">🌐 外网下载信息</div>
+            <el-descriptions :column="1" border size="small">
+              <el-descriptions-item label="下载授权">{{ currentSubmission.receiverName }} ({{ currentSubmission.receiverEmail }})</el-descriptions-item>
+              <el-descriptions-item label="有效期至">{{ currentSubmission.expireDate }}</el-descriptions-item>
+              <el-descriptions-item label="已下载次数">{{ currentSubmission.downloadCount }} 次</el-descriptions-item>
+            </el-descriptions>
+          </div>
+        </div>
+
+        <!-- 待审批 -->
+        <div v-if="currentPage==='pending-approval'">
+          <div class="page-title">⏳ 待我审批 <span class="desc">{{ currentRole==='executive'?'公司高管 · 二级审批':'部门主管 · 一级审批' }}</span></div>
+          <div class="card">
+            <el-table :data="pendingApprovals" size="default" border>
+              <el-table-column prop="id" label="提交单ID" width="180">
+                <template #default="s"><span style="font-family:monospace;font-size:12px;">{{ s.row.id.substring(0,13) }}...</span></template>
+              </el-table-column>
+              <el-table-column prop="submitTime" label="提交时间" width="150"></el-table-column>
+              <el-table-column prop="submitter" label="申请人" width="100"></el-table-column>
+              <el-table-column prop="fileName" label="文件（首个）" min-width="140"></el-table-column>
+              <el-table-column prop="fileCount" label="文件数" width="70" align="center"></el-table-column>
+              <el-table-column prop="receiverName" label="接收方" width="100"></el-table-column>
+              <el-table-column label="接收方类型" width="90">
+                <template #default="s"><el-tag :type="s.row.receiverType==='partner'?'success':'warning'" size="small">{{ s.row.receiverType==='partner'?'合作方':'非合作方' }}</el-tag></template>
+              </el-table-column>
+              <el-table-column label="审批层级" width="90" align="center">
+                <template #default="s"><el-tag size="small" :type="s.row.approvalLevel===1?'info':'danger'">{{ s.row.approvalLevel===1?'一级':'二级' }}</el-tag></template>
+              </el-table-column>
+              <el-table-column label="操作" width="100" fixed="right">
+                <template #default="s"><el-button type="primary" link @click="viewSubmission(s.row, true)">审批</el-button></template>
+              </el-table-column>
+            </el-table>
+            <div class="empty-state" v-if="!pendingApprovals.length"><div class="icon">✅</div><div>暂无待审批事项</div></div>
+          </div>
+        </div>
+
+        <el-dialog v-model="approvalDialogVisible" title="审批操作" width="500px">
+          <div v-if="currentSubmission" style="margin-bottom:16px;">
+            <el-descriptions :column="1" size="small" border>
+              <el-descriptions-item label="提交单ID"><span style="font-family:monospace;font-size:11px;">{{ currentSubmission.id }}</span></el-descriptions-item>
+              <el-descriptions-item label="申请人">{{ currentSubmission.submitter }}</el-descriptions-item>
+              <el-descriptions-item label="接收方">{{ currentSubmission.receiverName }} ({{ currentSubmission.receiverType==='partner'?'合作方':'非合作方' }})</el-descriptions-item>
+              <el-descriptions-item label="文件数">{{ currentSubmission.manifest.length }} 个</el-descriptions-item>
+              <el-descriptions-item label="外发事由">{{ currentSubmission.reason }}</el-descriptions-item>
+            </el-descriptions>
+          </div>
+          <el-form label-width="80px">
+            <el-form-item label="审批意见"><el-input v-model="approvalComment" type="textarea" :rows="3" placeholder="请输入审批意见（驳回时必填）"></el-input></el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="approvalDialogVisible=false">取消</el-button>
+            <el-button type="danger" @click="doApproval('reject')">驳回</el-button>
+            <el-button type="success" @click="doApproval('approve')">通过</el-button>
+          </template>
+        </el-dialog>
+
+        <!-- 外网下载 -->
+        <div v-if="currentPage==='external-download'">
+          <div class="page-title">🌐 外网文件下载 <span class="desc">外网用户 · 仅可下载授权文件</span></div>
+          <div class="demo-tip">💡 这是外网绿区视角，只能看到已摆渡完成且授权给当前用户的文件。无法上传、无法审批、无法访问管理功能。</div>
+          <div class="card">
+            <el-table :data="externalFiles" size="default" border>
+              <el-table-column prop="id" label="提交单ID" width="180">
+                <template #default="s"><span style="font-family:monospace;font-size:12px;">{{ s.row.id.substring(0,13) }}...</span></template>
+              </el-table-column>
+              <el-table-column prop="fileName" label="文件（首个）" min-width="150"></el-table-column>
+              <el-table-column prop="fileCount" label="文件数" width="70" align="center"></el-table-column>
+              <el-table-column prop="totalSize" label="总大小" width="100"></el-table-column>
+              <el-table-column prop="submitter" label="来源" width="100"></el-table-column>
+              <el-table-column prop="ferryTime" label="摆渡时间" width="150"></el-table-column>
+              <el-table-column prop="expireDate" label="有效期至" width="120"></el-table-column>
+              <el-table-column label="操作" width="180" fixed="right">
+                <template #default="s">
+                  <el-button type="primary" link @click="viewExternalFile(s.row)">查看清单</el-button>
+                  <el-button type="success" link @click="downloadFile(s.row)">下载</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="empty-state" v-if="!externalFiles.length"><div class="icon">📭</div><div>暂无可下载文件</div></div>
+          </div>
+        </div>
+
+        <el-dialog v-model="externalDetailVisible" title="文件清单与MD5" width="700px">
+          <div v-if="currentExternalFile">
+            <el-descriptions :column="2" size="small" border style="margin-bottom:16px;">
+              <el-descriptions-item label="提交单ID"><span style="font-family:monospace;font-size:11px;">{{ currentExternalFile.id }}</span></el-descriptions-item>
+              <el-descriptions-item label="摆渡时间">{{ currentExternalFile.ferryTime }}</el-descriptions-item>
+              <el-descriptions-item label="来源">{{ currentExternalFile.submitter }}</el-descriptions-item>
+              <el-descriptions-item label="有效期至">{{ currentExternalFile.expireDate }}</el-descriptions-item>
+            </el-descriptions>
+            <el-table :data="currentExternalFile.manifest" size="small" border max-height="300">
+              <el-table-column prop="idx" label="#" width="40"></el-table-column>
+              <el-table-column prop="path" label="文件名" min-width="150"></el-table-column>
+              <el-table-column prop="size" label="大小" width="80"></el-table-column>
+              <el-table-column prop="md5" label="MD5">
+                <template #default="s"><span style="font-family:monospace;font-size:11px;">{{ s.row.md5 }}</span></template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-dialog>
+
+        <!-- 管理员：特征码规则 -->
+        <div v-if="currentPage==='feature-rules'">
+          <div class="page-title">⚙️ 特征码规则管理 <span class="desc">免审批判定核心 · 文件类别+文件名+二进制特征</span></div>
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+              <div>
+                <span style="margin-right:12px;">免审批总开关：</span>
+                <el-switch v-model="config.autoApprovalEnabled" @change="saveConfig"></el-switch>
+                <span style="margin-left:8px;font-size:12px;color:#64748b;">关闭后所有提交单均走人工审批</span>
+              </div>
+              <el-button type="primary" @click="openRuleDialog()">+ 新增规则</el-button>
+            </div>
+            <el-table :data="featureRules" size="default" border>
+              <el-table-column prop="name" label="规则名称" width="140"></el-table-column>
+              <el-table-column prop="description" label="描述" min-width="150"></el-table-column>
+              <el-table-column label="文件类别" width="160">
+                <template #default="s"><el-tag v-for="t in s.row.fileTypes" :key="t" size="small" style="margin:2px;">{{ t }}</el-tag></template>
+              </el-table-column>
+              <el-table-column prop="fileNamePattern" label="文件名模式" width="180">
+                <template #default="s"><span style="font-family:monospace;font-size:11px;">{{ s.row.fileNamePattern || '*' }}</span></template>
+              </el-table-column>
+              <el-table-column prop="binarySignature" label="二进制特征" width="140">
+                <template #default="s"><span style="font-family:monospace;font-size:11px;">{{ s.row.binarySignature || '-' }}</span></template>
+              </el-table-column>
+              <el-table-column label="启用" width="70" align="center">
+                <template #default="s"><el-switch v-model="s.row.enabled" @change="saveFeatureRules" size="small"></el-switch></template>
+              </el-table-column>
+              <el-table-column label="操作" width="120" fixed="right">
+                <template #default="s">
+                  <el-button type="primary" link @click="openRuleDialog(s.row)">编辑</el-button>
+                  <el-button type="danger" link @click="deleteRule(s.row)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div class="card">
+            <div class="card-title">📖 匹配逻辑说明</div>
+            <div style="font-size:13px;color:#475569;line-height:1.8;">
+              <p><strong>单条规则内（AND关系）：</strong>文件类别 AND 文件名模式 AND 二进制特征，未配置的项视为不限制。</p>
+              <p><strong>多条规则间（OR关系）：</strong>文件匹配到任意一条启用的规则即视为通过特征码检查。</p>
+              <p><strong>提交单级判定：</strong>提交单内所有文件（含压缩包内部文件）均通过特征码检查 → 可免审批；任一文件不通过 → 走人工审批。</p>
+            </div>
+          </div>
+        </div>
+
+        <el-dialog v-model="ruleDialogVisible" :title="editingRule.id?'编辑规则':'新增规则'" width="550px">
+          <el-form :model="editingRule" label-width="100px">
+            <el-form-item label="规则名称"><el-input v-model="editingRule.name"></el-input></el-form-item>
+            <el-form-item label="描述"><el-input v-model="editingRule.description"></el-input></el-form-item>
+            <el-form-item label="文件类别">
+              <el-select v-model="editingRule.fileTypes" multiple style="width:100%;" placeholder="选择或输入扩展名" allow-create filterable>
+                <el-option v-for="t in ['.pdf','.docx','.xlsx','.pptx','.png','.jpg','.jpeg','.gif','.txt','.csv','.log','.zip','.rar','.7z']" :key="t" :label="t" :value="t"></el-option>
+              </el-select>
+            </el-form-item>
+            <el-form-item label="文件名模式"><el-input v-model="editingRule.fileNamePattern" placeholder="正则或通配符，* 表示不限制"></el-input></el-form-item>
+            <el-form-item label="二进制特征"><el-input v-model="editingRule.binarySignature" placeholder="文件头magic number，如 PDF:25504446"></el-input></el-form-item>
+            <el-form-item label="启用"><el-switch v-model="editingRule.enabled"></el-switch></el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="ruleDialogVisible=false">取消</el-button>
+            <el-button type="primary" @click="saveRule">保存</el-button>
+          </template>
+        </el-dialog>
+
+        <!-- 管理员：合作方白名单 -->
+        <div v-if="currentPage==='partners'">
+          <div class="page-title">🤝 合作方白名单 <span class="desc">合作方走一级审批，非合作方走二级审批</span></div>
+          <div class="card">
+            <div style="margin-bottom:16px;"><el-button type="primary" @click="openPartnerDialog()">+ 新增合作方</el-button></div>
+            <el-table :data="partners" size="default" border>
+              <el-table-column prop="name" label="公司/组织名称" min-width="180"></el-table-column>
+              <el-table-column prop="contact" label="联系人" width="120"></el-table-column>
+              <el-table-column prop="email" label="邮箱" width="200"></el-table-column>
+              <el-table-column prop="addedAt" label="添加时间" width="150"></el-table-column>
+              <el-table-column label="操作" width="120" fixed="right">
+                <template #default="s">
+                  <el-button type="primary" link @click="openPartnerDialog(s.row)">编辑</el-button>
+                  <el-button type="danger" link @click="deletePartner(s.row)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+
+        <el-dialog v-model="partnerDialogVisible" :title="editingPartner.id?'编辑合作方':'新增合作方'" width="450px">
+          <el-form :model="editingPartner" label-width="100px">
+            <el-form-item label="公司名称"><el-input v-model="editingPartner.name"></el-input></el-form-item>
+            <el-form-item label="联系人"><el-input v-model="editingPartner.contact"></el-input></el-form-item>
+            <el-form-item label="邮箱"><el-input v-model="editingPartner.email"></el-input></el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="partnerDialogVisible=false">取消</el-button>
+            <el-button type="primary" @click="savePartner">保存</el-button>
+          </template>
+        </el-dialog>
+
+        <!-- 管理员：审批人配置 -->
+        <div v-if="currentPage==='approvers'">
+          <div class="page-title">👤 审批人配置 <span class="desc">一级审批人（部门主管）· 二级审批人（公司高管）</span></div>
+          <div class="card">
+            <div class="config-section">
+              <h4>一级审批人（部门主管）</h4>
+              <el-table :data="level1Approvers" size="small" border>
+                <el-table-column prop="dept" label="部门" width="150"></el-table-column>
+                <el-table-column prop="name" label="审批人" width="120"></el-table-column>
+                <el-table-column prop="email" label="邮箱"></el-table-column>
+              </el-table>
+            </div>
+            <div class="config-section">
+              <h4>二级审批人（公司高管）</h4>
+              <el-table :data="level2Approvers" size="small" border>
+                <el-table-column prop="name" label="审批人" width="150"></el-table-column>
+                <el-table-column prop="title" label="职位" width="150"></el-table-column>
+                <el-table-column prop="email" label="邮箱"></el-table-column>
+              </el-table>
+            </div>
+            <div style="margin-top:16px;font-size:12px;color:#94a3b8;">💡 原型中审批人配置为演示数据，实际部署时可从AD组织架构自动同步。</div>
+          </div>
+        </div>
+
+        <!-- 管理员：系统配置 -->
+        <div v-if="currentPage==='system-config'">
+          <div class="page-title">⚙️ 系统配置 <span class="desc">存储目录 · 时效 · 文件限制 · AD配置</span></div>
+          <div class="card">
+            <div class="config-section">
+              <h4>📂 存储目录配置（单NAS挂载）</h4>
+              <el-form :model="config" label-width="140px" size="default">
+                <el-form-item label="NAS挂载根路径"><el-input v-model="config.nasRootPath"></el-input></el-form-item>
+                <el-form-item label="归档子目录"><el-input v-model="config.archiveDir"></el-input></el-form-item>
+                <el-form-item label="内网子目录"><el-input v-model="config.internalDir"></el-input></el-form-item>
+                <el-form-item label="外网子目录"><el-input v-model="config.externalDir"></el-input></el-form-item>
+              </el-form>
+              <div style="background:#f8fafc;padding:12px;border-radius:6px;font-family:monospace;font-size:12px;color:#475569;">
+                {{ config.nasRootPath }}/<br>
+                ├── {{ config.archiveDir }}/    ← 唯一真实存储（永久保留）<br>
+                ├── {{ config.internalDir }}/   ← 仅存软链接（审批用）<br>
+                └── {{ config.externalDir }}/   ← 仅存软链接（下载用）
+              </div>
+            </div>
+            <div class="config-section">
+              <h4>⏰ 时效配置</h4>
+              <el-form :model="config" label-width="140px">
+                <el-form-item label="内网软链接有效期(天)"><el-input-number v-model="config.internalExpiryDays" :min="1" :max="365"></el-input-number></el-form-item>
+                <el-form-item label="外网软链接有效期(天)"><el-input-number v-model="config.externalExpiryDays" :min="1" :max="365"></el-input-number></el-form-item>
+                <el-form-item label="清理扫描间隔(小时)"><el-input-number v-model="config.cleanupIntervalHours" :min="1" :max="24"></el-input-number></el-form-item>
+              </el-form>
+              <div style="font-size:12px;color:#94a3b8;">时效到期后仅删除软链接，归档目录中的真实文件永久保留。</div>
+            </div>
+            <div class="config-section">
+              <h4>📄 文件限制</h4>
+              <el-form :model="config" label-width="140px">
+                <el-form-item label="单文件最大(GB)"><el-input-number v-model="config.maxFileSizeGB" :min="1" :max="100"></el-input-number></el-form-item>
+                <el-form-item label="单次提交总大小(GB)"><el-input-number v-model="config.maxTotalSizeGB" :min="1" :max="500"></el-input-number></el-form-item>
+                <el-form-item label="允许的文件类型"><el-input v-model="config.allowedFileTypes" type="textarea" :rows="2"></el-input></el-form-item>
+              </el-form>
+            </div>
+            <div class="config-section">
+              <h4>🔐 AD/LDAP 配置</h4>
+              <el-form :model="config" label-width="140px">
+                <el-form-item label="AD服务器地址"><el-input v-model="config.adServer"></el-input></el-form-item>
+                <el-form-item label="Base DN"><el-input v-model="config.adBaseDN"></el-input></el-form-item>
+                <el-form-item label="绑定账号"><el-input v-model="config.adBindUser"></el-input></el-form-item>
+                <el-form-item label="启用AD认证"><el-switch v-model="config.adEnabled"></el-switch></el-form-item>
+              </el-form>
+            </div>
+            <div style="text-align:right;margin-top:16px;"><el-button type="primary" @click="saveConfig">保存配置</el-button></div>
+          </div>
+        </div>
+
+        <!-- 日志审计 -->
+        <div v-if="currentPage==='audit-logs'">
+          <div class="page-title">📝 日志审计 <span class="desc">全流程可追溯 · 操作/审批/摆渡/下载日志</span></div>
+          <div class="card">
+            <div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;">
+              <el-select v-model="logFilter.type" placeholder="日志类型" clearable style="width:140px;">
+                <el-option label="操作日志" value="operation"></el-option>
+                <el-option label="审批日志" value="approval"></el-option>
+                <el-option label="摆渡日志" value="ferry"></el-option>
+                <el-option label="下载日志" value="download"></el-option>
+                <el-option label="登录日志" value="login"></el-option>
+                <el-option label="配置变更" value="config"></el-option>
+                <el-option label="免审批日志" value="auto-approval"></el-option>
+                <el-option label="软链接清理" value="cleanup"></el-option>
+              </el-select>
+              <el-input v-model="logFilter.keyword" placeholder="搜索关键词" clearable style="width:280px;"></el-input>
+              <el-button @click="resetLogFilter">重置</el-button>
+              <el-button type="primary" plain @click="exportLogs" style="margin-left:auto;">导出CSV</el-button>
+            </div>
+            <el-table :data="filteredLogs" size="small" border max-height="500">
+              <el-table-column prop="time" label="时间" width="160"></el-table-column>
+              <el-table-column label="类型" width="100">
+                <template #default="s"><el-tag size="small" :type="logTypeColor(s.row.type)">{{ logTypeLabel(s.row.type) }}</el-tag></template>
+              </el-table-column>
+              <el-table-column prop="user" label="操作用户" width="120"></el-table-column>
+              <el-table-column prop="action" label="操作" min-width="180"></el-table-column>
+              <el-table-column prop="detail" label="详情" min-width="250"></el-table-column>
+              <el-table-column prop="ip" label="IP" width="120"></el-table-column>
+            </el-table>
+            <div style="margin-top:10px;font-size:12px;color:#94a3b8;">共 {{ filteredLogs.length }} 条日志 · 日志保留 ≥ 180 天 · 不可篡改</div>
+          </div>
+        </div>
+
+        <!-- 归档检索 -->
+        <div v-if="currentPage==='archive'">
+          <div class="page-title">🗄️ 归档检索 <span class="desc">所有提交文件永久保留 · 按文件名/MD5/提交人检索</span></div>
+          <div class="card">
+            <div style="margin-bottom:16px;display:flex;gap:12px;">
+              <el-input v-model="archiveFilter.keyword" placeholder="文件名 / MD5 / 提交单ID" clearable style="width:280px;"></el-input>
+              <el-input v-model="archiveFilter.submitter" placeholder="提交人" clearable style="width:140px;"></el-input>
+              <el-button @click="archiveFilter={keyword:'',submitter:''}">重置</el-button>
+            </div>
+            <el-table :data="filteredArchive" size="small" border>
+              <el-table-column prop="id" label="提交单ID" width="200">
+                <template #default="s"><span style="font-family:monospace;font-size:11px;">{{ s.row.id }}</span></template>
+              </el-table-column>
+              <el-table-column prop="submitTime" label="提交时间" width="150"></el-table-column>
+              <el-table-column prop="submitter" label="提交人" width="100"></el-table-column>
+              <el-table-column prop="fileName" label="首个文件" min-width="150"></el-table-column>
+              <el-table-column prop="fileCount" label="文件数" width="70" align="center"></el-table-column>
+              <el-table-column prop="totalSize" label="总大小" width="100"></el-table-column>
+              <el-table-column label="最终状态" width="100">
+                <template #default="s"><span class="arch-badge" :class="s.row.statusClass">{{ s.row.statusText }}</span></template>
+              </el-table-column>
+              <el-table-column prop="archivePath" label="归档路径" min-width="220">
+                <template #default="s"><span class="link-path">{{ s.row.archivePath }}</span></template>
+              </el-table-column>
+            </el-table>
+            <div style="margin-top:10px;font-size:12px;color:#94a3b8;">归档文件总数：{{ filteredArchive.length }} · 归档目录永久保留，含原始文件 + manifest.json + approval.json</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.staticfile.org/vue/3.4.21/vue.global.prod.js"></script>
+<script src="https://cdn.staticfile.org/element-plus/2.6.1/index.full.min.js"></script>
+<script>
+const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+const app = createApp({
+  setup() {
+    const roles = [
+      { key: 'internal-user', label: '内网普通用户' },
+      { key: 'dept-manager', label: '部门主管（一级审批）' },
+      { key: 'executive', label: '公司高管（二级审批）' },
+      { key: 'admin', label: '系统管理员' },
+      { key: 'external-user', label: '外网用户' },
+    ];
+    const currentRole = ref('internal-user');
+    const currentPage = ref('dashboard');
+    const currentUser = computed(() => {
+      const map = {
+        'internal-user': { name: '张工', dept: '研发部', email: 'zhang@nexskysemi.com' },
+        'dept-manager': { name: '李经理', dept: '研发部', email: 'li@nexskysemi.com' },
+        'executive': { name: '王总', dept: '公司高管', email: 'wang@nexskysemi.com' },
+        'admin': { name: '系统管理员', dept: 'IT部', email: 'admin@nexskysemi.com' },
+        'external-user': { name: '陈工（合作方）', dept: '外部合作方', email: 'chen@partner.com' },
+      };
+      return map[currentRole.value];
+    });
+
+    const menuGroups = [
+      { title: '', items: [{ key: 'dashboard', label: '系统概览', icon: '📊', roles: ['internal-user','dept-manager','executive','admin','external-user'] }]},
+      { title: '内网操作', items: [
+        { key: 'submit', label: '提交文件外发', icon: '📤', roles: ['internal-user'] },
+        { key: 'my-submissions', label: '我的提交', icon: '📋', roles: ['internal-user'] },
+      ]},
+      { title: '审批', items: [{ key: 'pending-approval', label: '待我审批', icon: '⏳', roles: ['dept-manager','executive'] }]},
+      { title: '外网操作', items: [{ key: 'external-download', label: '文件下载', icon: '🌐', roles: ['external-user'] }]},
+      { title: '管理配置', items: [
+        { key: 'feature-rules', label: '特征码规则', icon: '⚙️', roles: ['admin'] },
+        { key: 'partners', label: '合作方白名单', icon: '🤝', roles: ['admin'] },
+        { key: 'approvers', label: '审批人配置', icon: '👤', roles: ['admin'] },
+        { key: 'system-config', label: '系统配置', icon: '🔧', roles: ['admin'] },
+      ]},
+      { title: '审计', items: [
+        { key: 'audit-logs', label: '日志审计', icon: '📝', roles: ['admin','dept-manager','executive'] },
+        { key: 'archive', label: '归档检索', icon: '🗄️', roles: ['admin'] },
+      ]},
+    ];
+
+    const onRoleChange = () => {
+      const firstPage = menuGroups.flatMap(g => g.items).find(i => i.roles.includes(currentRole.value));
+      if (firstPage) currentPage.value = firstPage.key;
+    };
+
+    const STORAGE_KEY = 'ferry_mvp_data_v2';
+    const loadData = () => { try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); } catch(e) {} return null; };
+    const saveData = () => { localStorage.setItem(STORAGE_KEY, JSON.stringify({ submissions: submissions.value, featureRules: featureRules.value, partners: partners.value, config: config.value, logs: logs.value })); };
+
+    const submissions = ref([]);
+    const currentSubmission = ref(null);
+    const approvalDialogVisible = ref(false);
+    const approvalComment = ref('');
+    const externalDetailVisible = ref(false);
+    const currentExternalFile = ref(null);
+
+    const submitForm = reactive({ files: [], receiverName: '', receiverEmail: '', receiverType: 'partner', securityLevel: 'internal', reason: '', expiryDays: 30 });
+    const resetSubmitForm = () => { submitForm.files = []; submitForm.receiverName = ''; submitForm.receiverEmail = ''; submitForm.receiverType = 'partner'; submitForm.securityLevel = 'internal'; submitForm.reason = ''; submitForm.expiryDays = 30; };
+
+    const featureRules = ref([]);
+    const ruleDialogVisible = ref(false);
+    const editingRule = reactive({ id: null, name: '', description: '', fileTypes: [], fileNamePattern: '', binarySignature: '', enabled: true });
+
+    const partners = ref([]);
+    const partnerDialogVisible = ref(false);
+    const editingPartner = reactive({ id: null, name: '', contact: '', email: '' });
+
+    const level1Approvers = ref([
+      { dept: '研发部', name: '李经理', email: 'li@nexskysemi.com' },
+      { dept: '测试部', name: '赵经理', email: 'zhao@nexskysemi.com' },
+      { dept: '市场部', name: '孙经理', email: 'sun@nexskysemi.com' },
+    ]);
+    const level2Approvers = ref([
+      { name: '王总', title: 'CTO', email: 'wang@nexskysemi.com' },
+      { name: '周总', title: 'CEO', email: 'zhou@nexskysemi.com' },
+    ]);
+
+    const config = reactive({
+      autoApprovalEnabled: true, nasRootPath: '/mnt/nas', archiveDir: 'archive', internalDir: 'internal', externalDir: 'external',
+      internalExpiryDays: 7, externalExpiryDays: 30, cleanupIntervalHours: 6,
+      maxFileSizeGB: 10, maxTotalSizeGB: 50, allowedFileTypes: '.pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.txt,.csv,.log,.zip,.rar,.7z',
+      adServer: 'ldap://ad.nexskysemi.com:389', adBaseDN: 'DC=nexskysemi,DC=com', adBindUser: 'svc_ldap', adEnabled: true,
+    });
+    const saveConfig = () => { saveData(); ElementPlus.ElMessage.success('配置已保存'); addLog('config', '系统管理员', '更新系统配置', '存储目录/时效/AD等配置已更新', '127.0.0.1'); };
+
+    const logs = ref([]);
+    const logFilter = reactive({ type: '', keyword: '' });
+    const resetLogFilter = () => { logFilter.type = ''; logFilter.keyword = ''; };
+    const addLog = (type, user, action, detail, ip) => {
+      logs.value.unshift({ id: genId(), time: formatTime(new Date()), type, user, action, detail, ip: ip || '127.0.0.1' });
+      if (logs.value.length > 500) logs.value = logs.value.slice(0, 500);
+    };
+    const filteredLogs = computed(() => logs.value.filter(l => {
+      if (logFilter.type && l.type !== logFilter.type) return false;
+      if (logFilter.keyword) { const kw = logFilter.keyword.toLowerCase(); if (!l.user.toLowerCase().includes(kw) && !l.action.toLowerCase().includes(kw) && !l.detail.toLowerCase().includes(kw)) return false; }
+      return true;
+    }));
+    const logTypeLabel = (t) => ({'operation':'操作','approval':'审批','ferry':'摆渡','download':'下载','login':'登录','config':'配置','auto-approval':'免审批','cleanup':'清理'}[t] || t);
+    const logTypeColor = (t) => ({'operation':'info','approval':'warning','ferry':'primary','download':'success','login':'info','config':'danger','auto-approval':'success','cleanup':'info'}[t] || 'info');
+    const exportLogs = () => {
+      const csv = '时间,类型,用户,操作,详情,IP\n' + filteredLogs.value.map(l => `${l.time},${logTypeLabel(l.type)},${l.user},"${l.action}","${l.detail}",${l.ip}`).join('\n');
+      const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'audit_logs.csv'; a.click();
+      ElementPlus.ElMessage.success('日志已导出');
+    };
+
+    const archiveFilter = reactive({ keyword: '', submitter: '' });
+    const filteredArchive = computed(() => submissions.value.filter(s => {
+      if (archiveFilter.keyword) { const kw = archiveFilter.keyword.toLowerCase(); if (!s.id.toLowerCase().includes(kw) && !s.fileName.toLowerCase().includes(kw) && !s.manifest.some(m => m.md5.toLowerCase().includes(kw) || m.path.toLowerCase().includes(kw))) return false; }
+      if (archiveFilter.submitter && !s.submitter.includes(archiveFilter.submitter)) return false;
+      return true;
+    }));
+
+    const genId = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random()*16|0; return (c==='x'?r:(r&0x3|0x8)).toString(16); });
+    const genMD5 = () => { const chars = '0123456789abcdef'; let s = ''; for (let i = 0; i < 32; i++) s += chars[Math.floor(Math.random()*16)]; return s; };
+    const formatTime = (d) => { const p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+    const formatSize = (bytes) => { if (bytes < 1024) return bytes + ' B'; if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB'; if (bytes < 1024*1024*1024) return (bytes/1024/1024).toFixed(1) + ' MB'; return (bytes/1024/1024/1024).toFixed(2) + ' GB'; };
+    const getFileIcon = (name) => { const ext = name.split('.').pop().toLowerCase(); if (['pdf'].includes(ext)) return '📕'; if (['doc','docx'].includes(ext)) return '📘'; if (['xls','xlsx','csv'].includes(ext)) return '📗'; if (['ppt','pptx'].includes(ext)) return '📙'; if (['png','jpg','jpeg','gif','bmp'].includes(ext)) return '🖼️'; if (['zip','rar','7z','tar','gz'].includes(ext)) return '🗜️'; if (['txt','log','md'].includes(ext)) return '📄'; return '📎'; };
+    const getFileType = (name) => '.' + name.split('.').pop().toLowerCase();
+
+    const simulateUpload = () => {
+      const demoFiles = [
+        { name: 'datasheet_NEX1234.pdf', size: 2457600, isArchive: false },
+        { name: 'test_report_2026Q3.xlsx', size: 1024000, isArchive: false },
+        { name: 'design_files_bundle.zip', size: 15728640, isArchive: true, innerFiles: [{ name: 'design/schematic_v2.pdf', size: 3145728 }, { name: 'design/board_layout.png', size: 5242880 }, { name: 'design/bom_list.xlsx', size: 524288 }, { name: 'design/readme.txt', size: 10240 }] },
+        { name: 'product_photo.jpg', size: 3670016, isArchive: false },
+        { name: 'source_code_v1.2.zip', size: 8388608, isArchive: true, innerFiles: [{ name: 'src/main.c', size: 20480 }, { name: 'src/utils.c', size: 15360 }, { name: 'include/header.h', size: 5120 }, { name: 'Makefile', size: 2048 }] },
+        { name: 'meeting_notes.docx', size: 512000, isArchive: false },
+      ];
+      const count = 2 + Math.floor(Math.random()*2);
+      const shuffled = [...demoFiles].sort(() => Math.random()-0.5);
+      const selected = shuffled.slice(0, count);
+      selected.forEach(f => {
+        submitForm.files.push({ name: f.name, size: f.size, type: getFileType(f.name), md5: genMD5(), isArchive: f.isArchive, innerFiles: f.innerFiles ? f.innerFiles.map(ifile => ({ path: ifile.name, size: ifile.size, type: getFileType(ifile.name), md5: genMD5() })) : [] });
+      });
+      ElementPlus.ElMessage.success(`已添加 ${selected.length} 个文件（模拟）`);
+    };
+
+    const manifestRows = computed(() => {
+      const rows = []; let idx = 1;
+      submitForm.files.forEach(f => {
+        if (f.isArchive && f.innerFiles.length) {
+          f.innerFiles.forEach(ifile => { rows.push({ idx: idx++, path: `[${f.name}] ${ifile.path}`, size: formatSize(ifile.size), type: ifile.type, md5: ifile.md5, matched: matchFeatureRules(ifile.path, ifile.type) }); });
+        } else {
+          rows.push({ idx: idx++, path: f.name, size: formatSize(f.size), type: f.type, md5: f.md5, matched: matchFeatureRules(f.name, f.type) });
+        }
+      });
+      return rows;
+    });
+
+    const matchFeatureRules = (fileName, fileType) => {
+      const enabledRules = featureRules.value.filter(r => r.enabled);
+      if (!enabledRules.length) return false;
+      return enabledRules.some(rule => {
+        if (rule.fileTypes && rule.fileTypes.length > 0) { if (!rule.fileTypes.some(t => fileType.toLowerCase() === t.toLowerCase())) return false; }
+        if (rule.fileNamePattern && rule.fileNamePattern !== '*' && rule.fileNamePattern !== '') {
+          try {
+            const pattern = rule.fileNamePattern;
+            let regex;
+            if (pattern.includes('^') || pattern.includes('$') || pattern.includes('.*')) { regex = new RegExp(pattern, 'i'); }
+            else { regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$', 'i'); }
+            if (!regex.test(fileName)) return false;
+          } catch(e) { return false; }
+        }
+        return true;
+      });
+    };
+
+    const autoApprovalResult = computed(() => {
+      if (!config.autoApprovalEnabled) return { canAutoApprove: false, reason: '免审批总开关已关闭', totalFiles: 0, matchedRules: [], unmatchedFiles: [] };
+      if (!submitForm.files.length) return { canAutoApprove: false, reason: '请先上传文件', totalFiles: 0, matchedRules: [], unmatchedFiles: [] };
+      const allFiles = [];
+      submitForm.files.forEach(f => { if (f.isArchive && f.innerFiles.length) { f.innerFiles.forEach(ifile => allFiles.push({ name: ifile.path, type: ifile.type })); } else { allFiles.push({ name: f.name, type: f.type }); } });
+      const unmatched = allFiles.filter(f => !matchFeatureRules(f.name, f.type));
+      const matchedRuleNames = [...new Set(allFiles.map(f => { const rule = featureRules.value.find(r => r.enabled && matchFeatureRules(f.name, f.type)); return rule ? rule.name : null; }).filter(Boolean))];
+      if (unmatched.length === 0) return { canAutoApprove: true, reason: '', totalFiles: allFiles.length, matchedRules: matchedRuleNames, unmatchedFiles: [] };
+      return { canAutoApprove: false, reason: `提交单内有 ${unmatched.length} 个文件不匹配特征码规则，需要人工审批`, totalFiles: allFiles.length, matchedRules: matchedRuleNames, unmatchedFiles: unmatched.map(f => f.name) };
+    });
+
+    const updateSubmissionStatus = (s) => {
+      if (s.autoApproved) { s.status = 'ready'; s.statusClass = 'ready'; s.statusText = '已就绪'; }
+      else if (s.approval1 && s.approval1.action === 'reject') { s.status = 'rejected'; s.statusClass = 'rejected'; s.statusText = '已驳回'; }
+      else if (s.approval2 && s.approval2.action === 'reject') { s.status = 'rejected'; s.statusClass = 'rejected'; s.statusText = '已驳回'; }
+      else if (s.ferryTime) { s.status = 'ready'; s.statusClass = 'ready'; s.statusText = '已就绪'; }
+      else if (s.receiverType === 'partner' && s.approval1 && s.approval1.action === 'approve') { s.status = 'ferrying'; s.statusClass = 'ferrying'; s.statusText = '摆渡中'; }
+      else if (s.receiverType === 'non-partner' && s.approval1 && s.approval1.action === 'approve' && !s.approval2) { s.status = 'pending-l2'; s.statusClass = 'approving'; s.statusText = '待二级审批'; }
+      else { s.status = 'pending-l1'; s.statusClass = 'pending'; s.statusText = '待一级审批'; }
+    };
+
+    const submitApplication = () => {
+      if (!submitForm.files.length) { ElementPlus.ElMessage.warning('请先上传文件'); return; }
+      if (!submitForm.receiverName) { ElementPlus.ElMessage.warning('请填写接收方姓名'); return; }
+      const id = genId(); const submitTime = formatTime(new Date());
+      const manifest = []; let idx = 1; let totalSize = 0;
+      submitForm.files.forEach(f => {
+        if (f.isArchive && f.innerFiles.length) { f.innerFiles.forEach(ifile => { manifest.push({ idx: idx++, path: `[${f.name}] ${ifile.path}`, size: formatSize(ifile.size), type: ifile.type, md5: ifile.md5 }); totalSize += ifile.size; }); }
+        else { manifest.push({ idx: idx++, path: f.name, size: formatSize(f.size), type: f.type, md5: f.md5 }); totalSize += f.size; }
+      });
+      const canAuto = autoApprovalResult.value.canAutoApprove;
+      const expiryDate = new Date(Date.now() + submitForm.expiryDays*24*3600*1000);
+      const expiryDateStr = `${expiryDate.getFullYear()}-${String(expiryDate.getMonth()+1).padStart(2,'0')}-${String(expiryDate.getDate()).padStart(2,'0')}`;
+      const submission = {
+        id, submitTime, submitter: currentUser.value.name, submitterDept: currentUser.value.dept,
+        receiverName: submitForm.receiverName, receiverEmail: submitForm.receiverEmail, receiverType: submitForm.receiverType,
+        securityLevel: submitForm.securityLevel, reason: submitForm.reason, expiryDays: submitForm.expiryDays, expireDate: expiryDateStr,
+        fileName: submitForm.files[0].name, fileCount: manifest.length, totalSize: formatSize(totalSize), manifest,
+        autoApproved: canAuto, approval1: null, approval2: null, ferryTime: null, downloadCount: 0,
+        archivePath: `/mnt/nas/archive/${id}/`,
+      };
+      updateSubmissionStatus(submission);
+      if (canAuto) {
+        submission.ferryTime = formatTime(new Date());
+        addLog('auto-approval', currentUser.value.name, '免审批自动通过', `提交单${id.substring(0,8)}，${manifest.length}个文件均匹配特征码，自动摆渡`, '192.168.1.10');
+        addLog('ferry', 'system', '零拷贝摆渡完成', `提交单${id.substring(0,8)}，创建外网软链接，耗时~0.1s`, '127.0.0.1');
+      } else {
+        addLog('operation', currentUser.value.name, '提交文件外发申请', `提交单${id.substring(0,8)}，${manifest.length}个文件，接收方：${submitForm.receiverName}(${submitForm.receiverType==='partner'?'合作方':'非合作方'})`, '192.168.1.10');
+      }
+      submissions.value.unshift(submission);
+      saveData(); resetSubmitForm();
+      ElementPlus.ElMessage.success(canAuto ? '提交成功，已免审批自动摆渡到外网' : '提交成功，等待审批');
+      currentPage.value = 'my-submissions';
+    };
+
+    const mySubmissions = computed(() => submissions.value.filter(s => s.submitter === currentUser.value.name));
+    const viewSubmission = (s, fromApproval = false) => { currentSubmission.value = s; currentPage.value = 'submission-detail'; if (fromApproval) { setTimeout(() => { approvalComment.value = ''; approvalDialogVisible.value = true; }, 300); } };
+
+    const pendingApprovals = computed(() => submissions.value.filter(s => {
+      if (s.autoApproved) return false;
+      if (currentRole.value === 'dept-manager') return !s.approval1;
+      if (currentRole.value === 'executive') return s.receiverType === 'non-partner' && s.approval1 && s.approval1.action === 'approve' && !s.approval2;
+      return false;
+    }).map(s => ({ ...s, approvalLevel: currentRole.value === 'dept-manager' ? 1 : 2 })));
+
+    const doApproval = (action) => {
+      if (!currentSubmission.value) return;
+      if (action === 'reject' && !approvalComment.value.trim()) { ElementPlus.ElMessage.warning('驳回时请填写审批意见'); return; }
+      const s = currentSubmission.value; const approverName = currentUser.value.name; const now = formatTime(new Date());
+      if (currentRole.value === 'dept-manager' || !s.approval1) {
+        s.approval1 = { approver: approverName, action, comment: approvalComment.value, time: now };
+        addLog('approval', approverName, `${action==='approve'?'通过':'驳回'}一级审批`, `提交单${s.id.substring(0,8)}，意见：${approvalComment.value || '无'}`, '192.168.1.20');
+      } else if (currentRole.value === 'executive') {
+        s.approval2 = { approver: approverName, action, comment: approvalComment.value, time: now };
+        addLog('approval', approverName, `${action==='approve'?'通过':'驳回'}二级审批`, `提交单${s.id.substring(0,8)}，意见：${approvalComment.value || '无'}`, '192.168.1.30');
+      }
+      if (action === 'approve') {
+        const canFerry = s.receiverType === 'partner' ? !!s.approval1 : (!!s.approval1 && !!s.approval2);
+        if (canFerry) { setTimeout(() => { s.ferryTime = formatTime(new Date()); updateSubmissionStatus(s); addLog('ferry', 'system', '零拷贝摆渡完成', `提交单${s.id.substring(0,8)}，创建外网软链接，耗时~0.1s`, '127.0.0.1'); saveData(); }, 500); }
+      }
+      updateSubmissionStatus(s); saveData();
+      approvalDialogVisible.value = false; approvalComment.value = '';
+      ElementPlus.ElMessage.success(action === 'approve' ? '审批通过' : '已驳回');
+      currentPage.value = 'pending-approval';
+    };
+
+    const externalFiles = computed(() => submissions.value.filter(s => s.status === 'ready' && s.ferryTime));
+    const viewExternalFile = (s) => { currentExternalFile.value = s; externalDetailVisible.value = true; };
+    const downloadFile = (s) => { s.downloadCount = (s.downloadCount || 0) + 1; addLog('download', currentUser.value.name, '下载文件', `提交单${s.id.substring(0,8)}，文件：${s.fileName}，第${s.downloadCount}次下载`, '203.0.113.50'); saveData(); ElementPlus.ElMessage.success(`开始下载：${s.fileName}（模拟）`); };
+
+    const openRuleDialog = (rule) => {
+      if (rule) Object.assign(editingRule, JSON.parse(JSON.stringify(rule)));
+      else { editingRule.id = null; editingRule.name = ''; editingRule.description = ''; editingRule.fileTypes = []; editingRule.fileNamePattern = ''; editingRule.binarySignature = ''; editingRule.enabled = true; }
+      ruleDialogVisible.value = true;
+    };
+    const saveRule = () => {
+      if (!editingRule.name) { ElementPlus.ElMessage.warning('请输入规则名称'); return; }
+      if (editingRule.id) { const idx = featureRules.value.findIndex(r => r.id === editingRule.id); if (idx >= 0) featureRules.value[idx] = JSON.parse(JSON.stringify(editingRule)); }
+      else featureRules.value.push({ ...JSON.parse(JSON.stringify(editingRule)), id: genId() });
+      saveFeatureRules(); ruleDialogVisible.value = false; ElementPlus.ElMessage.success('规则已保存');
+    };
+    const deleteRule = (rule) => { ElementPlus.ElMessageBox.confirm(`确定删除规则"${rule.name}"吗？`, '确认删除', { type: 'warning' }).then(() => { featureRules.value = featureRules.value.filter(r => r.id !== rule.id); saveFeatureRules(); ElementPlus.ElMessage.success('已删除'); }).catch(() => {}); };
+    const saveFeatureRules = () => { saveData(); };
+
+    const openPartnerDialog = (p) => {
+      if (p) Object.assign(editingPartner, JSON.parse(JSON.stringify(p)));
+      else { editingPartner.id = null; editingPartner.name = ''; editingPartner.contact = ''; editingPartner.email = ''; }
+      partnerDialogVisible.value = true;
+    };
+    const savePartner = () => {
+      if (!editingPartner.name) { ElementPlus.ElMessage.warning('请输入公司名称'); return; }
+      if (editingPartner.id) { const idx = partners.value.findIndex(p => p.id === editingPartner.id); if (idx >= 0) partners.value[idx] = JSON.parse(JSON.stringify(editingPartner)); }
+      else partners.value.push({ ...JSON.parse(JSON.stringify(editingPartner)), id: genId(), addedAt: formatTime(new Date()) });
+      saveData(); partnerDialogVisible.value = false; ElementPlus.ElMessage.success('合作方已保存');
+    };
+    const deletePartner = (p) => { ElementPlus.ElMessageBox.confirm(`确定删除"${p.name}"吗？`, '确认删除', { type: 'warning' }).then(() => { partners.value = partners.value.filter(x => x.id !== p.id); saveData(); ElementPlus.ElMessage.success('已删除'); }).catch(() => {}); };
+
+    const stats = computed(() => {
+      const today = formatTime(new Date()).substring(0,10);
+      return {
+        todaySubmitted: submissions.value.filter(s => s.submitTime.startsWith(today)).length,
+        pendingApproval: submissions.value.filter(s => !s.autoApproved && !s.ferryTime && s.status !== 'rejected').length,
+        ready: submissions.value.filter(s => s.status === 'ready').length,
+        autoApprovalRate: Math.round(submissions.value.filter(s => s.autoApproved).length / (submissions.value.length || 1) * 100),
+        archivedFiles: submissions.value.reduce((sum, s) => sum + s.fileCount, 0),
+      };
+    });
+
+    const resetDemoData = () => { ElementPlus.ElMessageBox.confirm('确定重置所有演示数据吗？', '确认重置', { type: 'warning' }).then(() => { initDemoData(); ElementPlus.ElMessage.success('演示数据已重置'); }).catch(() => {}); };
+
+    const initDemoData = () => {
+      featureRules.value = [
+        { id: genId(), name: '公开PDF资料', description: '芯片公开datasheet等PDF文档', fileTypes: ['.pdf'], fileNamePattern: '^datasheet_.*\\.pdf$', binarySignature: '25504446', enabled: true },
+        { id: genId(), name: '通用图片', description: '产品图片、宣传图等', fileTypes: ['.png','.jpg','.jpeg'], fileNamePattern: '*', binarySignature: '89504E47/FFD8FF', enabled: true },
+        { id: genId(), name: '通用办公文档', description: 'Word/Excel/PPT常规文档', fileTypes: ['.docx','.xlsx','.pptx'], fileNamePattern: '*', binarySignature: '504B0304', enabled: true },
+        { id: genId(), name: '文本日志', description: '测试日志、文本文件', fileTypes: ['.txt','.log','.csv'], fileNamePattern: '*', binarySignature: '', enabled: true },
+      ];
+      partners.value = [
+        { id: genId(), name: '深圳华创电子有限公司', contact: '陈工', email: 'chen@huachuang.com', addedAt: '2026-08-20 10:30:00' },
+        { id: genId(), name: '苏州芯测科技有限公司', contact: '刘工', email: 'liu@xince.com', addedAt: '2026-08-22 14:15:00' },
+        { id: genId(), name: '上海先进封装有限公司', contact: '王工', email: 'wang@advanced-pkg.com', addedAt: '2026-08-23 09:00:00' },
+      ];
+      const id1 = genId(), id2 = genId(), id3 = genId(), id4 = genId();
+      const demoSubs = [
+        { id: id1, submitTime: '2026-08-25 09:00:00', submitter: '张工', submitterDept: '研发部', receiverName: '陈工', receiverEmail: 'chen@huachuang.com', receiverType: 'partner', securityLevel: 'public', reason: '发送芯片公开datasheet给合作方', expiryDays: 30, expireDate: '2026-09-24', fileName: 'datasheet_NEX1234.pdf', fileCount: 2, totalSize: '3.4 MB', manifest: [{ idx:1, path:'datasheet_NEX1234.pdf', size:'2.4 MB', type:'.pdf', md5:'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6' }, { idx:2, path:'product_photo.jpg', size:'1.0 MB', type:'.jpg', md5:'e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2' }], autoApproved: true, approval1: null, approval2: null, ferryTime: '2026-08-25 09:00:01', downloadCount: 3, status: 'ready', statusClass: 'ready', statusText: '已就绪', archivePath: `/mnt/nas/archive/${id1}/` },
+        { id: id2, submitTime: '2026-08-25 10:30:00', submitter: '张工', submitterDept: '研发部', receiverName: '刘工', receiverEmail: 'liu@xince.com', receiverType: 'partner', securityLevel: 'internal', reason: '发送测试报告给测试合作方', expiryDays: 15, expireDate: '2026-09-09', fileName: 'test_report_2026Q3.xlsx', fileCount: 1, totalSize: '1.0 MB', manifest: [{ idx:1, path:'test_report_2026Q3.xlsx', size:'1.0 MB', type:'.xlsx', md5:'b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7' }], autoApproved: false, approval1: null, approval2: null, ferryTime: null, downloadCount: 0, status: 'pending-l1', statusClass: 'pending', statusText: '待一级审批', archivePath: `/mnt/nas/archive/${id2}/` },
+        { id: id3, submitTime: '2026-08-25 11:00:00', submitter: '张工', submitterDept: '研发部', receiverName: '赵工', receiverEmail: 'zhao@newvendor.com', receiverType: 'non-partner', securityLevel: 'secret', reason: '发送设计文件给新供应商评估', expiryDays: 7, expireDate: '2026-09-01', fileName: 'design_files_bundle.zip', fileCount: 4, totalSize: '8.5 MB', manifest: [{ idx:1, path:'[design_files_bundle.zip] design/schematic_v2.pdf', size:'3.0 MB', type:'.pdf', md5:'c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8' }, { idx:2, path:'[design_files_bundle.zip] design/board_layout.png', size:'5.0 MB', type:'.png', md5:'d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9' }, { idx:3, path:'[design_files_bundle.zip] design/bom_list.xlsx', size:'0.5 MB', type:'.xlsx', md5:'e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0' }, { idx:4, path:'[design_files_bundle.zip] design/readme.txt', size:'0.01 MB', type:'.txt', md5:'f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1' }], autoApproved: false, approval1: { approver:'李经理', action:'approve', comment:'同意，请高管审批', time:'2026-08-25 11:30:00' }, approval2: null, ferryTime: null, downloadCount: 0, status: 'pending-l2', statusClass: 'approving', statusText: '待二级审批', archivePath: `/mnt/nas/archive/${id3}/` },
+        { id: id4, submitTime: '2026-08-24 16:00:00', submitter: '张工', submitterDept: '研发部', receiverName: '未知联系人', receiverEmail: 'unknown@external.com', receiverType: 'non-partner', securityLevel: 'secret', reason: '外发源代码', expiryDays: 7, expireDate: '2026-08-31', fileName: 'source_code_v1.2.zip', fileCount: 4, totalSize: '8.0 MB', manifest: [{ idx:1, path:'[source_code_v1.2.zip] src/main.c', size:'20 KB', type:'.c', md5:'a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2' }, { idx:2, path:'[source_code_v1.2.zip] src/utils.c', size:'15 KB', type:'.c', md5:'b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3' }, { idx:3, path:'[source_code_v1.2.zip] include/header.h', size:'5 KB', type:'.h', md5:'c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4' }, { idx:4, path:'[source_code_v1.2.zip] Makefile', size:'2 KB', type:'', md5:'d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5' }], autoApproved: false, approval1: { approver:'李经理', action:'reject', comment:'源代码禁止外发，请走特殊审批流程', time:'2026-08-24 16:30:00' }, approval2: null, ferryTime: null, downloadCount: 0, status: 'rejected', statusClass: 'rejected', statusText: '已驳回', archivePath: `/mnt/nas/archive/${id4}/` },
+      ];
+      submissions.value = demoSubs;
+      logs.value = [
+        { id: genId(), time:'2026-08-25 09:00:00', type:'operation', user:'张工', action:'提交文件外发申请', detail:`提交单${id1.substring(0,8)}，2个文件，接收方：陈工(合作方)`, ip:'192.168.1.10' },
+        { id: genId(), time:'2026-08-25 09:00:00', type:'auto-approval', user:'system', action:'免审批自动通过', detail:`提交单${id1.substring(0,8)}，所有文件匹配特征码规则`, ip:'127.0.0.1' },
+        { id: genId(), time:'2026-08-25 09:00:01', type:'ferry', user:'system', action:'零拷贝摆渡完成', detail:`提交单${id1.substring(0,8)}，创建外网软链接，耗时~0.1s`, ip:'127.0.0.1' },
+        { id: genId(), time:'2026-08-25 09:15:30', type:'download', user:'陈工', action:'下载文件', detail:`提交单${id1.substring(0,8)}，datasheet_NEX1234.pdf`, ip:'203.0.113.50' },
+        { id: genId(), time:'2026-08-25 10:30:00', type:'operation', user:'张工', action:'提交文件外发申请', detail:`提交单${id2.substring(0,8)}，1个文件，接收方：刘工(合作方)`, ip:'192.168.1.10' },
+        { id: genId(), time:'2026-08-25 11:00:00', type:'operation', user:'张工', action:'提交文件外发申请', detail:`提交单${id3.substring(0,8)}，4个文件，接收方：赵工(非合作方)`, ip:'192.168.1.10' },
+        { id: genId(), time:'2026-08-25 11:30:00', type:'approval', user:'李经理', action:'通过一级审批', detail:`提交单${id3.substring(0,8)}，同意，请高管审批`, ip:'192.168.1.20' },
+        { id: genId(), time:'2026-08-24 16:00:00', type:'operation', user:'张工', action:'提交文件外发申请', detail:`提交单${id4.substring(0,8)}，4个文件，接收方：未知联系人(非合作方)`, ip:'192.168.1.10' },
+        { id: genId(), time:'2026-08-24 16:30:00', type:'approval', user:'李经理', action:'驳回一级审批', detail:`提交单${id4.substring(0,8)}，源代码禁止外发`, ip:'192.168.1.20' },
+        { id: genId(), time:'2026-08-25 08:00:00', type:'login', user:'admin', action:'用户登录', detail:'系统管理员登录系统', ip:'192.168.1.5' },
+        { id: genId(), time:'2026-08-25 07:00:00', type:'cleanup', user:'system', action:'软链接清理', detail:'清理过期外网软链接3个，归档文件保留', ip:'127.0.0.1' },
+      ];
+      saveData();
+    };
+
+    onMounted(() => { const saved = loadData(); if (saved && saved.submissions && saved.submissions.length) { submissions.value = saved.submissions; featureRules.value = saved.featureRules || []; partners.value = saved.partners || []; Object.assign(config, saved.config || {}); logs.value = saved.logs || []; } else { initDemoData(); } });
+
+    return {
+      roles, currentRole, currentPage, currentUser, menuGroups, onRoleChange,
+      submitForm, resetSubmitForm, simulateUpload, manifestRows, autoApprovalResult, submitApplication,
+      mySubmissions, viewSubmission, currentSubmission,
+      pendingApprovals, approvalDialogVisible, approvalComment, doApproval,
+      externalFiles, externalDetailVisible, currentExternalFile, viewExternalFile, downloadFile,
+      featureRules, ruleDialogVisible, editingRule, openRuleDialog, saveRule, deleteRule, saveFeatureRules,
+      partners, partnerDialogVisible, editingPartner, openPartnerDialog, savePartner, deletePartner,
+      level1Approvers, level2Approvers, config, saveConfig,
+      logs, logFilter, resetLogFilter, filteredLogs, logTypeLabel, logTypeColor, exportLogs,
+      archiveFilter, filteredArchive, stats, resetDemoData,
+      formatSize, getFileIcon,
+    };
+  }
+});
+
+app.use(ElementPlus);
+app.mount('#app');
+</script>
+</body>
+</html>

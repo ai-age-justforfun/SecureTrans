@@ -1,0 +1,7 @@
+Flask==3.0.0
+Flask-Login==0.6.3
+bcrypt==4.1.2
+APScheduler==3.10.4
+gunicorn==21.2.0
+# AD/LDAP 对接（PMF 阶段启用，PSF 阶段可注释）
+# ldap3==2.9.1

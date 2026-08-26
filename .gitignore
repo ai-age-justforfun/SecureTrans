@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# 数据库和日志
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+
+# 运行时数据（测试数据，不提交）
+backend-flask/data/
+backend-flask/nas/
+backend/nas/
+backend/data/
+
+# 环境变量（含密钥，不提交）
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时文件
+*.tmp
+*.bak
+*.old
