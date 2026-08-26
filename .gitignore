@@ -19,10 +19,9 @@ build/
 *.log
 
 # 运行时数据（测试数据，不提交）
-backend-flask/data/
-backend-flask/nas/
-backend/nas/
-backend/data/
+# 通用模式：匹配任意层级的 data/ 和 nas/ 目录
+data/
+nas/
 
 # 环境变量（含密钥，不提交）
 .env
