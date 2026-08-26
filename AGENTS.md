@@ -18,7 +18,7 @@
 
 ### 后端（Python / Flask）
 
-- **单文件架构**：所有后端逻辑在 `backend-flask/app.py` 中，不拆分模块（PSF阶段保持简单）
+- **单文件架构**：所有后端逻辑在 `Phase1-PSF/sprint-3/backend-flask/app.py` 中，不拆分模块（PSF阶段保持简单）
 - **配置**：所有可配置项通过环境变量读取，默认值在代码中定义，`.env` 文件覆盖
 - **数据库**：SQLite，使用 `sqlite3` 标准库，不使用 ORM（保持轻量）
 - **认证**：Flask-Login，本地用户 + AD用户（stub）统一会话管理
@@ -56,12 +56,14 @@ docs(deploy): 补充封闭数据中心部署指南
 
 | 文档 | 位置 | 更新时机 |
 |------|------|---------|
-| PRD | `SecureTrans_PRD_v*.md` | 需求变更时 |
-| 流程文档 | `SecureTrans_PSF标准流程_v*.md` / `PMF` | 流程调整时 |
-| 测试用例 | `SecureTrans_测试用例_v*.md` | 新增功能时 |
-| 迭代小结 | `docs/02-psf-sprintN-retrospective.md` | 每个Sprint结束 |
-| 测试报告 | `docs/03-test-report.md` | 每次全量测试后 |
-| 部署指南 | `securetrans-deploy/DEPLOY.md` | 部署流程变更时 |
+| PRD | `docs/02-prd-v*.md` | 需求变更时 |
+| PSF流程 | `docs/03-psf-process.md` | 流程调整时 |
+| PMF流程 | `docs/04-pmf-process.md` | 流程调整时 |
+| 测试用例 | `docs/05-test-cases.md` | 新增功能时 |
+| 测试报告 | `docs/06-test-report.md` | 每次全量测试后 |
+| 迭代小结 | `docs/07-psf-sprintN-retrospective.md` | 每个Sprint结束 |
+| 部署指南 | `Phase1-PSF/sprint-4/securetrans-deploy/DEPLOY.md` | 部署流程变更时 |
+| Sprint交付说明 | `Phase1-PSF/sprint-N/README.md` | 每个Sprint结束 |
 | README | `README.md` | 项目概况变更时 |
 
 ### 文档原则
@@ -93,7 +95,7 @@ docs(deploy): 补充封闭数据中心部署指南
 ### 每个Sprint必须交付
 
 - [ ] 可工作的代码（test_api.py 全通过）
-- [ ] 迭代小结文档（docs/02-psf-sprintN-retrospective.md）
+- [ ] 迭代小结文档（docs/07-psf-sprintN-retrospective.md）
 - [ ] 测试报告（如测试有变化）
 - [ ] Git 提交（清晰的commit信息）
 - [ ] 推送到 Gitea 仓库
@@ -104,7 +106,7 @@ docs(deploy): 补充封闭数据中心部署指南
 
 ### 自动化测试
 
-- **测试脚本**：`backend-flask/test_api.py`，使用Python标准库urllib，无额外依赖
+- **测试脚本**：`Phase1-PSF/sprint-3/backend-flask/test_api.py`，使用Python标准库urllib，无额外依赖
 - **测试范围**：13大类35项，覆盖所有API和核心业务流程
 - **运行方式**：`python test_api.py`，预期通过率100%
 - **新增功能**：必须在 test_api.py 中添加对应测试用例
@@ -122,7 +124,7 @@ docs(deploy): 补充封闭数据中心部署指南
 
 ### 部署包
 
-- **位置**：`securetrans-deploy/`，压缩包 `securetrans-deploy.tar.gz`
+- **位置**：`Phase1-PSF/sprint-4/securetrans-deploy/`，压缩包 `Phase1-PSF/sprint-4/securetrans-deploy.tar.gz`
 - **内容**：清理后的后端代码（不含venv/测试数据）+ 部署脚本 + 配置模板 + 前端
 - **大小**：压缩后约40KB
 - **更新**：代码变更后重新打包，替换tar.gz

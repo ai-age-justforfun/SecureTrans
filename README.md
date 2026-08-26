@@ -65,17 +65,17 @@ bash verify.sh
 ```
 SecureTrans/
 ├── README.md                              # 本文件（项目入口）
-├── AGENTS.md                              # AI协作指南
-├── SecureTrans_PRD_v1.4.md                # 产品需求文档（最新）
-├── SecureTrans_PRD_v1.3.md                # PRD历史版本
-├── SecureTrans_PSF标准流程_v1.0.md        # PSF阶段流程
-├── SecureTrans_PMF标准流程_v1.0.md        # PMF阶段流程（下一阶段准备）
-├── SecureTrans_测试用例_v1.0.md           # 测试用例（15个场景）
-├── docs/                                  # 研发过程文档
+├── AGENTS.md                              # AI协作指南（工具默认扫根目录）
+├── .gitignore                             # Git忽略规则
+├── docs/                                  # 所有项目文档（数字前缀排序）
 │   ├── 00-lean-startup-phase-map.md       # Lean Startup三阶段映射与决策门
 │   ├── 01-scrum-io-definition.md          # Scrum各阶段输入输出定义
-│   ├── 02-psf-sprint4-retrospective.md    # PSF Sprint4 迭代小结
-│   └── 03-test-report.md                  # 测试报告（35项全通过）
+│   ├── 02-prd-v1.4.md                     # 产品需求文档（最新）
+│   ├── 03-psf-process.md                  # PSF阶段标准流程
+│   ├── 04-pmf-process.md                  # PMF阶段标准流程（下一阶段准备）
+│   ├── 05-test-cases.md                   # 测试用例（15个场景）
+│   ├── 06-test-report.md                  # 测试报告（35项全通过）
+│   └── 07-psf-sprint4-retrospective.md    # PSF Sprint4 迭代小结
 └── Phase1-PSF/                            # 第一阶段：PSF（问题-方案匹配验证）
     ├── sprint-1/                          # Sprint 1：前端原型（HTML/JS/CSS）
     │   ├── ferry-mvp-prototype.html       # 前端原型（主版本）
@@ -185,13 +185,17 @@ Sprint 演进线：
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
 - [Scrum各阶段输入输出定义](docs/01-scrum-io-definition.md)
-- [PSF Sprint4迭代小结](docs/02-psf-sprint4-retrospective.md)
+- [产品需求文档 PRD v1.4](docs/02-prd-v1.4.md)
+- [PSF阶段标准流程](docs/03-psf-process.md)
+- [测试用例](docs/05-test-cases.md)
+- [测试报告（35项全通过）](docs/06-test-report.md)
+- [PSF Sprint4迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [Sprint 4 部署交付说明](Phase1-PSF/sprint-4/README.md)
 
 ### 下一阶段
 **PMF（产品-市场匹配验证）**— 流程文档已就绪，核心是AD/LDAP集成和真实部署试点。
 
-详见 [PMF标准流程](SecureTrans_PMF标准流程_v1.0.md)。
+详见 [PMF标准流程](docs/04-pmf-process.md)。
 
 ---
 
