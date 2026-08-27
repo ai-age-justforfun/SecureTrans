@@ -286,11 +286,20 @@ AI Agent 生成代码 → 自动运行测试 → 提交到 Git → CI 自动验�
 
 ---
 
-## 七、立即可以做的 3 件事
+## 七、生产验证后启动的 3 件事（当前为待办）
 
-1. **配置 Gitea Actions**：在 Gitea 中启用 Actions，添加 Runner，创建 `.gitea/workflows/ci.yml`
+> ⏸️ **状态说明**：以下 3 项为 CI/CD 启动清单，**待生产环境（封闭数据中心 Rocky Linux）部署测试全部通过后再启动**。
+> 当前 PSF 阶段已完成的配置管理：Gitea 仓库（main 单分支）+ 一键打包（package.sh）+ 一键部署（deploy.sh）+ 74 项自动化测试。
+
+1. **配置 Gitea Actions**：在 Gitea 中启用 Actions，添加 Runner，创建 `.gitea/workflows/ci.yml`（代码提交→自动测试→自动打包）
 2. **创建 env/ 目录**：分离测试环境和生产环境配置，密钥用 Ansible Vault 加密
 3. **搭建本地 PyPI 镜像**：在数据中心部署 pypiserver，预下载所有 Python 依赖
+
+**启动条件**（全部满足后执行）：
+- [ ] 生产环境 `infra/deploy.sh` 一键部署成功
+- [ ] 生产环境 `infra/verify.sh` 74 项全量测试通过
+- [ ] AD/LDAP 真实对接（与 sssd 兼容）验证完成
+- [ ] NAS 挂载确认 staging/external/archive 同文件系统（os.rename 0拷贝生效）
 
 ---
 
