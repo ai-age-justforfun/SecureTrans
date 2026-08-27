@@ -236,6 +236,176 @@ test("创建 AD 用户角色映射", code == 200, f"code={code}, data={data}")
 code, data = request('POST', '/api/admin/ad/search', data={"keyword": "zhang"})
 test("搜索 AD 用户（打桩模拟）", code == 200 and isinstance(data, list), f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
 
+# 21. 合作方白名单（partners）
+print("\n--- 10f. 合作方白名单（partners） ---")
+
+# 创建合作方
+code, data = request('POST', '/api/admin/partners', json_data={
+    "name": "Nexus半导体", "contact": "张经理", "email": "partner@nexus.com"
+})
+partner_id = data.get('id', '')
+test("创建合作方", code == 200 and partner_id, f"code={code}, id={partner_id}")
+
+# 重复创建被拒绝
+code, data = request('POST', '/api/admin/partners', json_data={
+    "name": "Nexus半导体", "contact": "", "email": ""
+})
+test("重复创建合作方被拒绝", code == 400, f"code={code}")
+
+# 合作方列表
+code, data = request('GET', '/api/admin/partners')
+partner_count = len(data) if isinstance(data, list) else 0
+test("合作方白名单列表", code == 200 and partner_count >= 1, f"code={code}, count={partner_count}")
+
+# 白名单自动判定生效：上传EXE(需审批) → 创建提交单 receiverType=auto → 接收方为白名单成员 → 判定为partner
+partner_exe = os.path.join(test_dir, "partner_test.exe")
+with open(partner_exe, 'wb') as f:
+    f.write(b"MZ" + b"\x00" * 800)
+code, data = upload_file(partner_exe, "partner_test.exe")
+partner_temp_id = data.get('tempId')
+code, data = request('POST', '/api/submissions', json_data={
+    "tempIds": [partner_temp_id],
+    "receiverName": "Nexus半导体",
+    "receiverEmail": "partner@nexus.com",
+    "receiverType": "auto",  # 自动判定
+    "securityLevel": "internal",
+    "reason": "合作方白名单自动判定测试",
+    "expiryDays": 30
+})
+partner_sub_id = data.get('id')
+code, data = request('GET', f'/api/submissions/{partner_sub_id}')
+test("白名单自动判定为合作方(receiverType=auto)", code == 200 and data.get('receiver_type') == 'partner',
+     f"code={code}, receiver_type={data.get('receiver_type')}")
+
+# 合作方一级审批通过 → 直接摆渡 external（无需二级）
+code, data = request('POST', f'/api/submissions/{partner_sub_id}/approve', json_data={
+    "action": "approve", "comment": "合作方一级审批直接摆渡"
+})
+test("合作方一级审批通过直接摆渡到external", code == 200 and data.get('status') == 'approved',
+     f"code={code}, status={data.get('status')}")
+
+# 删除合作方
+code, data = request('DELETE', f'/api/admin/partners/{partner_id}')
+test("删除合作方", code == 200, f"code={code}, data={data}")
+
+# 22. 审批人配置（approvers）
+print("\n--- 10g. 审批人配置（approvers） ---")
+
+# 创建本地用户作为审批人（模拟AD账号，PSF阶段用本地账号）
+code, data = request('POST', '/api/admin/local-users', json_data={
+    "username": "deptmgr1", "password": "Test@123456", "displayName": "部门主管1",
+    "email": "dept1@company.com", "role": "internal-user"
+})
+test("创建本地用户-部门主管(deptmgr1)", code == 200, f"code={code}")
+code, data = request('POST', '/api/admin/local-users', json_data={
+    "username": "execmgr1", "password": "Test@123456", "displayName": "高管1",
+    "email": "exec1@company.com", "role": "internal-user"
+})
+test("创建本地用户-高管(execmgr1)", code == 200, f"code={code}")
+code, data = request('POST', '/api/admin/local-users', json_data={
+    "username": "notapprover", "password": "Test@123456", "displayName": "普通用户",
+    "email": "na@company.com", "role": "internal-user"
+})
+test("创建本地用户-未配置审批人(notapprover)", code == 200, f"code={code}")
+
+# 配置审批人
+code, data = request('POST', '/api/admin/approvers', json_data={
+    "level": 1, "username": "deptmgr1", "displayName": "部门主管1", "scope": "all"
+})
+approver_id = data.get('id', '')
+test("配置一级审批人(deptmgr1)", code == 200 and approver_id, f"code={code}, id={approver_id}")
+
+code, data = request('POST', '/api/admin/approvers', json_data={
+    "level": 2, "username": "execmgr1", "displayName": "高管1", "scope": "all"
+})
+test("配置二级审批人(execmgr1)", code == 200, f"code={code}, data={data}")
+
+# 重复配置被拒绝
+code, data = request('POST', '/api/admin/approvers', json_data={
+    "level": 1, "username": "deptmgr1", "displayName": "重复", "scope": "all"
+})
+test("重复配置审批人被拒绝", code == 400, f"code={code}")
+
+# 非法级别被拒绝
+code, data = request('POST', '/api/admin/approvers', json_data={
+    "level": 3, "username": "someone", "displayName": "非法", "scope": "all"
+})
+test("非法审批级别被拒绝", code == 400, f"code={code}")
+
+# 审批人列表
+code, data = request('GET', '/api/admin/approvers')
+test("审批人配置列表", code == 200 and len(data) >= 2,
+     f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
+
+# 权限控制：非admin不能管理
+request('POST', '/api/auth/login', json_data={"username": "notapprover", "password": "Test@123456"})
+code, data = request('GET', '/api/admin/partners')
+test("非admin访问合作方白名单被拒绝", code == 403, f"code={code}")
+code, data = request('GET', '/api/admin/approvers')
+test("非admin访问审批人配置被拒绝", code == 403, f"code={code}")
+
+# 审批人配置生效：未配置的普通用户不能审批
+# 先用admin创建需要审批的提交单(EXE, non-partner)
+request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+ap_exe = os.path.join(test_dir, "approver_test.exe")
+with open(ap_exe, 'wb') as f:
+    f.write(b"MZ" + b"\x00" * 900)
+code, data = upload_file(ap_exe, "approver_test.exe")
+ap_temp_id = data.get('tempId')
+code, data = request('POST', '/api/submissions', json_data={
+    "tempIds": [ap_temp_id],
+    "receiverName": "外部公司",
+    "receiverEmail": "ext@company.com",
+    "receiverType": "non-partner",
+    "securityLevel": "secret",
+    "reason": "审批人配置生效测试",
+    "expiryDays": 30
+})
+ap_sub_id = data.get('id')
+test("创建审批人测试提交单(pending)", code == 200 and data.get('status') == 'pending',
+     f"code={code}, status={data.get('status')}")
+
+# 未配置的普通用户审批被拒绝
+request('POST', '/api/auth/login', json_data={"username": "notapprover", "password": "Test@123456"})
+code, data = request('POST', f'/api/submissions/{ap_sub_id}/approve', json_data={
+    "action": "approve", "comment": "普通用户尝试审批"
+})
+test("未配置的普通用户审批被拒绝", code == 403, f"code={code}, data={data}")
+
+# 配置的一级审批人 deptmgr1 可审批通过
+request('POST', '/api/auth/login', json_data={"username": "deptmgr1", "password": "Test@123456"})
+code, data = request('POST', f'/api/submissions/{ap_sub_id}/approve', json_data={
+    "action": "approve", "comment": "配置审批人一级通过"
+})
+test("配置的一级审批人审批通过(进入二级)", code == 200 and data.get('status') == 'pending_approval_2',
+     f"code={code}, status={data.get('status')}")
+
+# 配置的二级审批人 execmgr1 可审批通过
+request('POST', '/api/auth/login', json_data={"username": "execmgr1", "password": "Test@123456"})
+code, data = request('POST', f'/api/submissions/{ap_sub_id}/approve', json_data={
+    "action": "approve", "comment": "配置审批人二级通过"
+})
+test("配置的二级审批人审批通过(摆渡到external)", code == 200 and data.get('status') == 'approved',
+     f"code={code}, status={data.get('status')}")
+
+# 切回 admin，清理测试数据
+request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+code, data = request('DELETE', f'/api/admin/approvers/{approver_id}')
+test("删除审批人配置", code == 200, f"code={code}, data={data}")
+
+# 清理剩余审批人配置(execmgr1)
+code, data = request('GET', '/api/admin/approvers')
+for a in (data if isinstance(data, list) else []):
+    if a.get('username') == 'execmgr1':
+        request('DELETE', f"/api/admin/approvers/{a.get('id')}")
+        break
+test("清理剩余审批人配置", True, "execmgr1 配置已删除")
+
+# 清理测试本地用户
+for u in ["deptmgr1", "execmgr1", "notapprover"]:
+    request('DELETE', f'/api/admin/local-users/{u}')
+test("清理测试本地用户", True, "deptmgr1/execmgr1/notapprover 已删除")
+
 # 18. 系统配置
 print("\n--- 10. 系统配置 ---")
 code, data = request('GET', '/api/config/feature-rules')

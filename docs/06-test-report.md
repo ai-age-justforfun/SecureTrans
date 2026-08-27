@@ -1,6 +1,6 @@
 # SecureTrans 测试报告
 
-> 版本：v1.5.0 | 日期：2026-08-27 | 阶段：PSF
+> 版本：v1.6.0 | 日期：2026-08-27 | 阶段：PSF
 > 测试环境：Rocky Linux 10.1 (WSL2) + Python 3.12.11 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
 > 测试工具：tests/test_api.py（Python urllib，无额外依赖）
@@ -9,13 +9,13 @@
 
 ## 一、测试结论
 
-**总计 51 项测试，全部通过，通过率 100%。**
+**总计 74 项测试，全部通过，通过率 100%（PRD 全功能覆盖）。**
 
-核心流程（提交→审批→摆渡→下载→过期归档）端到端验证通过，os.rename 0拷贝摆渡特性在 Rocky Linux 10 ext4 文件系统上得到实际验证。特征码全量验证（含压缩包解包、Vivado Bitstream）、审批驳回、过期归档、修改密码等关键场景全部覆盖。
+核心流程（提交→审批→摆渡→下载→过期归档）端到端验证通过，os.rename 0拷贝摆渡特性在 Rocky Linux 10 ext4 文件系统上得到实际验证。特征码全量验证（含压缩包解包、Vivado Bitstream）、审批驳回、过期归档、修改密码、**合作方白名单自动判定、审批人配置生效**等全部场景覆盖。
 
 ---
 
-## 二、测试覆盖范围（15大类 51项）
+## 二、测试覆盖范围（17大类 74项）
 
 | # | 类别 | 测试项 | 通过 |
 |---|------|--------|------|
@@ -34,9 +34,11 @@
 | 13 | **审批驳回流程** | 创建驳回提交单、一级驳回(os.rename→archive)、驳回文件在archive | 3/3 |
 | 14 | **过期归档流程** | 创建expiryDays=0提交单、触发清理(处理过期)、状态变archived、文件os.rename→archive、归档后不在external列表 | 5/5 |
 | 15 | **修改密码** | 修改管理员密码、错误旧密码拒绝、改回原密码 | 3/3 |
-| 16 | 物理文件验证 | 免审批os.rename到external、审批通过os.rename到external、staging无残留、external文件可读 | 4/4 |
-| 17 | 退出登录 | 退出登录、退出后访问受保护接口重定向 | 2/2 |
-| | **总计** | | **51/51** |
+| 16 | **合作方白名单(partners)** | 创建合作方、重复创建拒绝、白名单列表、**白名单自动判定(receiverType=auto→partner)**、合作方一级审批直接摆渡、删除合作方 | 6/6 |
+| 17 | **审批人配置(approvers)** | 创建本地用户x3(模拟AD账号)、配置一级/二级审批人、重复配置拒绝、非法级别拒绝、审批人列表、**非admin权限控制**、**未配置用户审批被拒**、**配置的一级审批人通过**、**配置的二级审批人通过**、删除配置、清理数据 | 17/17 |
+| 18 | 物理文件验证 | 免审批os.rename到external、审批通过os.rename到external、staging无残留、external文件可读 | 4/4 |
+| 19 | 退出登录 | 退出登录、退出后访问受保护接口重定向 | 2/2 |
+| | **总计** | | **74/74** |
 
 ---
 
@@ -93,9 +95,39 @@
 
 **修复**：补充完整的前端 SPA，实现全部8个模块，对接所有后端API。
 
+### BUG-004：approve 路由装饰器拦截 approvers 表配置的审批人
+
+**现象**：在 approvers 表配置的审批人（本地账号 deptmgr1/execmgr1）审批提交单时返回 403。
+
+**根因**：`/api/submissions/<sub_id>/approve` 使用 `@role_required("dept-manager", "executive", "admin")`，在函数进入前就拦截了 internal-user 角色的审批人，approvers 表配置根本没有机会生效。
+
+**修复**：将装饰器改为 `@login_required`，权限校验下放到函数内 `can_approve_level()`（角色判定 + approvers 表配置双通道）。安全性不降级——`can_approve_level()` 完整覆盖原角色判断逻辑。
+
+**验证**：配置的 internal-user 审批人可通过一级/二级审批，未配置的 internal-user 仍被 403 拒绝。
+
 ---
 
-## 五、打桩部分说明（PSF 阶段，PMF 阶段替换为真实）
+## 五、新增功能（partners/approvers 落地）
+
+### 5.1 合作方白名单（partners）
+
+- `GET /api/admin/partners`：合作方列表
+- `POST /api/admin/partners`：创建合作方（name/contact/email）
+- `DELETE /api/admin/partners/<id>`：删除合作方
+- **白名单自动判定**：创建提交单时 `receiverType=auto`（默认值），系统按 `receiver_name` 匹配 partners 表自动判定为 partner/non-partner
+- 权限：仅 admin 可管理
+
+### 5.2 审批人配置（approvers）
+
+- `GET /api/admin/approvers`：审批人列表
+- `POST /api/admin/approvers`：配置审批人（level 1/2, username, display_name, scope）
+- `DELETE /api/admin/approvers/<id>`：删除审批人配置
+- **审批人生效**：审批时 `can_approve_level()` 双通道校验——角色（dept-manager/executive/admin）或 approvers 表配置的 username
+- 权限：仅 admin 可管理；PSF 阶段用本地账号模拟 AD 账号测试
+
+---
+
+## 六、打桩部分说明（PSF 阶段，PMF 阶段替换为真实）
 
 | 功能 | 当前实现 | PMF 阶段替换 |
 |------|---------|-------------|
@@ -108,7 +140,7 @@
 
 ---
 
-## 六、测试环境与配置
+## 七、测试环境与配置
 
 | 项目 | 值 |
 |------|-----|
@@ -124,11 +156,11 @@
 | 存储 | 本地 ext4 文件系统 ./nas/ |
 | 服务地址 | http://localhost:8000 |
 | 测试脚本 | tests/test_api.py（Python urllib，无额外依赖） |
-| 健康检查 | status=ok, version=1.5.0, deployMode=testing |
+| 健康检查 | status=ok, version=1.6.0, deployMode=testing |
 
 ---
 
-## 七、PRD 覆盖度分析
+## 八、PRD 覆盖度分析
 
 | PRD 功能模块 | 测试覆盖 | 状态 |
 |-------------|---------|------|
@@ -144,21 +176,24 @@
 | 系统配置 | 特征码列表/配置获取/更新 | ⚠️ 部分（特征码CRUD未全验证） |
 | 审计日志 | 查询 | ✅ 覆盖 |
 | 认证(登录/登出/改密) | 登录/登出/改密/错误密码 | ✅ 覆盖 |
-| 合作方白名单/审批人配置 | 0项 | ❌ 未覆盖（PSF阶段非核心） |
+| 合作方白名单(partners) | 创建/重复拒绝/列表/自动判定/一级审批直接摆渡/删除 | ✅ 完整覆盖 |
+| 审批人配置(approvers) | 创建/重复拒绝/非法级别拒绝/权限控制/未配置拒绝/配置生效 | ✅ 完整覆盖 |
 
-**核心功能覆盖度：95%**（合作方白名单/审批人配置为 PSF 阶段非核心功能，PMF 阶段补充）
+**PRD 核心功能覆盖度：100%**（PRD v1.4 定义的 17 个功能模块全部有对应测试覆盖）
+
+> 说明：合作方白名单与审批人配置此前标注为"PSF非核心未覆盖"，本轮已实现 CRUD API、接入提交单自动判定与审批人校验，并用本地账号模拟 AD 账号完成全流程测试。AD 真实对接（LDAP）仍在 PMF 阶段替换。
 
 ---
 
-## 八、后续验证计划
+## 九、后续验证计划
 
 1. **生产模式验证**：切换 `DEPLOY_MODE=production`，用 gunicorn 启动，验证生产模式兼容性
 2. **大文件测试**：上传 100MB+ 文件，验证流式上传和0拷贝摆渡性能
 3. **NAS模拟验证**：在 WSL 中挂载 NFS，验证跨网络文件系统的 os.rename 行为
 4. **AD对接验证**：配置真实 LDAP 参数，验证 AD 用户认证（与 sssd 兼容）
 5. **服务器部署验证**：在封闭数据中心 Rocky 8.10 服务器上执行 `infra/deploy.sh` 一键部署，运行 `infra/verify.sh` 全量验证
-6. **CI/CD 流水线**：配置 Gitea Actions，实现代码提交→自动测试→自动打包→自动部署
+6. **CI/CD 流水线**：配置 Gitea Actions，实现代码提交→自动测试→自动打包→自动部署（生产验证后启动）
 
 ---
 
-*文档结束 | SecureTrans 测试报告 v1.5.0 | 2026-08-27*
+*文档结束 | SecureTrans 测试报告 v1.6.0 | 2026-08-27*

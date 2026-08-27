@@ -114,7 +114,7 @@ main ────●────●────●────●────  �
 1. **需求**：Sprint Planning，拆分Story，确认验收标准
 2. **设计**：复杂功能技术方案，API定义，ADR记录
 3. **开发**：编码 + 单元测试 + 每日站会
-4. **测试**：全量回归（`tests/test_api.py` 51项）+ Bug修复
+4. **测试**：全量回归（`tests/test_api.py` 74项）+ Bug修复
 5. **验证**：Sprint Review，PO验收，收集反馈
 6. **复盘**：Retrospective，输出迭代小结文档（`docs/07-psf-sprintN-retrospective.md`）
 
@@ -133,7 +133,7 @@ main ────●────●────●────●────  �
 ### 自动化测试
 
 - **测试脚本**：`tests/test_api.py`，使用Python标准库urllib，无额外依赖
-- **测试范围**：13大类51项，覆盖所有API和核心业务流程
+- **测试范围**：17大类74项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置）
 - **运行方式**：先启动服务（`cd src && python app.py`），再 `cd tests && python test_api.py`，预期通过率100%
 - **新增功能**：必须在 test_api.py 中添加对应测试用例
 
@@ -160,7 +160,7 @@ main ────●────●────●────●────  �
 ### 部署脚本（infra/）
 
 - `infra/deploy.sh`：一键部署（9步自动化），必须在Linux服务器以root运行
-- `infra/verify.sh`：部署验证（51项全量测试），确认部署正确
+- `infra/verify.sh`：部署验证（74项全量测试），确认部署正确
 - `infra/nginx-securetrans.conf`：Nginx反向代理配置
 - `infra/securetrans.service`：systemd服务配置
 - 脚本必须使用LF换行，不能有CRLF

@@ -330,6 +330,35 @@ def add_audit_log(user: str, action: str, target: str = "", detail: str = "", ip
     )
     db.commit()
 
+def is_partner(name: str) -> bool:
+    """判断接收方是否为合作方白名单成员（名称精确或包含匹配）"""
+    if not name:
+        return False
+    db = get_db()
+    rows = db.execute("SELECT name FROM partners").fetchall()
+    name = name.strip()
+    for r in rows:
+        pname = r["name"].strip()
+        if name == pname or pname in name:
+            return True
+    return False
+
+def can_approve_level(level: int) -> bool:
+    """判断当前用户是否有权审批指定级别（角色判定或 approvers 表配置，宽松兼容）"""
+    if current_user.role == "admin":
+        return True
+    if level == 1:
+        if current_user.role in ("dept-manager", "executive"):
+            return True
+    elif level == 2:
+        if current_user.role == "executive":
+            return True
+    # approvers 表显式配置
+    db = get_db()
+    row = db.execute("SELECT COUNT(*) as c FROM approvers WHERE level=? AND username=?",
+                     (level, current_user.username)).fetchone()
+    return row["c"] > 0
+
 def row_to_dict(row) -> dict:
     if row is None:
         return None
@@ -874,7 +903,10 @@ def api_create_submission():
     temp_ids = data.get("tempIds", [])
     receiver_name = data.get("receiverName", "")
     receiver_email = data.get("receiverEmail", "")
-    receiver_type = data.get("receiverType", "non-partner")
+    # receiverType: partner/non-partner/auto；auto 时按合作方白名单自动判定
+    receiver_type = data.get("receiverType", "auto")
+    if receiver_type == "auto":
+        receiver_type = "partner" if is_partner(receiver_name) else "non-partner"
     security_level = data.get("securityLevel", "internal")
     reason = data.get("reason", "")
     expiry_days = data.get("expiryDays", 30)
@@ -1013,9 +1045,9 @@ def api_my_pending():
 # ============================================================
 @app.route("/api/submissions/<sub_id>/approve", methods=["POST"])
 @login_required
-@role_required("dept-manager", "executive", "admin")
 def api_approve(sub_id):
-    """审批：通过/驳回。通过后 os.rename 到 external（0拷贝摆渡）"""
+    """审批：通过/驳回。通过后 os.rename 到 external（0拷贝摆渡）
+    权限：角色（dept-manager/executive/admin）或 approvers 表配置的审批人"""
     data = request.get_json()
     action = data.get("action", "")  # approve / reject
     comment = data.get("comment", "")
@@ -1028,12 +1060,14 @@ def api_approve(sub_id):
     if not sub:
         return jsonify({"error": "提交单不存在"}), 404
 
-    # 判断审批级别
+    # 判断审批级别（角色或 approvers 表配置校验）
     if sub["status"] == "pending":
         level = 1
+        if not can_approve_level(1):
+            return jsonify({"error": "需要部门主管一级审批"}), 403
     elif sub["status"] == "pending_approval_2":
         level = 2
-        if current_user.role not in ("executive", "admin"):
+        if not can_approve_level(2):
             return jsonify({"error": "需要公司高管二级审批"}), 403
     else:
         return jsonify({"error": "当前状态不需要审批"}), 400
@@ -1239,6 +1273,99 @@ def api_search_ad():
         return jsonify(result)
     # TODO: 生产环境真实 AD 查询
     return jsonify([])
+
+# ============================================================
+# 路由：合作方白名单（admin）
+# ============================================================
+@app.route("/api/admin/partners")
+@login_required
+@role_required("admin")
+def api_list_partners():
+    db = get_db()
+    rows = db.execute("SELECT * FROM partners ORDER BY created_at DESC").fetchall()
+    return jsonify(rows_to_list(rows))
+
+@app.route("/api/admin/partners", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_create_partner():
+    data = request.get_json()
+    name = data.get("name", "").strip()
+    contact = data.get("contact", "")
+    email = data.get("email", "")
+    if not name:
+        return jsonify({"error": "合作方名称不能为空"}), 400
+    db = get_db()
+    exists = db.execute("SELECT COUNT(*) as c FROM partners WHERE name=?", (name,)).fetchone()["c"]
+    if exists:
+        return jsonify({"error": "合作方已存在"}), 400
+    db.execute(
+        "INSERT INTO partners (id,name,contact,email,created_at) VALUES (?,?,?,?,?)",
+        (str(uuid.uuid4()), name, contact, email, now_str())
+    )
+    db.commit()
+    partner_id = db.execute("SELECT id FROM partners WHERE name=?", (name,)).fetchone()["id"]
+    add_audit_log(current_user.username, "create_partner", name, "添加合作方白名单", get_client_ip())
+    return jsonify({"message": "合作方添加成功", "id": partner_id})
+
+@app.route("/api/admin/partners/<partner_id>", methods=["DELETE"])
+@login_required
+@role_required("admin")
+def api_delete_partner(partner_id):
+    db = get_db()
+    db.execute("DELETE FROM partners WHERE id=?", (partner_id,))
+    db.commit()
+    add_audit_log(current_user.username, "delete_partner", partner_id, "删除合作方", get_client_ip())
+    return jsonify({"message": "删除成功"})
+
+# ============================================================
+# 路由：审批人配置（admin）
+# ============================================================
+@app.route("/api/admin/approvers")
+@login_required
+@role_required("admin")
+def api_list_approvers():
+    db = get_db()
+    rows = db.execute("SELECT * FROM approvers ORDER BY level,display_name").fetchall()
+    return jsonify(rows_to_list(rows))
+
+@app.route("/api/admin/approvers", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_create_approver():
+    data = request.get_json()
+    level = int(data.get("level", 1))
+    username = data.get("username", "").strip()
+    display_name = data.get("displayName", username)
+    scope = data.get("scope", "all")
+    if level not in (1, 2):
+        return jsonify({"error": "审批级别只能为1或2"}), 400
+    if not username:
+        return jsonify({"error": "审批人用户名不能为空"}), 400
+    db = get_db()
+    exists = db.execute("SELECT COUNT(*) as c FROM approvers WHERE level=? AND username=?",
+                        (level, username)).fetchone()["c"]
+    if exists:
+        return jsonify({"error": "该审批人已配置在此级别"}), 400
+    db.execute(
+        "INSERT INTO approvers (id,level,username,display_name,scope) VALUES (?,?,?,?,?)",
+        (str(uuid.uuid4()), level, username, display_name, scope)
+    )
+    db.commit()
+    approver_id = db.execute("SELECT id FROM approvers WHERE level=? AND username=?", (level, username)).fetchone()["id"]
+    add_audit_log(current_user.username, "create_approver", username,
+                  f"配置为{level}级审批人", get_client_ip())
+    return jsonify({"message": "审批人配置成功", "id": approver_id})
+
+@app.route("/api/admin/approvers/<approver_id>", methods=["DELETE"])
+@login_required
+@role_required("admin")
+def api_delete_approver(approver_id):
+    db = get_db()
+    db.execute("DELETE FROM approvers WHERE id=?", (approver_id,))
+    db.commit()
+    add_audit_log(current_user.username, "delete_approver", approver_id, "删除审批人配置", get_client_ip())
+    return jsonify({"message": "删除成功"})
 
 # ============================================================
 # 路由：系统配置
