@@ -39,6 +39,12 @@ STATIC_DIR = BASE_DIR / "static"
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
 MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(1 * 1024 * 1024 * 1024)))  # 1GB 上传上限
 
+# 部署模式：testing（本地文件系统+Flask自带服务器）/ production（NAS+gunicorn）
+# testing 为默认值，适合开发和测试环境验证；生产环境设为 production
+DEPLOY_MODE = os.getenv("DEPLOY_MODE", "testing").lower()
+if DEPLOY_MODE not in ("testing", "production"):
+    DEPLOY_MODE = "testing"
+
 # AD 配置（LDAP 直连，与 sssd 兼容）
 AD_ENABLED = os.getenv("AD_ENABLED", "false").lower() == "true"
 AD_HOST = os.getenv("AD_HOST", "")
@@ -1306,7 +1312,7 @@ def api_stats():
 
 @app.route("/api/health")
 def api_health():
-    return jsonify({"status": "ok", "time": now_str(), "version": "1.5.0"})
+    return jsonify({"status": "ok", "time": now_str(), "version": "1.5.0", "deployMode": DEPLOY_MODE})
 
 # ============================================================
 # 手动触发过期清理（admin）
@@ -1332,19 +1338,30 @@ def not_found(e):
     return redirect(url_for("login_page"))
 
 # ============================================================
-# 启动
+# 模块级初始化（gunicorn 导入时也会执行，确保数据库表已创建）
+# ============================================================
+init_db()
+scheduler = start_scheduler()
+
+logger.info("=" * 60)
+logger.info("SecureTrans 模块初始化完成")
+logger.info("  部署模式: %s", DEPLOY_MODE)
+logger.info("  存储目录: %s", NAS_ROOT)
+logger.info("  数据库: %s", DB_PATH)
+if DEPLOY_MODE == "testing":
+    logger.info("  [测试模式] 使用本地文件系统，启动方式: python app.py (Flask自带服务器)")
+else:
+    logger.info("  [生产模式] 使用NAS存储，启动方式: gunicorn app:app (WSGI服务器)")
+logger.info("=" * 60)
+
+# ============================================================
+# 启动（仅 python app.py 时执行；gunicorn 不执行此块）
 # ============================================================
 if __name__ == "__main__":
-    init_db()
-    scheduler = start_scheduler()
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))
-    logger.info("=" * 60)
     logger.info("SecureTrans 启动: http://%s:%s", host, port)
     logger.info("初始管理员: admin / Admin@123")
-    logger.info("存储目录: %s", NAS_ROOT)
-    logger.info("数据库: %s", DB_PATH)
-    logger.info("=" * 60)
-    # 生产环境用 waitress/gunicorn，开发用 flask 自带服务器
+    # 测试模式用 Flask 自带服务器；生产模式应用 gunicorn 启动
     debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     app.run(host=host, port=port, debug=debug)
