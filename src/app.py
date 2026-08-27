@@ -634,7 +634,7 @@ def cleanup_expired_files():
             continue
         try:
             approved_dt = datetime.datetime.strptime(row["approved_time"], "%Y-%m-%d %H:%M:%S")
-            expiry_days = row["expiry_days"] or EXTERNAL_EXPIRY_DAYS
+            expiry_days = row["expiry_days"] if row["expiry_days"] is not None else EXTERNAL_EXPIRY_DAYS
             if (now - approved_dt).days >= expiry_days:
                 sub_id = row["id"]
                 move_to_archive(sub_id, from_dir="external")

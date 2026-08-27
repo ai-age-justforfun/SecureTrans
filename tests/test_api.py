@@ -259,14 +259,179 @@ test("统计数据", code == 200 and 'todaySubmitted' in data, f"code={code}, da
 code, data = request('POST', '/api/admin/cleanup-expired')
 test("手动触发过期清理（无过期文件）", code == 200 and 'cleaned' in data, f"code={code}, data={data}")
 
-# 21. 验证 os.rename 物理文件移动
-print("\n--- 12. 物理文件验证（os.rename 0拷贝） ---")
+# ============================================================
+# 新增：特征码全量验证 + 压缩包解包 + 驳回 + 过期归档 + 改密
+# ============================================================
+
+# 提前定义物理路径（供驳回/归档测试使用）
 import pathlib
-# NAS_ROOT 可通过环境变量覆盖；默认指向 src/nas（测试脚本在 tests/，服务在 src/）
 nas_root = pathlib.Path(os.getenv("NAS_ROOT", str(pathlib.Path(__file__).parent.parent / "src" / "nas")))
 staging_dir = nas_root / "staging"
 external_dir = nas_root / "external"
 archive_dir = nas_root / "archive"
+
+# 20b. 特征码全量验证
+print("\n--- 10b. 特征码全量验证 ---")
+
+# 上传 ZIP 压缩包（验证自动解包 inner_files）
+import zipfile
+import tarfile
+import io
+zip_buffer = io.BytesIO()
+with zipfile.ZipFile(zip_buffer, 'w') as zf:
+    zf.writestr("readme.txt", "This is a test readme")
+    zf.writestr("src/main.py", "print('hello')")
+zip_path = os.path.join(test_dir, "test_package.zip")
+with open(zip_path, 'wb') as f:
+    f.write(zip_buffer.getvalue())
+code, data = upload_file(zip_path, "test_package.zip")
+zip_matched = data.get('matched', False)
+zip_inner = data.get('innerFiles', [])
+test("上传ZIP压缩包（匹配特征码+自动解包）", code == 200 and zip_matched and len(zip_inner) >= 2,
+     f"code={code}, matched={zip_matched}, innerFiles={len(zip_inner)}")
+
+# 上传 TAR.GZ 压缩包
+tar_buffer = io.BytesIO()
+with tarfile.open(fileobj=tar_buffer, mode='w:gz') as tf:
+    info = tarfile.TarInfo(name="config.yaml")
+    content = b"key: value\n"
+    info.size = len(content)
+    tf.addfile(info, io.BytesIO(content))
+tar_path = os.path.join(test_dir, "test_archive.tar.gz")
+with open(tar_path, 'wb') as f:
+    f.write(tar_buffer.getvalue())
+code, data = upload_file(tar_path, "test_archive.tar.gz")
+tar_matched = data.get('matched', False)
+tar_inner = data.get('innerFiles', [])
+test("上传TAR.GZ压缩包（匹配特征码+自动解包）", code == 200 and tar_matched and len(tar_inner) >= 1,
+     f"code={code}, matched={tar_matched}, innerFiles={len(tar_inner)}")
+
+# 上传 .bit 文件（Vivado Bitstream，二进制特征码 0x0009 开头）
+bit_path = os.path.join(test_dir, "test_fpga.bit")
+with open(bit_path, 'wb') as f:
+    f.write(b"\x00\x09" + b"\x00" * 100)  # Vivado bitstream 以 0x0009 开头
+code, data = upload_file(bit_path, "test_fpga.bit")
+bit_matched = data.get('matched', False)
+test("上传Vivado Bitstream(.bit)（二进制特征码匹配）", code == 200 and bit_matched,
+     f"code={code}, matched={bit_matched}")
+
+# 上传 .xyz 文件（不匹配任何特征码规则）
+txt_path = os.path.join(test_dir, "test_unknown.xyz")
+with open(txt_path, 'w') as f:
+    f.write("This is an unknown file type")
+code, data = upload_file(txt_path, "test_unknown.xyz")
+txt_matched = data.get('matched', False)
+test("上传XYZ文件（不匹配特征码）", code == 200 and not txt_matched,
+     f"code={code}, matched={txt_matched}")
+
+# 特征码规则列表验证（20条规则）
+code, data = request('GET', '/api/config/feature-rules')
+rule_count = len(data) if isinstance(data, list) else 0
+test("特征码规则列表（20条规则完整）", code == 200 and rule_count >= 20,
+     f"code={code}, count={rule_count}")
+
+# 20c. 审批驳回流程
+print("\n--- 10c. 审批驳回流程 ---")
+
+# 上传 EXE（需要审批）
+code, data = upload_file(test_exe, "reject_test.exe")
+reject_temp_id = data.get('tempId')
+
+# 创建提交单（非合作方，需要二级审批）
+code, data = request('POST', '/api/submissions', json_data={
+    "tempIds": [reject_temp_id],
+    "receiverName": "测试驳回",
+    "receiverEmail": "reject@test.com",
+    "receiverType": "non-partner",
+    "securityLevel": "internal",
+    "reason": "测试驳回流程",
+    "expiryDays": 30
+})
+reject_sub_id = data.get('id')
+test("创建驳回测试提交单", code == 200 and data.get('status') == 'pending',
+     f"code={code}, status={data.get('status')}")
+
+# 一级审批驳回
+code, data = request('POST', f'/api/submissions/{reject_sub_id}/approve', json_data={
+    "action": "reject",
+    "comment": "测试驳回：文件不符合外发要求"
+})
+test("一级审批驳回（os.rename到archive）", code == 200 and data.get('status') == 'rejected',
+     f"code={code}, status={data.get('status')}")
+
+# 验证驳回后文件在 archive 目录
+reject_in_archive = (archive_dir / reject_sub_id).exists()
+test("驳回提交单文件已 os.rename 到 archive", reject_in_archive,
+     f"path={archive_dir / reject_sub_id}, exists={reject_in_archive}")
+
+# 20d. 过期归档流程
+print("\n--- 10d. 过期归档流程 ---")
+
+# 上传 PDF（免审批自动通过），设置 expiryDays=0 立即可过期
+code, data = upload_file(test_pdf, "expire_test.pdf")
+expire_temp_id = data.get('tempId')
+
+code, data = request('POST', '/api/submissions', json_data={
+    "tempIds": [expire_temp_id],
+    "receiverName": "过期测试",
+    "receiverEmail": "expire@test.com",
+    "receiverType": "partner",
+    "securityLevel": "internal",
+    "reason": "测试过期归档",
+    "expiryDays": 0
+})
+expire_sub_id = data.get('id')
+test("创建过期测试提交单（expiryDays=0，免审批自动通过）", code == 200 and data.get('status') == 'approved',
+     f"code={code}, status={data.get('status')}")
+
+# 触发过期清理
+code, data = request('POST', '/api/admin/cleanup-expired')
+cleaned_count = data.get('cleaned', 0)
+test("手动触发过期清理（处理过期文件）", code == 200 and cleaned_count >= 1,
+     f"code={code}, cleaned={cleaned_count}")
+
+# 验证提交单状态变为 archived
+code, data = request('GET', f'/api/submissions/{expire_sub_id}')
+test("过期提交单状态变为 archived", code == 200 and data.get('status') == 'archived',
+     f"code={code}, status={data.get('status')}")
+
+# 验证文件已 os.rename 到 archive
+expire_in_archive = (archive_dir / expire_sub_id).exists()
+test("过期提交单文件已 os.rename 到 archive", expire_in_archive,
+     f"path={archive_dir / expire_sub_id}, exists={expire_in_archive}")
+
+# 验证归档后不在 external 下载列表
+code, data = request('GET', '/api/external/files')
+external_ids = [s.get('id') for s in data] if isinstance(data, list) else []
+test("归档文件不在 external 下载列表", expire_sub_id not in external_ids,
+     f"expire_id={expire_sub_id}, in_external={expire_sub_id in external_ids}")
+
+# 20e. 修改密码
+print("\n--- 10e. 修改密码 ---")
+
+code, data = request('POST', '/api/auth/change-password', json_data={
+    "old_password": "Admin@123",
+    "new_password": "Temp@123456"
+})
+test("修改管理员密码", code == 200, f"code={code}, data={data}")
+
+# 错误旧密码应该被拒绝
+code, data = request('POST', '/api/auth/change-password', json_data={
+    "old_password": "WrongPassword",
+    "new_password": "Another@123"
+})
+test("错误旧密码被拒绝", code == 400, f"code={code}")
+
+# 改回原密码（保持测试环境一致）
+code, data = request('POST', '/api/auth/change-password', json_data={
+    "old_password": "Temp@123456",
+    "new_password": "Admin@123"
+})
+test("改回原密码（保持环境一致）", code == 200, f"code={code}")
+
+# 21. 验证 os.rename 物理文件移动
+print("\n--- 12. 物理文件验证（os.rename 0拷贝） ---")
+# 路径已在上方定义（nas_root/staging_dir/external_dir/archive_dir）
 
 # 免审批的提交单应该在 external（上传后直接摆渡）
 auto_in_external = (external_dir / auto_sub_id).exists()
