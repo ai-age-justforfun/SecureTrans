@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureTrans - 登录</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 50%, #1e4d6b 100%);
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  .login-box {
+    background: #fff; border-radius: 16px; padding: 48px 40px;
+    width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .logo { text-align: center; margin-bottom: 32px; }
+  .logo h1 { color: #1e40af; font-size: 28px; margin-bottom: 8px; }
+  .logo p { color: #6b7280; font-size: 14px; }
+  .form-group { margin-bottom: 20px; }
+  .form-group label { display: block; color: #374151; font-size: 14px; margin-bottom: 6px; font-weight: 500; }
+  .form-group input {
+    width: 100%; padding: 12px 14px; border: 1px solid #d1d5db; border-radius: 8px;
+    font-size: 15px; transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .form-group input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+  .btn-login {
+    width: 100%; padding: 13px; background: #2563eb; color: #fff; border: none;
+    border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;
+    transition: background 0.2s; margin-top: 8px;
+  }
+  .btn-login:hover { background: #1d4ed8; }
+  .btn-login:disabled { background: #93c5fd; cursor: not-allowed; }
+  .error-msg { color: #dc2626; font-size: 13px; margin-top: 12px; text-align: center; min-height: 18px; }
+  .hint { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
+  .hint p { color: #9ca3af; font-size: 12px; line-height: 1.8; }
+  .hint code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="login-box">
+  <div class="logo">
+    <h1>SecureTrans</h1>
+    <p>跨网文件审批摆渡系统</p>
+  </div>
+  <form id="loginForm">
+    <div class="form-group">
+      <label for="username">用户名</label>
+      <input type="text" id="username" name="username" placeholder="请输入用户名" required autofocus>
+    </div>
+    <div class="form-group">
+      <label for="password">密码</label>
+      <input type="password" id="password" name="password" placeholder="请输入密码" required>
+    </div>
+    <button type="submit" class="btn-login" id="btnLogin">登 录</button>
+    <div class="error-msg" id="errorMsg"></div>
+  </form>
+  <div class="hint">
+    <p>初始管理员：<code>admin / Admin@123</code>（首次登录强制修改密码）</p>
+    <p>AD 用户请输入 <code>域\用户名</code> 格式</p>
+  </div>
+</div>
+<script>
+document.getElementById('loginForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('btnLogin');
+  const errorMsg = document.getElementById('errorMsg');
+  btn.disabled = true; btn.textContent = '登录中...';
+  errorMsg.textContent = '';
+
+  try {
+    const resp = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value
+      })
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      window.location.href = '/';
+    } else {
+      errorMsg.textContent = data.error || '登录失败';
+    }
+  } catch (err) {
+    errorMsg.textContent = '网络错误，请重试';
+  } finally {
+    btn.disabled = false; btn.textContent = '登 录';
+  }
+});
+</script>
+</body>
+</html>

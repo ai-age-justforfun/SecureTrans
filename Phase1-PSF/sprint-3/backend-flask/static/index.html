@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureTrans - 跨网文件审批摆渡系统</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f4f8; color: #1f2937; }
+  
+  /* Layout */
+  .app { display: flex; min-height: 100vh; }
+  .sidebar { width: 220px; background: #1e3a5f; color: #fff; flex-shrink: 0; display: flex; flex-direction: column; }
+  .sidebar-brand { padding: 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .sidebar-brand h1 { font-size: 18px; color: #fff; }
+  .sidebar-brand p { font-size: 11px; color: #93c5fd; margin-top: 2px; }
+  .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+  .nav-item { display: flex; align-items: center; padding: 10px 20px; color: #cbd5e1; cursor: pointer; font-size: 14px; transition: all 0.15s; border-left: 3px solid transparent; }
+  .nav-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .nav-item.active { background: rgba(37,99,235,0.3); color: #fff; border-left-color: #3b82f6; }
+  .nav-item .icon { width: 20px; margin-right: 10px; text-align: center; }
+  .sidebar-user { padding: 16px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 13px; }
+  .sidebar-user .name { color: #fff; font-weight: 500; }
+  .sidebar-user .role { color: #93c5fd; font-size: 12px; margin-top: 2px; }
+  .btn-logout { margin-top: 10px; width: 100%; padding: 7px; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .btn-logout:hover { background: rgba(239,68,68,0.3); }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .topbar { background: #fff; padding: 14px 24px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; }
+  .topbar h2 { font-size: 18px; color: #111827; }
+  .topbar .actions { display: flex; gap: 10px; }
+  .content { flex: 1; padding: 24px; overflow-y: auto; }
+
+  /* Cards */
+  .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 20px; }
+  .card-title { font-size: 15px; font-weight: 600; color: #374151; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+
+  /* Stats */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px; }
+  .stat-card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .stat-card .label { font-size: 13px; color: #6b7280; margin-bottom: 8px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; color: #1e40af; }
+  .stat-card .sub { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 12px; background: #f9fafb; color: #6b7280; font-weight: 600; font-size: 12px; border-bottom: 1px solid #e5e7eb; }
+  td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; }
+  tr:hover td { background: #f9fafb; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-pending { background: #fef3c7; color: #92400e; }
+  .badge-pending2 { background: #fde68a; color: #92400e; }
+  .badge-approved { background: #d1fae5; color: #065f46; }
+  .badge-downloaded { background: #dbeafe; color: #1e40af; }
+  .badge-rejected { background: #fee2e2; color: #991b1b; }
+  .badge-archived { background: #e5e7eb; color: #4b5563; }
+  .badge-auto { background: #ede9fe; color: #5b21b6; }
+
+  /* Buttons */
+  .btn { padding: 7px 16px; border-radius: 6px; font-size: 13px; cursor: pointer; border: none; font-weight: 500; transition: all 0.15s; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-success { background: #059669; color: #fff; }
+  .btn-success:hover { background: #047857; }
+  .btn-danger { background: #dc2626; color: #fff; }
+  .btn-danger:hover { background: #b91c1c; }
+  .btn-secondary { background: #e5e7eb; color: #374151; }
+  .btn-secondary:hover { background: #d1d5db; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Forms */
+  .form-row { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+  .form-group { flex: 1; min-width: 200px; }
+  .form-group label { display: block; font-size: 13px; color: #374151; margin-bottom: 5px; font-weight: 500; }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
+
+  /* Upload */
+  .upload-zone { border: 2px dashed #d1d5db; border-radius: 10px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 16px; }
+  .upload-zone:hover, .upload-zone.dragover { border-color: #2563eb; background: #eff6ff; }
+  .upload-zone .icon { font-size: 36px; color: #9ca3af; margin-bottom: 8px; }
+  .upload-zone p { color: #6b7280; font-size: 14px; }
+  .upload-zone .hint { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+  .file-list { margin-bottom: 16px; }
+  .file-item { display: flex; align-items: center; padding: 10px 12px; background: #f9fafb; border-radius: 6px; margin-bottom: 6px; font-size: 13px; }
+  .file-item .name { flex: 1; color: #374151; }
+  .file-item .size { color: #9ca3af; margin-right: 12px; }
+  .file-item .matched { color: #059669; font-size: 12px; }
+  .file-item .unmatched { color: #dc2626; font-size: 12px; }
+  .file-item .remove { color: #9ca3af; cursor: pointer; margin-left: 10px; }
+  .file-item .remove:hover { color: #dc2626; }
+
+  /* Modal */
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: #fff; border-radius: 12px; width: 520px; max-width: 90vw; max-height: 85vh; overflow-y: auto; }
+  .modal-header { padding: 18px 20px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; }
+  .modal-header h3 { font-size: 16px; }
+  .modal-close { cursor: pointer; color: #9ca3af; font-size: 20px; background: none; border: none; }
+  .modal-body { padding: 20px; }
+  .modal-footer { padding: 14px 20px; border-top: 1px solid #e5e7eb; display: flex; justify-content: flex-end; gap: 10px; }
+
+  /* Detail */
+  .detail-section { margin-bottom: 16px; }
+  .detail-section h4 { font-size: 13px; color: #6b7280; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; font-size: 13px; }
+  .detail-grid .key { color: #6b7280; }
+  .detail-grid .val { color: #1f2937; }
+  .timeline { border-left: 2px solid #e5e7eb; padding-left: 16px; margin-left: 6px; }
+  .timeline-item { position: relative; margin-bottom: 12px; font-size: 13px; }
+  .timeline-item::before { content: ''; position: absolute; left: -22px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #2563eb; }
+  .timeline-item .time { color: #9ca3af; font-size: 12px; }
+  .timeline-item .action { color: #374151; font-weight: 500; }
+
+  /* Toast */
+  .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; color: #fff; font-size: 14px; z-index: 2000; box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideIn 0.3s; }
+  .toast-success { background: #059669; }
+  .toast-error { background: #dc2626; }
+  .toast-info { background: #2563eb; }
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  .empty { text-align: center; padding: 40px; color: #9ca3af; font-size: 14px; }
+  .loading { text-align: center; padding: 40px; color: #9ca3af; }
+  .hidden { display: none !important; }
+  .text-sm { font-size: 12px; }
+  .text-muted { color: #9ca3af; }
+  .mt-8 { margin-top: 8px; }
+  .mb-8 { margin-bottom: 8px; }
+  .flex { display: flex; }
+  .gap-8 { gap: 8px; }
+  .items-center { align-items: center; }
+  .justify-between { justify-content: space-between; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <h1>SecureTrans</h1>
+      <p>文件审批摆渡系统 v1.4</p>
+    </div>
+    <div class="sidebar-nav" id="sidebarNav">
+      <div class="nav-item active" data-page="dashboard"><span class="icon">📊</span>仪表盘</div>
+      <div class="nav-item" data-page="submit"><span class="icon">📤</span>文件提交</div>
+      <div class="nav-item" data-page="my-submissions"><span class="icon">📋</span>我的提交</div>
+      <div class="nav-item admin-only" data-page="pending"><span class="icon">✅</span>待我审批</div>
+      <div class="nav-item" data-page="external"><span class="icon">📥</span>外网下载</div>
+      <div class="nav-item admin-only" data-page="users"><span class="icon">👥</span>用户管理</div>
+      <div class="nav-item admin-only" data-page="config"><span class="icon">⚙️</span>系统配置</div>
+      <div class="nav-item admin-only" data-page="audit"><span class="icon">📝</span>审计日志</div>
+    </div>
+    <div class="sidebar-user">
+      <div class="name" id="userName">--</div>
+      <div class="role" id="userRole">--</div>
+      <button class="btn-logout" onclick="logout()">退出登录</button>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="topbar">
+      <h2 id="pageTitle">仪表盘</h2>
+      <div class="actions" id="pageActions"></div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">标题</h3>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Global state
+// ============================================================
+let currentUser = null;
+let currentPage = 'dashboard';
+let uploadedFiles = []; // {tempId, name, size, type, md5, matched, matchedRules}
+
+const ROLE_LABELS = {
+  'admin': '系统管理员',
+  'dept-manager': '部门主管',
+  'executive': '公司高管',
+  'internal-user': '普通用户'
+};
+
+const STATUS_LABELS = {
+  'pending': { text: '待一级审批', cls: 'badge-pending' },
+  'pending_approval_2': { text: '待二级审批', cls: 'badge-pending2' },
+  'approved': { text: '已摆渡', cls: 'badge-approved' },
+  'downloaded': { text: '已下载', cls: 'badge-downloaded' },
+  'rejected': { text: '已驳回', cls: 'badge-rejected' },
+  'archived': { text: '已归档', cls: 'badge-archived' }
+};
+
+// ============================================================
+// API helper
+// ============================================================
+async function api(path, options = {}) {
+  const opts = { credentials: 'same-origin', ...options };
+  if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
+    opts.headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+    opts.body = JSON.stringify(opts.body);
+  }
+  const resp = await fetch(path, opts);
+  if (resp.status === 401) { window.location.href = '/login'; return; }
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data;
+}
+
+function toast(msg, type = 'info') {
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+  return (bytes / 1073741824).toFixed(2) + ' GB';
+}
+
+// ============================================================
+// Auth
+// ============================================================
+async function loadUser() {
+  try {
+    currentUser = await api('/api/auth/me');
+    document.getElementById('userName').textContent = currentUser.displayName || currentUser.username;
+    document.getElementById('userRole').textContent = ROLE_LABELS[currentUser.role] || currentUser.role;
+    // Show/hide admin nav items
+    const isAdmin = currentUser.role === 'admin';
+    const isApprover = ['admin', 'dept-manager', 'executive'].includes(currentUser.role);
+    document.querySelectorAll('.admin-only').forEach(el => {
+      if (el.dataset.page === 'pending') el.style.display = isApprover ? '' : 'none';
+      else el.style.display = isAdmin ? '' : 'none';
+    });
+  } catch (e) {
+    window.location.href = '/login';
+  }
+}
+
+async function logout() {
+  try { await api('/api/auth/logout', { method: 'POST' }); } catch (e) {}
+  window.location.href = '/login';
+}
+
+// ============================================================
+// Navigation
+// ============================================================
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => navigate(item.dataset.page));
+});
+
+function navigate(page) {
+  currentPage = page;
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
+  const titles = {
+    dashboard: '仪表盘', submit: '文件提交', 'my-submissions': '我的提交',
+    pending: '待我审批', external: '外网下载', users: '用户管理',
+    config: '系统配置', audit: '审计日志'
+  };
+  document.getElementById('pageTitle').textContent = titles[page] || page;
+  document.getElementById('pageActions').innerHTML = '';
+  renderPage(page);
+}
+
+function renderPage(page) {
+  const content = document.getElementById('content');
+  content.innerHTML = '<div class="loading">加载中...</div>';
+  switch (page) {
+    case 'dashboard': renderDashboard(); break;
+    case 'submit': renderSubmit(); break;
+    case 'my-submissions': renderMySubmissions(); break;
+    case 'pending': renderPending(); break;
+    case 'external': renderExternal(); break;
+    case 'users': renderUsers(); break;
+    case 'config': renderConfig(); break;
+    case 'audit': renderAudit(); break;
+  }
+}
+
+// ============================================================
+// Dashboard
+// ============================================================
+async function renderDashboard() {
+  try {
+    const stats = await api('/api/stats');
+    document.getElementById('content').innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card"><div class="label">今日提交</div><div class="value">${stats.todaySubmitted}</div><div class="sub">个提交单</div></div>
+        <div class="stat-card"><div class="label">待审批</div><div class="value">${stats.pendingApproval}</div><div class="sub">个待处理</div></div>
+        <div class="stat-card"><div class="label">已摆渡</div><div class="value">${stats.ready}</div><div class="sub">个可下载</div></div>
+        <div class="stat-card"><div class="label">免审批率</div><div class="value">${stats.autoApprovalRate}%</div><div class="sub">特征码自动通过</div></div>
+        <div class="stat-card"><div class="label">文件总数</div><div class="value">${stats.archivedFiles}</div><div class="sub">累计上传</div></div>
+        <div class="stat-card"><div class="label">平均摆渡耗时</div><div class="value">${stats.avgFerryTime}</div><div class="sub">os.rename 0拷贝</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">系统说明</div>
+        <div style="font-size:13px;line-height:1.8;color:#4b5563;">
+          <p><strong>SecureTrans</strong> 是轻量级跨网文件审批摆渡系统，核心流程：</p>
+          <p>1. <strong>提交</strong>：用户上传文件，系统自动计算 MD5 并匹配特征码规则</p>
+          <p>2. <strong>免审批</strong>：所有文件匹配特征码 → 自动通过，os.rename 0拷贝摆渡到 external</p>
+          <p>3. <strong>人工审批</strong>：不匹配特征码 → 部门主管一级审批 → 非合作方需高管二级审批</p>
+          <p>4. <strong>下载</strong>：摆渡完成的文件可从 external 目录流式下载</p>
+          <p>5. <strong>归档</strong>：超过有效期的文件每天凌晨 2 点自动 os.rename 到 archive</p>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+// ============================================================
+// Submit
+// ============================================================
+function renderSubmit() {
+  uploadedFiles = [];
+  document.getElementById('content').innerHTML = `
+    <div class="card">
+      <div class="card-title">上传文件</div>
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+        <div class="icon">📁</div>
+        <p>点击或拖拽文件到此处上传</p>
+        <div class="hint">支持单文件最大 1GB，可多次上传</div>
+      </div>
+      <input type="file" id="fileInput" multiple style="display:none">
+      <div class="file-list" id="fileList"></div>
+    </div>
+    <div class="card" id="submitFormCard" style="display:none;">
+      <div class="card-title">提交信息</div>
+      <div class="form-row">
+        <div class="form-group"><label>接收方姓名 *</label><input type="text" id="receiverName" placeholder="如：张三"></div>
+        <div class="form-group"><label>接收方邮箱</label><input type="email" id="receiverEmail" placeholder="如：zhangsan@partner.com"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>接收方类型</label>
+          <select id="receiverType">
+            <option value="non-partner">非合作方（需二级审批）</option>
+            <option value="partner">合作方（一级审批即可）</option>
+          </select>
+        </div>
+        <div class="form-group"><label>密级</label>
+          <select id="securityLevel">
+            <option value="internal">内部</option>
+            <option value="secret">秘密</option>
+            <option value="confidential">机密</option>
+          </select>
+        </div>
+        <div class="form-group"><label>有效期（天）</label><input type="number" id="expiryDays" value="30" min="1" max="365"></div>
+      </div>
+      <div class="form-group"><label>外发事由</label><textarea id="reason" rows="3" placeholder="请说明文件外发的原因和用途"></textarea></div>
+      <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
+        <button class="btn btn-primary" onclick="submitFiles()">提交审批</button>
+        <span id="autoApproveHint" class="text-sm text-muted"></span>
+      </div>
+    </div>
+  `;
+
+  const zone = document.getElementById('uploadZone');
+  const input = document.getElementById('fileInput');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+  input.addEventListener('change', e => handleFiles(e.target.files));
+}
+
+async function handleFiles(files) {
+  for (const file of files) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const data = await api('/api/submissions/upload', { method: 'POST', body: formData });
+      uploadedFiles.push(data);
+      toast(`文件 "${file.name}" 上传成功`, 'success');
+    } catch (e) {
+      toast(`上传失败: ${e.message}`, 'error');
+    }
+  }
+  renderFileList();
+}
+
+function renderFileList() {
+  const list = document.getElementById('fileList');
+  if (uploadedFiles.length === 0) {
+    list.innerHTML = '';
+    document.getElementById('submitFormCard').style.display = 'none';
+    return;
+  }
+  list.innerHTML = uploadedFiles.map((f, i) => `
+    <div class="file-item">
+      <span class="name">${f.name}</span>
+      <span class="size">${formatSize(f.size)}</span>
+      <span class="${f.matched ? 'matched' : 'unmatched'}">${f.matched ? '✓ 匹配特征码' : '✗ 需人工审批'}</span>
+      <span class="remove" onclick="removeFile(${i})">✕</span>
+    </div>
+  `).join('');
+  document.getElementById('submitFormCard').style.display = 'block';
+  // Auto-approve hint
+  const allMatched = uploadedFiles.every(f => f.matched);
+  document.getElementById('autoApproveHint').textContent = allMatched ? '所有文件匹配特征码，提交后将免审批自动通过' : '部分文件不匹配特征码，提交后需人工审批';
+}
+
+function removeFile(index) {
+  uploadedFiles.splice(index, 1);
+  renderFileList();
+}
+
+async function submitFiles() {
+  const receiverName = document.getElementById('receiverName').value.trim();
+  if (!receiverName) { toast('请填写接收方姓名', 'error'); return; }
+  if (uploadedFiles.length === 0) { toast('请先上传文件', 'error'); return; }
+
+  try {
+    const data = await api('/api/submissions', {
+      method: 'POST',
+      body: {
+        tempIds: uploadedFiles.map(f => f.tempId),
+        receiverName,
+        receiverEmail: document.getElementById('receiverEmail').value.trim(),
+        receiverType: document.getElementById('receiverType').value,
+        securityLevel: document.getElementById('securityLevel').value,
+        reason: document.getElementById('reason').value.trim(),
+        expiryDays: parseInt(document.getElementById('expiryDays').value)
+      }
+    });
+    if (data.autoApproved) {
+      toast(`提交成功，免审批自动通过！提交单号: ${data.id}`, 'success');
+    } else {
+      toast(`提交成功，进入审批流程。提交单号: ${data.id}`, 'success');
+    }
+    uploadedFiles = [];
+    navigate('my-submissions');
+  } catch (e) {
+    toast(`提交失败: ${e.message}`, 'error');
+  }
+}
+
+// ============================================================
+// My Submissions
+// ============================================================
+async function renderMySubmissions() {
+  try {
+    const list = await api('/api/submissions');
+    if (list.length === 0) {
+      document.getElementById('content').innerHTML = '<div class="card"><div class="empty">暂无提交记录</div></div>';
+      return;
+    }
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <table>
+          <thead><tr><th>提交单号</th><th>接收方</th><th>文件数</th><th>大小</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead>
+          <tbody>
+            ${list.map(s => {
+              const st = STATUS_LABELS[s.status] || { text: s.status, cls: '' };
+              return `<tr>
+                <td class="text-sm">${s.id}</td>
+                <td>${s.receiver_name || '-'}</td>
+                <td>${s.file_count}</td>
+                <td>${formatSize(s.total_size || 0)}</td>
+                <td><span class="badge ${st.cls}">${st.text}</span>${s.auto_approved ? ' <span class="badge badge-auto">免审批</span>' : ''}</td>
+                <td class="text-sm text-muted">${s.submit_time || '-'}</td>
+                <td><button class="btn btn-sm btn-secondary" onclick="showSubmissionDetail('${s.id}')">详情</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+async function showSubmissionDetail(id) {
+  try {
+    const sub = await api(`/api/submissions/${id}`);
+    const st = STATUS_LABELS[sub.status] || { text: sub.status, cls: '' };
+    document.getElementById('modalTitle').textContent = `提交单详情 - ${sub.id}`;
+    document.getElementById('modalBody').innerHTML = `
+      <div class="detail-section">
+        <h4>基本信息</h4>
+        <div class="detail-grid">
+          <div class="key">状态</div><div class="val"><span class="badge ${st.cls}">${st.text}</span></div>
+          <div class="key">接收方</div><div class="val">${sub.receiver_name || '-'} (${sub.receiver_email || '-'})</div>
+          <div class="key">接收方类型</div><div class="val">${sub.receiver_type === 'partner' ? '合作方' : '非合作方'}</div>
+          <div class="key">密级</div><div class="val">${sub.security_level || '-'}</div>
+          <div class="key">有效期</div><div class="val">${sub.expiry_days || 30} 天</div>
+          <div class="key">提交时间</div><div class="val">${sub.submit_time || '-'}</div>
+          <div class="key">审批通过时间</div><div class="val">${sub.approved_time || '-'}</div>
+          <div class="key">免审批</div><div class="val">${sub.auto_approved ? '是' : '否'}</div>
+        </div>
+        ${sub.reason ? `<div style="margin-top:8px;"><span class="key">外发事由：</span>${sub.reason}</div>` : ''}
+      </div>
+      <div class="detail-section">
+        <h4>文件清单 (${sub.files.length} 个)</h4>
+        <table>
+          <thead><tr><th>文件名</th><th>大小</th><th>类型</th><th>MD5</th><th>特征码</th></tr></thead>
+          <tbody>
+            ${sub.files.map(f => `<tr>
+              <td class="text-sm">${f.name}</td>
+              <td>${formatSize(f.size)}</td>
+              <td>${f.type || '-'}</td>
+              <td class="text-sm text-muted">${(f.md5 || '').substring(0, 16)}...</td>
+              <td>${f.matched ? '<span class="badge badge-approved">匹配</span>' : '<span class="badge badge-rejected">不匹配</span>'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="detail-section">
+        <h4>审批记录</h4>
+        <div class="timeline">
+          <div class="timeline-item"><div class="time">${sub.submit_time}</div><div class="action">${sub.submitter_name || sub.submitter} 提交申请</div></div>
+          ${sub.approvals.map(a => `<div class="timeline-item">
+            <div class="time">${a.time}</div>
+            <div class="action">${a.approver_name || a.approver} ${a.action === 'approve' ? '审批通过' : '驳回'} (${a.level === 0 ? '系统自动' : '第' + a.level + '级'})</div>
+            ${a.comment ? `<div class="text-sm text-muted">备注: ${a.comment}</div>` : ''}
+          </div>`).join('')}
+        </div>
+      </div>
+    `;
+    document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">关闭</button>';
+    openModal();
+  } catch (e) {
+    toast(`加载详情失败: ${e.message}`, 'error');
+  }
+}
+
+// ============================================================
+// Pending Approvals
+// ============================================================
+async function renderPending() {
+  try {
+    const list = await api('/api/submissions/pending/my');
+    if (list.length === 0) {
+      document.getElementById('content').innerHTML = '<div class="card"><div class="empty">暂无待审批的提交单</div></div>';
+      return;
+    }
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <table>
+          <thead><tr><th>提交单号</th><th>提交人</th><th>接收方</th><th>文件数</th><th>大小</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead>
+          <tbody>
+            ${list.map(s => {
+              const st = STATUS_LABELS[s.status] || { text: s.status, cls: '' };
+              return `<tr>
+                <td class="text-sm">${s.id}</td>
+                <td>${s.submitter_name || s.submitter}</td>
+                <td>${s.receiver_name || '-'}</td>
+                <td>${s.file_count}</td>
+                <td>${formatSize(s.total_size || 0)}</td>
+                <td><span class="badge ${st.cls}">${st.text}</span></td>
+                <td class="text-sm text-muted">${s.submit_time || '-'}</td>
+                <td class="flex gap-8">
+                  <button class="btn btn-sm btn-success" onclick="approveSubmission('${s.id}', 'approve')">通过</button>
+                  <button class="btn btn-sm btn-danger" onclick="approveSubmission('${s.id}', 'reject')">驳回</button>
+                  <button class="btn btn-sm btn-secondary" onclick="showSubmissionDetail('${s.id}')">详情</button>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+async function approveSubmission(id, action) {
+  const comment = prompt(action === 'approve' ? '审批通过备注（可选）：' : '驳回原因：') || '';
+  try {
+    const data = await api(`/api/submissions/${id}/approve`, { method: 'POST', body: { action, comment } });
+    toast(`审批完成，当前状态: ${STATUS_LABELS[data.status]?.text || data.status}`, 'success');
+    renderPending();
+  } catch (e) {
+    toast(`审批失败: ${e.message}`, 'error');
+  }
+}
+
+// ============================================================
+// External Downloads
+// ============================================================
+async function renderExternal() {
+  try {
+    const list = await api('/api/external/files');
+    if (list.length === 0) {
+      document.getElementById('content').innerHTML = '<div class="card"><div class="empty">暂无可下载的文件</div></div>';
+      return;
+    }
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <div class="card-title">已摆渡文件列表</div>
+        <table>
+          <thead><tr><th>提交单号</th><th>提交人</th><th>接收方</th><th>文件数</th><th>大小</th><th>摆渡时间</th><th>操作</th></tr></thead>
+          <tbody>
+            ${list.map(s => `<tr>
+              <td class="text-sm">${s.id}</td>
+              <td>${s.submitter_name || s.submitter}</td>
+              <td>${s.receiver_name || '-'}</td>
+              <td>${s.file_count}</td>
+              <td>${formatSize(s.total_size || 0)}</td>
+              <td class="text-sm text-muted">${s.approved_time || '-'}</td>
+              <td><button class="btn btn-sm btn-primary" onclick="showDownloadFiles('${s.id}')">下载</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+async function showDownloadFiles(id) {
+  try {
+    const sub = await api(`/api/submissions/${id}`);
+    document.getElementById('modalTitle').textContent = `下载文件 - ${id}`;
+    document.getElementById('modalBody').innerHTML = `
+      <p class="text-sm text-muted mb-8">接收方: ${sub.receiver_name || '-'} | 摆渡时间: ${sub.approved_time || '-'}</p>
+      <table>
+        <thead><tr><th>文件名</th><th>大小</th><th>类型</th><th>操作</th></tr></thead>
+        <tbody>
+          ${sub.files.map(f => `<tr>
+            <td class="text-sm">${f.name}</td>
+            <td>${formatSize(f.size)}</td>
+            <td>${f.type || '-'}</td>
+            <td><a class="btn btn-sm btn-primary" href="/api/external/${id}/download/${encodeURIComponent(f.name)}">下载</a></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    `;
+    document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">关闭</button>';
+    openModal();
+  } catch (e) {
+    toast(`加载文件列表失败: ${e.message}`, 'error');
+  }
+}
+
+// ============================================================
+// User Management
+// ============================================================
+async function renderUsers() {
+  try {
+    const users = await api('/api/admin/local-users');
+    document.getElementById('pageActions').innerHTML = '<button class="btn btn-primary" onclick="showCreateUser()">+ 新建用户</button>';
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <table>
+          <thead><tr><th>用户名</th><th>显示名</th><th>邮箱</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+          <tbody>
+            ${users.map(u => `<tr>
+              <td>${u.username}</td>
+              <td>${u.display_name || '-'}</td>
+              <td class="text-sm text-muted">${u.email || '-'}</td>
+              <td><span class="badge badge-approved">${ROLE_LABELS[u.role] || u.role}</span></td>
+              <td>${u.status === 'active' ? '<span class="badge badge-approved">正常</span>' : '<span class="badge badge-rejected">禁用</span>'}</td>
+              <td class="text-sm text-muted">${u.created_at || '-'}</td>
+              <td class="flex gap-8">
+                <button class="btn btn-sm btn-secondary" onclick="resetPassword('${u.username}')">重置密码</button>
+                ${u.username !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteUser('${u.username}')">删除</button>` : ''}
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+function showCreateUser() {
+  document.getElementById('modalTitle').textContent = '新建本地用户';
+  document.getElementById('modalBody').innerHTML = `
+    <div class="form-group mb-8"><label>用户名 *</label><input type="text" id="newUsername" placeholder="登录用户名"></div>
+    <div class="form-group mb-8"><label>密码 *</label><input type="password" id="newPassword" placeholder="至少6位"></div>
+    <div class="form-group mb-8"><label>显示名</label><input type="text" id="newDisplayName" placeholder="如：张三"></div>
+    <div class="form-group mb-8"><label>邮箱</label><input type="email" id="newEmail" placeholder="user@company.com"></div>
+    <div class="form-group"><label>角色</label>
+      <select id="newRole">
+        <option value="internal-user">普通用户</option>
+        <option value="dept-manager">部门主管（一级审批）</option>
+        <option value="executive">公司高管（二级审批）</option>
+        <option value="admin">系统管理员</option>
+      </select>
+    </div>
+  `;
+  document.getElementById('modalFooter').innerHTML = `
+    <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+    <button class="btn btn-primary" onclick="createUser()">创建</button>
+  `;
+  openModal();
+}
+
+async function createUser() {
+  const username = document.getElementById('newUsername').value.trim();
+  const password = document.getElementById('newPassword').value;
+  if (!username || !password) { toast('用户名和密码不能为空', 'error'); return; }
+  try {
+    await api('/api/admin/local-users', {
+      method: 'POST',
+      body: {
+        username, password,
+        displayName: document.getElementById('newDisplayName').value.trim(),
+        email: document.getElementById('newEmail').value.trim(),
+        role: document.getElementById('newRole').value
+      }
+    });
+    toast('用户创建成功', 'success');
+    closeModal();
+    renderUsers();
+  } catch (e) {
+    toast(`创建失败: ${e.message}`, 'error');
+  }
+}
+
+async function resetPassword(username) {
+  if (!confirm(`确定重置用户 "${username}" 的密码？`)) return;
+  try {
+    const data = await api(`/api/admin/local-users/${username}/reset-password`, { method: 'POST' });
+    toast(data.message || '密码已重置', 'success');
+  } catch (e) {
+    toast(`重置失败: ${e.message}`, 'error');
+  }
+}
+
+async function deleteUser(username) {
+  if (!confirm(`确定删除用户 "${username}"？此操作不可恢复。`)) return;
+  try {
+    await api(`/api/admin/local-users/${username}`, { method: 'DELETE' });
+    toast('用户已删除', 'success');
+    renderUsers();
+  } catch (e) {
+    toast(`删除失败: ${e.message}`, 'error');
+  }
+}
+
+// ============================================================
+// System Config
+// ============================================================
+async function renderConfig() {
+  try {
+    const [config, rules] = await Promise.all([
+      api('/api/config/system'),
+      api('/api/config/feature-rules')
+    ]);
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <div class="card-title">系统配置</div>
+        <div class="form-row">
+          <div class="form-group"><label>应用名称</label><input type="text" id="cfg_app_name" value="${config.app_name || 'SecureTrans'}"></div>
+          <div class="form-group"><label>免审批开关</label>
+            <select id="cfg_auto_approval">
+              <option value="true" ${config.auto_approval_enabled === 'true' ? 'selected' : ''}>开启</option>
+              <option value="false" ${config.auto_approval_enabled === 'false' ? 'selected' : ''}>关闭</option>
+            </select>
+          </div>
+          <div class="form-group"><label>默认有效期（天）</label><input type="number" id="cfg_default_expiry" value="${config.default_expiry_days || 30}"></div>
+          <div class="form-group"><label>最大文件大小（GB）</label><input type="number" id="cfg_max_size" value="${config.max_file_size_gb || 1}"></div>
+        </div>
+        <button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
+        <button class="btn btn-secondary" style="margin-left:8px;" onclick="triggerCleanup()">手动触发过期清理</button>
+      </div>
+      <div class="card">
+        <div class="card-title">特征码规则（匹配的文件可免审批）</div>
+        <table>
+          <thead><tr><th>规则名称</th><th>类型</th><th>匹配模式</th><th>状态</th></tr></thead>
+          <tbody>
+            ${rules.map(r => `<tr>
+              <td>${r.name}</td>
+              <td>${r.rule_type === 'extension' ? '文件扩展名' : r.rule_type === 'filename' ? '文件名正则' : '二进制头'}</td>
+              <td class="text-sm">${r.pattern}</td>
+              <td>${r.enabled ? '<span class="badge badge-approved">启用</span>' : '<span class="badge badge-archived">禁用</span>'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <p class="text-sm text-muted mt-8">特征码规则通过数据库管理，PSF 阶段使用默认规则。PMF 阶段可扩展管理界面。</p>
+      </div>
+    `;
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+async function saveConfig() {
+  try {
+    await api('/api/config/system', {
+      method: 'PUT',
+      body: {
+        app_name: document.getElementById('cfg_app_name').value,
+        auto_approval_enabled: document.getElementById('cfg_auto_approval').value,
+        default_expiry_days: document.getElementById('cfg_default_expiry').value,
+        max_file_size_gb: document.getElementById('cfg_max_size').value
+      }
+    });
+    toast('配置已保存', 'success');
+  } catch (e) {
+    toast(`保存失败: ${e.message}`, 'error');
+  }
+}
+
+async function triggerCleanup() {
+  try {
+    const data = await api('/api/admin/cleanup-expired', { method: 'POST' });
+    toast(data.message || '清理完成', 'success');
+  } catch (e) {
+    toast(`清理失败: ${e.message}`, 'error');
+  }
+}
+
+// ============================================================
+// Audit Logs
+// ============================================================
+async function renderAudit() {
+  try {
+    const logs = await api('/api/audit-logs?limit=200');
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <div class="card-title">审计日志 (最近 ${logs.length} 条)</div>
+        <table>
+          <thead><tr><th>时间</th><th>用户</th><th>操作</th><th>目标</th><th>详情</th><th>IP</th></tr></thead>
+          <tbody>
+            ${logs.map(l => `<tr>
+              <td class="text-sm text-muted">${l.time}</td>
+              <td>${l.user}</td>
+              <td><span class="badge badge-approved">${l.action}</span></td>
+              <td class="text-sm">${l.target || '-'}</td>
+              <td class="text-sm text-muted">${l.detail || '-'}</td>
+              <td class="text-sm text-muted">${l.ip || '-'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+// ============================================================
+// Modal
+// ============================================================
+function openModal() { document.getElementById('modalOverlay').classList.add('show'); }
+function closeModal() { document.getElementById('modalOverlay').classList.remove('show'); }
+document.getElementById('modalOverlay').addEventListener('click', e => { if (e.target.id === 'modalOverlay') closeModal(); });
+
+// ============================================================
+// Init
+// ============================================================
+loadUser().then(() => navigate('dashboard'));
+</script>
+</body>
+</html>

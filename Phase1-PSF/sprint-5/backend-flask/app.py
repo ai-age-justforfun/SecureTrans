@@ -1,0 +1,1350 @@
+"""
+SecureTrans - 轻量级跨网文件审批摆渡系统 后端
+Flask + Flask-Login + SQLite + os.rename 0拷贝摆渡
+v1.4 - 适配初创公司 50 人规模
+"""
+import os
+import re
+import json
+import time
+import uuid
+import shutil
+import sqlite3
+import hashlib
+import logging
+import datetime
+from pathlib import Path
+from functools import wraps
+
+from flask import Flask, request, jsonify, send_file, render_template, redirect, url_for, session, g
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+import bcrypt
+
+# ============================================================
+# 配置
+# ============================================================
+BASE_DIR = Path(__file__).parent.resolve()
+DATA_DIR = Path(os.getenv("SECURETRANS_DATA", str(BASE_DIR / "data")))
+DB_PATH = DATA_DIR / "securetrans.db"
+LOG_PATH = DATA_DIR / "securetrans.log"
+
+# 存储目录（必须在同一个文件系统，os.rename 才能 0拷贝）
+NAS_ROOT = Path(os.getenv("NAS_ROOT", str(BASE_DIR / "nas")))
+STAGING_DIR = NAS_ROOT / "staging"    # 刚上传，待审核
+EXTERNAL_DIR = NAS_ROOT / "external"   # 审核通过，可外网下载
+ARCHIVE_DIR = NAS_ROOT / "archive"     # 过期/驳回，永久归档
+STATIC_DIR = BASE_DIR / "static"
+
+# 安全配置
+SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
+MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(1 * 1024 * 1024 * 1024)))  # 1GB 上传上限
+
+# AD 配置（LDAP 直连，与 sssd 兼容）
+AD_ENABLED = os.getenv("AD_ENABLED", "false").lower() == "true"
+AD_HOST = os.getenv("AD_HOST", "")
+AD_DOMAIN = os.getenv("AD_DOMAIN", "")
+AD_BASE_DN = os.getenv("AD_BASE_DN", "")
+AD_BIND_DN = os.getenv("AD_BIND_DN", "")
+AD_BIND_PASSWORD = os.getenv("AD_BIND_PASSWORD", "")
+
+# 过期清理配置
+EXTERNAL_EXPIRY_DAYS = int(os.getenv("EXTERNAL_EXPIRY_DAYS", "30"))  # external 文件默认 30 天过期
+
+# 日志
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+for d in [STAGING_DIR, EXTERNAL_DIR, ARCHIVE_DIR, STATIC_DIR]:
+    d.mkdir(parents=True, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.FileHandler(str(LOG_PATH), encoding="utf-8"), logging.StreamHandler()]
+)
+logger = logging.getLogger("securetrans")
+
+# ============================================================
+# Flask 应用初始化
+# ============================================================
+app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
+app.config["SECRET_KEY"] = SECRET_KEY
+app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login_page"
+login_manager.login_message = "请先登录"
+
+# ============================================================
+# 数据库
+# ============================================================
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(str(DB_PATH))
+        g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA journal_mode=WAL")
+        g.db.execute("PRAGMA foreign_keys=ON")
+    return g.db
+
+@app.teardown_appcontext
+def close_db(exception):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+def init_db():
+    """初始化数据库表和初始数据"""
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS local_users (
+        id TEXT PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        display_name TEXT,
+        email TEXT,
+        role TEXT DEFAULT 'internal-user',
+        status TEXT DEFAULT 'active',
+        must_change_password INTEGER DEFAULT 0,
+        created_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS role_mappings (
+        id TEXT PRIMARY KEY,
+        principal_type TEXT NOT NULL,
+        principal_value TEXT NOT NULL,
+        display_name TEXT,
+        role TEXT NOT NULL,
+        granted_by TEXT,
+        granted_at TEXT,
+        note TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS submissions (
+        id TEXT PRIMARY KEY,
+        submitter TEXT,
+        submitter_name TEXT,
+        receiver_name TEXT,
+        receiver_email TEXT,
+        receiver_type TEXT,
+        security_level TEXT,
+        reason TEXT,
+        expiry_days INTEGER DEFAULT 30,
+        status TEXT DEFAULT 'pending',
+        auto_approved INTEGER DEFAULT 0,
+        current_path TEXT,
+        submit_time TEXT,
+        approved_time TEXT,
+        archived_time TEXT,
+        file_count INTEGER DEFAULT 0,
+        total_size INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS submission_files (
+        id TEXT PRIMARY KEY,
+        submission_id TEXT,
+        path TEXT,
+        name TEXT,
+        size INTEGER,
+        type TEXT,
+        md5 TEXT,
+        matched INTEGER DEFAULT 0,
+        is_archive INTEGER DEFAULT 0,
+        FOREIGN KEY (submission_id) REFERENCES submissions(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS approvals (
+        id TEXT PRIMARY KEY,
+        submission_id TEXT,
+        level INTEGER,
+        approver TEXT,
+        approver_name TEXT,
+        action TEXT,
+        comment TEXT,
+        time TEXT,
+        FOREIGN KEY (submission_id) REFERENCES submissions(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS feature_rules (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        rule_type TEXT,
+        pattern TEXT,
+        enabled INTEGER DEFAULT 1,
+        created_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS partners (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        contact TEXT,
+        email TEXT,
+        created_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS approvers (
+        id TEXT PRIMARY KEY,
+        level INTEGER,
+        username TEXT,
+        display_name TEXT,
+        scope TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS system_config (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+        id TEXT PRIMARY KEY,
+        time TEXT,
+        user TEXT,
+        action TEXT,
+        target TEXT,
+        detail TEXT,
+        ip TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS download_records (
+        id TEXT PRIMARY KEY,
+        submission_id TEXT,
+        filename TEXT,
+        downloader TEXT,
+        download_time TEXT,
+        ip TEXT
+    );
+    """)
+
+    # 初始管理员
+    cursor = conn.execute("SELECT COUNT(*) as c FROM local_users WHERE username='admin'")
+    if cursor.fetchone()["c"] == 0:
+        admin_hash = bcrypt.hashpw("Admin@123".encode(), bcrypt.gensalt()).decode()
+        conn.execute(
+            "INSERT INTO local_users (id,username,password_hash,display_name,email,role,status,must_change_password,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (str(uuid.uuid4()), "admin", admin_hash, "系统管理员", "admin@localhost", "admin", "active", 1, now_str())
+        )
+        logger.info("初始管理员 admin 已创建（密码 Admin@123，首次登录需修改）")
+
+    # 初始系统配置
+    defaults = {
+        "auto_approval_enabled": "true",
+        "default_expiry_days": "30",
+        "max_file_size_gb": "1",
+        "app_name": "SecureTrans",
+    }
+    for k, v in defaults.items():
+        conn.execute("INSERT OR IGNORE INTO system_config (key,value) VALUES (?,?)", (k, v))
+
+    # 初始特征码规则
+    cursor = conn.execute("SELECT COUNT(*) as c FROM feature_rules")
+    if cursor.fetchone()["c"] == 0:
+        rules = [
+            # === 文档类（extension）===
+            ("PDF文档", "extension", ".pdf", 1),
+            ("Word文档", "extension", ".doc,.docx", 1),
+            ("Excel表格", "extension", ".xls,.xlsx", 1),
+            ("PPT演示", "extension", ".ppt,.pptx", 1),
+            ("图片文件", "extension", ".png,.jpg,.jpeg,.gif,.bmp,.svg", 1),
+            ("文本文件", "extension", ".txt,.csv,.md,.log,.json,.xml,.yaml,.yml", 1),
+            # === 压缩包类（extension）- Linux 默认支持 ===
+            ("ZIP压缩包", "extension", ".zip", 1),
+            ("TAR归档", "extension", ".tar", 1),
+            ("GZIP压缩", "extension", ".gz,.tgz", 1),
+            ("BZIP2压缩", "extension", ".bz2,.tbz2", 1),
+            ("XZ压缩", "extension", ".xz,.txz", 1),
+            ("ZSTD压缩", "extension", ".zst", 1),
+            # === 压缩包类（binary 特征码 / Magic Number）===
+            ("ZIP特征码", "binary", "hex:504B0304", 1),
+            ("GZIP特征码", "binary", "hex:1F8B", 1),
+            ("BZIP2特征码", "binary", "hex:425A68", 1),
+            ("XZ特征码", "binary", "hex:FD377A585A00", 1),
+            ("ZSTD特征码", "binary", "hex:28B52FFD", 1),
+            ("TAR特征码(ustar)", "binary", "ustar", 1),
+            # === FPGA / EDA ===
+            ("Vivado Bitstream(.bit)", "extension", ".bit", 1),
+            ("Vivado Bit同步字", "binary", "hex:5599AA66", 1),
+        ]
+        for name, rtype, pattern, enabled in rules:
+            conn.execute(
+                "INSERT INTO feature_rules (id,name,rule_type,pattern,enabled,created_at) VALUES (?,?,?,?,?,?)",
+                (str(uuid.uuid4()), name, rtype, pattern, enabled, now_str())
+            )
+
+    conn.commit()
+    conn.close()
+    logger.info("数据库初始化完成: %s", DB_PATH)
+
+# ============================================================
+# 工具函数
+# ============================================================
+def now_str() -> str:
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def gen_submission_id() -> str:
+    return f"{uuid.uuid4().hex[:8]}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+def md5_file(filepath: Path, chunk_size: int = 65536) -> str:
+    """流式计算文件 MD5，不加载整个文件到内存"""
+    h = hashlib.md5()
+    with open(filepath, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+def get_file_type(filename: str) -> str:
+    ext = Path(filename).suffix.lower()
+    types = {
+        ".pdf": "PDF文档", ".doc": "Word文档", ".docx": "Word文档",
+        ".xls": "Excel表格", ".xlsx": "Excel表格", ".ppt": "PPT", ".pptx": "PPT",
+        ".png": "图片", ".jpg": "图片", ".jpeg": "图片", ".gif": "图片", ".bmp": "图片", ".svg": "图片",
+        ".txt": "文本", ".csv": "文本", ".json": "代码", ".xml": "代码", ".yaml": "代码", ".yml": "代码", ".md": "文本",
+        ".py": "代码", ".c": "代码", ".cpp": "代码", ".h": "代码", ".java": "代码", ".js": "代码",
+        # 压缩包 - Linux 默认支持
+        ".zip": "压缩包", ".tar": "压缩包",
+        ".gz": "压缩包", ".tgz": "压缩包",
+        ".bz2": "压缩包", ".tbz2": "压缩包",
+        ".xz": "压缩包", ".txz": "压缩包",
+        ".zst": "压缩包",
+        ".7z": "压缩包", ".rar": "压缩包",
+        # FPGA / EDA
+        ".bit": "FPGA Bitstream", ".bin": "二进制文件",
+        ".exe": "可执行文件", ".dll": "系统文件", ".so": "系统文件",
+    }
+    return types.get(ext, "未知类型")
+
+def add_audit_log(user: str, action: str, target: str = "", detail: str = "", ip: str = ""):
+    db = get_db()
+    db.execute(
+        "INSERT INTO audit_logs (id,time,user,action,target,detail,ip) VALUES (?,?,?,?,?,?,?)",
+        (str(uuid.uuid4()), now_str(), user, action, target, detail, ip)
+    )
+    db.commit()
+
+def row_to_dict(row) -> dict:
+    if row is None:
+        return None
+    return {k: row[k] for k in row.keys()}
+
+def rows_to_list(rows) -> list:
+    return [row_to_dict(r) for r in rows]
+
+def get_client_ip() -> str:
+    return request.remote_addr or "unknown"
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return bcrypt.checkpw(password.encode(), password_hash.encode())
+
+# ============================================================
+# 文件移动（os.rename 0拷贝）
+# ============================================================
+def safe_rename(src: Path, dst: Path):
+    """
+    安全移动目录：os.rename 同文件系统内 0拷贝。
+    如果目标已存在，先删除目标（应该不会发生，因为ID唯一）。
+    """
+    if dst.exists():
+        logger.warning("目标已存在，先删除: %s", dst)
+        shutil.rmtree(dst)
+    os.rename(str(src), str(dst))
+    logger.info("os.rename 0拷贝移动: %s -> %s", src, dst)
+
+def move_to_external(sub_id: str):
+    """审核通过：staging -> external（0拷贝摆渡）"""
+    src = STAGING_DIR / sub_id
+    dst = EXTERNAL_DIR / sub_id
+    if src.exists():
+        safe_rename(src, dst)
+    return str(dst)
+
+def move_to_archive(sub_id: str, from_dir: str = "external"):
+    """过期/驳回：staging或external -> archive（0拷贝归档）"""
+    if from_dir == "staging":
+        src = STAGING_DIR / sub_id
+    else:
+        src = EXTERNAL_DIR / sub_id
+    dst = ARCHIVE_DIR / sub_id
+    if src.exists():
+        safe_rename(src, dst)
+    return str(dst)
+
+def get_submission_path(sub_id: str, status: str) -> Path:
+    """根据状态获取文件当前物理路径"""
+    if status in ("pending",):
+        return STAGING_DIR / sub_id
+    elif status in ("approved", "downloaded"):
+        return EXTERNAL_DIR / sub_id
+    else:  # rejected, archived
+        return ARCHIVE_DIR / sub_id
+
+# ============================================================
+# 特征码匹配
+# ============================================================
+def match_feature_rules(filename: str, file_path: Path = None) -> tuple:
+    """检查文件是否匹配特征码规则，返回 (是否匹配, 匹配的规则名列表)
+
+    支持三种规则类型：
+    - extension: 按扩展名匹配（pattern 为逗号分隔的扩展名列表）
+    - filename:  按文件名正则匹配（pattern 为正则表达式）
+    - binary:    按二进制特征码匹配
+                 pattern 以 "hex:" 开头表示十六进制特征码，如 "hex:1F8B"
+                 否则为文本子串匹配
+                 读取文件前 4096 字节进行匹配
+    """
+    db = get_db()
+    rules = db.execute("SELECT * FROM feature_rules WHERE enabled=1").fetchall()
+    matched = []
+    ext = Path(filename).suffix.lower()
+
+    # 预读文件头部（4KB，覆盖大多数特征码位置，包括 tar 的 ustar offset 257）
+    file_header = None
+    if file_path and file_path.exists():
+        try:
+            with open(file_path, "rb") as f:
+                file_header = f.read(4096)
+        except Exception:
+            pass
+
+    for rule in rules:
+        if rule["rule_type"] == "extension":
+            exts = [e.strip().lower() for e in rule["pattern"].split(",")]
+            if ext in exts:
+                matched.append(rule["name"])
+        elif rule["rule_type"] == "filename":
+            if re.search(rule["pattern"], filename, re.IGNORECASE):
+                matched.append(rule["name"])
+        elif rule["rule_type"] == "binary" and file_header:
+            pattern = rule["pattern"]
+            if pattern.startswith("hex:"):
+                # 十六进制特征码：hex:1F8B / hex:504B0304 / hex:FD377A585A00
+                hex_str = pattern[4:].replace(" ", "").replace(",", "").replace("-", "")
+                try:
+                    sig_bytes = bytes.fromhex(hex_str)
+                    if sig_bytes in file_header:
+                        matched.append(rule["name"])
+                except ValueError:
+                    pass
+            else:
+                # 文本特征码（原有方式）
+                if pattern.encode("utf-8", errors="ignore") in file_header:
+                    matched.append(rule["name"])
+    return (len(matched) > 0, matched)
+
+def check_auto_approval(files: list) -> dict:
+    """检查是否可以免审批：开关开启 + 所有文件都匹配特征码"""
+    db = get_db()
+    row = db.execute("SELECT value FROM system_config WHERE key='auto_approval_enabled'").fetchone()
+    if not row or row["value"] != "true":
+        return {"canAutoApprove": False, "reason": "免审批总开关已关闭", "matchedRules": [], "unmatchedFiles": []}
+    if not files:
+        return {"canAutoApprove": False, "reason": "没有文件", "matchedRules": [], "unmatchedFiles": []}
+    all_matched = True
+    all_rules = set()
+    unmatched = []
+    for f in files:
+        matched, rules = match_feature_rules(f["name"])
+        if matched:
+            all_rules.update(rules)
+        else:
+            all_matched = False
+            unmatched.append(f["name"])
+    if all_matched:
+        return {"canAutoApprove": True, "reason": "", "matchedRules": list(all_rules), "unmatchedFiles": []}
+    return {"canAutoApprove": False, "reason": f"{len(unmatched)} 个文件不匹配特征码", "matchedRules": list(all_rules), "unmatchedFiles": unmatched}
+
+# ============================================================
+# 用户认证（Flask-Login）
+# ============================================================
+class User(UserMixin):
+    def __init__(self, user_id, username, display_name, role, source):
+        self.id = user_id
+        self.username = username
+        self.display_name = display_name
+        self.role = role
+        self.source = source  # local / ad
+
+    def to_dict(self):
+        return {
+            "id": self.id, "username": self.username,
+            "displayName": self.display_name, "role": self.role, "source": self.source
+        }
+
+@login_manager.user_loader
+def load_user(user_id):
+    """从 session 加载用户"""
+    user_data = session.get("user_data")
+    if not user_data:
+        return None
+    return User(
+        user_id=user_data["id"],
+        username=user_data["username"],
+        display_name=user_data.get("displayName", user_data.get("display_name", "")),
+        role=user_data["role"],
+        source=user_data["source"]
+    )
+
+def authenticate_local(username: str, password: str):
+    """本地用户认证"""
+    db = get_db()
+    row = db.execute("SELECT * FROM local_users WHERE username=? AND status='active'", (username,)).fetchone()
+    if row and verify_password(password, row["password_hash"]):
+        return row_to_dict(row)
+    return None
+
+def authenticate_ad(username: str, password: str):
+    """
+    AD 认证：直接 LDAP 绑定，与 sssd 完全兼容（sssd 也是用 LDAP 连 AD）。
+
+    两种绑定方式：
+    1. 用户直接绑定（推荐）：用 username@AD_DOMAIN (UPN) 绑定，不需要 bind DN
+    2. 服务账户绑定查询：先用 AD_BIND_DN 绑定查询用户 DN，再用用户 DN 绑定
+
+    配置项（.env）：
+    - AD_ENABLED=true
+    - AD_HOST=ldap://dc01.company.com:389  (或 ldaps://dc01.company.com:636)
+    - AD_DOMAIN=company.com                  (用于构造 UPN)
+    - AD_BASE_DN=DC=company,DC=com           (用户搜索基准)
+    - AD_BIND_DN=CN=svc-securetrans,OU=Service,DC=company,DC=com  (可选，服务账户)
+    - AD_BIND_PASSWORD=xxxxxx                 (可选，服务账户密码)
+    """
+    if not AD_ENABLED:
+        return None
+    if not password:
+        return None
+    try:
+        import ldap3
+    except ImportError:
+        logger.warning("ldap3 未安装，AD认证不可用。请 pip install ldap3")
+        return None
+
+    try:
+        # 解析 AD_HOST，支持 ldap:// / ldaps:// 前缀
+        host = AD_HOST
+        use_ssl = host.startswith("ldaps://")
+        if "://" in host:
+            host = host.split("://", 1)[1]
+        # 分离端口
+        if ":" in host:
+            host, port_str = host.rsplit(":", 1)
+            port = int(port_str)
+        else:
+            port = 636 if use_ssl else 389
+
+        server = ldap3.Server(host, port=port, use_ssl=use_ssl, get_info=ldap3.NONE, connect_timeout=5)
+
+        # 方式1：用户直接绑定（UPN 格式）
+        if AD_DOMAIN:
+            user_upn = f"{username}@{AD_DOMAIN}"
+        else:
+            user_upn = username
+
+        conn = ldap3.Connection(server, user=user_upn, password=password,
+                                 auto_bind=ldap3.AUTO_BIND_NO_TLS, receive_timeout=5,
+                                 raise_exceptions=True)
+        if not conn.bound:
+            return None
+
+        # 绑定成功，查询用户信息
+        display_name = username
+        email = ""
+        groups = []
+        if AD_BASE_DN:
+            try:
+                conn.search(AD_BASE_DN, f"(sAMAccountName={username})",
+                             attributes=["displayName", "mail", "memberOf", "department", "userPrincipalName"])
+                if conn.entries:
+                    entry = conn.entries[0]
+                    if hasattr(entry, "displayName") and entry.displayName:
+                        display_name = str(entry.displayName)
+                    if hasattr(entry, "mail") and entry.mail:
+                        email = str(entry.mail)
+                    if hasattr(entry, "memberOf") and entry.memberOf:
+                        groups = [str(g) for g in entry.memberOf]
+            except Exception as e:
+                logger.warning("AD用户信息查询失败 %s: %s", username, e)
+
+        conn.unbind()
+        logger.info("AD认证成功: %s", username)
+        return {
+            "username": username,
+            "display_name": display_name,
+            "email": email,
+            "groups": groups,
+        }
+    except ldap3.core.exceptions.LDAPBindError:
+        logger.info("AD认证失败(密码错误): %s", username)
+        return None
+    except Exception as e:
+        logger.warning("AD认证异常 %s: %s", username, e)
+        return None
+
+def get_user_role(username: str, source: str) -> str:
+    """获取用户角色：本地用户从 local_users 取，AD 用户从 role_mappings 查，默认普通用户"""
+    db = get_db()
+    if source == "local":
+        row = db.execute("SELECT role FROM local_users WHERE username=?", (username,)).fetchone()
+        if row:
+            return row["role"]
+    # AD 用户：查角色映射
+    rows = db.execute(
+        "SELECT role FROM role_mappings WHERE principal_type='user' AND principal_value=?",
+        (username,)
+    ).fetchall()
+    roles = [r["role"] for r in rows]
+    # TODO: 查用户所属 AD 组的组级映射
+    if roles:
+        return roles[0]  # 多角色取第一个，PMF 阶段简化
+    return "internal-user"
+
+def role_required(*roles):
+    """角色权限装饰器"""
+    def decorator(f):
+        @wraps(f)
+        @login_required
+        def decorated_function(*args, **kwargs):
+            if current_user.role not in roles:
+                return jsonify({"error": "权限不足"}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+# ============================================================
+# 定时任务：过期文件清理
+# ============================================================
+def cleanup_expired_files():
+    """清理 external 中过期的文件，os.rename 到 archive（0拷贝）"""
+    db = get_db()
+    now = datetime.datetime.now()
+    rows = db.execute("SELECT id, approved_time, expiry_days FROM submissions WHERE status IN ('approved','downloaded')").fetchall()
+    cleaned = 0
+    for row in rows:
+        if not row["approved_time"]:
+            continue
+        try:
+            approved_dt = datetime.datetime.strptime(row["approved_time"], "%Y-%m-%d %H:%M:%S")
+            expiry_days = row["expiry_days"] or EXTERNAL_EXPIRY_DAYS
+            if (now - approved_dt).days >= expiry_days:
+                sub_id = row["id"]
+                move_to_archive(sub_id, from_dir="external")
+                db.execute("UPDATE submissions SET status='archived', archived_time=? WHERE id=?", (now_str(), sub_id))
+                db.commit()
+                cleaned += 1
+                logger.info("过期清理: %s 已归档", sub_id)
+        except Exception as e:
+            logger.error("过期清理失败 %s: %s", row["id"], e)
+    if cleaned:
+        logger.info("过期清理完成，共处理 %d 个文件", cleaned)
+    return cleaned
+
+def start_scheduler():
+    """启动定时任务（APScheduler），每天凌晨 2 点清理过期文件"""
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(cleanup_expired_files, "cron", hour=2, minute=0)
+        scheduler.start()
+        logger.info("定时任务已启动：每天凌晨 2 点清理过期文件")
+        return scheduler
+    except ImportError:
+        logger.warning("APScheduler 未安装，过期清理需手动调用或配置系统 Cron")
+        return None
+
+# ============================================================
+# 路由：页面
+# ============================================================
+@app.route("/")
+def index():
+    """首页：如果已登录显示主界面，否则显示登录页"""
+    if current_user.is_authenticated:
+        return send_file(str(STATIC_DIR / "index.html")) if (STATIC_DIR / "index.html").exists() else redirect(url_for("login_page"))
+    return redirect(url_for("login_page"))
+
+@app.route("/login")
+def login_page():
+    """登录页"""
+    if (STATIC_DIR / "login.html").exists():
+        return send_file(str(STATIC_DIR / "login.html"))
+    # 简单登录页（如果没有前端文件）
+    return """
+    <!DOCTYPE html><html><head><meta charset="UTF-8"><title>SecureTrans 登录</title>
+    <style>body{font-family:sans-serif;background:#f0f4f8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+    .box{background:#fff;padding:40px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);width:360px}
+    h1{text-align:center;color:#1e40af;margin:0 0 24px}input{width:100%;padding:10px;margin:8px 0;border:1px solid #ddd;border-radius:6px;box-sizing:border-box}
+    button{width:100%;padding:12px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:16px;margin-top:12px}
+    .hint{font-size:12px;color:#666;margin-top:16px;line-height:1.6}</style></head>
+    <body><div class="box"><h1>🔐 SecureTrans</h1>
+    <form method="POST" action="/api/auth/login"><input name="username" placeholder="用户名" required><input type="password" name="password" placeholder="密码" required><button type="submit">登 录</button></form>
+    <div class="hint">初始管理员：admin / Admin@123<br>AD用户请输入 域\\用户名 格式</div></div></body></html>
+    """
+
+# ============================================================
+# 路由：认证 API
+# ============================================================
+@app.route("/api/auth/login", methods=["POST"])
+def api_login():
+    """登录 API"""
+    if request.is_json:
+        data = request.get_json()
+        username = data.get("username", "").strip()
+        password = data.get("password", "")
+    else:
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+
+    if not username or not password:
+        return jsonify({"error": "请输入用户名和密码"}), 400
+
+    # 支持 域\用户名 格式
+    source = "auto"
+    if "\\" in username:
+        username = username.split("\\", 1)[1]
+        source = "ad"
+    elif "@" in username and username.endswith(("@nexskysemi.com", "@company.com")):
+        username = username.split("@", 1)[0]
+        source = "ad"
+
+    ip = get_client_ip()
+
+    # 先尝试本地
+    user = authenticate_local(username, password)
+    if user:
+        role = get_user_role(username, "local")
+        user_obj = User(user["id"], username, user["display_name"] or username, role, "local")
+        login_user(user_obj)
+        session["user_data"] = user_obj.to_dict()
+        add_audit_log(username, "login", "", "本地用户登录成功", ip)
+        if request.is_json:
+            return jsonify({"message": "登录成功", "user": user_obj.to_dict()})
+        return redirect(url_for("index"))
+
+    # 再尝试 AD
+    if source in ("ad", "auto"):
+        user = authenticate_ad(username, password)
+        if user:
+            role = get_user_role(username, "ad")
+            user_obj = User(str(uuid.uuid4()), username, user.get("display_name", username), role, "ad")
+            login_user(user_obj)
+            session["user_data"] = user_obj.to_dict()
+            add_audit_log(username, "login", "", "AD用户登录成功", ip)
+            if request.is_json:
+                return jsonify({"message": "登录成功", "user": user_obj.to_dict()})
+            return redirect(url_for("index"))
+
+    add_audit_log(username, "login_failed", "", "登录失败", ip)
+    if request.is_json:
+        return jsonify({"error": "用户名或密码错误"}), 401
+    return redirect(url_for("login_page"))
+
+@app.route("/api/auth/logout", methods=["POST", "GET"])
+@login_required
+def api_logout():
+    """退出登录"""
+    username = current_user.username
+    logout_user()
+    session.clear()
+    add_audit_log(username, "logout", "", "退出登录", get_client_ip())
+    if request.is_json:
+        return jsonify({"message": "已退出登录"})
+    return redirect(url_for("login_page"))
+
+@app.route("/api/auth/me")
+@login_required
+def api_me():
+    """获取当前用户信息"""
+    return jsonify(current_user.to_dict())
+
+@app.route("/api/auth/change-password", methods=["POST"])
+@login_required
+def api_change_password():
+    """修改密码（仅本地用户）"""
+    if current_user.source != "local":
+        return jsonify({"error": "AD用户请在域控制器修改密码"}), 400
+    data = request.get_json() if request.is_json else request.form
+    old_password = data.get("old_password", "")
+    new_password = data.get("new_password", "")
+    if not old_password or not new_password:
+        return jsonify({"error": "请输入原密码和新密码"}), 400
+    if len(new_password) < 6:
+        return jsonify({"error": "新密码至少6位"}), 400
+    db = get_db()
+    row = db.execute("SELECT * FROM local_users WHERE username=?", (current_user.username,)).fetchone()
+    if not row or not verify_password(old_password, row["password_hash"]):
+        return jsonify({"error": "原密码错误"}), 400
+    db.execute("UPDATE local_users SET password_hash=?, must_change_password=0 WHERE username=?",
+               (hash_password(new_password), current_user.username))
+    db.commit()
+    add_audit_log(current_user.username, "change_password", "", "修改密码成功", get_client_ip())
+    return jsonify({"message": "密码修改成功"})
+
+# ============================================================
+# 路由：文件上传与提交
+# ============================================================
+@app.route("/api/submissions/upload", methods=["POST"])
+@login_required
+@role_required("internal-user", "admin")
+def api_upload_file():
+    """
+    上传单个文件到 staging 临时目录，流式计算 MD5。
+    大文件（500MB）也能处理，Werkzeug 自动流式写入磁盘。
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "请选择文件"}), 400
+    file = request.files["file"]
+    if not file.filename:
+        return jsonify({"error": "文件名不能为空"}), 400
+
+    # 检查文件大小
+    file.seek(0, 2)
+    size = file.tell()
+    file.seek(0)
+    if size > MAX_CONTENT_LENGTH:
+        return jsonify({"error": f"文件过大，最大支持 {MAX_CONTENT_LENGTH//1024//1024}MB"}), 400
+
+    # 创建临时提交目录（staging）
+    temp_id = gen_submission_id()
+    temp_dir = STAGING_DIR / temp_id / "files"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    file_path = temp_dir / file.filename
+
+    # 流式保存并计算 MD5
+    md5 = hashlib.md5()
+    with open(file_path, "wb") as f:
+        while True:
+            chunk = file.stream.read(65536)
+            if not chunk:
+                break
+            f.write(chunk)
+            md5.update(chunk)
+    file_md5 = md5.hexdigest()
+    actual_size = file_path.stat().st_size
+    ftype = get_file_type(file.filename)
+    matched, rules = match_feature_rules(file.filename, file_path)
+
+    # 压缩包自动解包列清单（Linux 默认支持：zip + tar 系列）
+    inner_files = []
+    fname_lower = file.filename.lower()
+    archive_exts = (".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2",
+                     ".tar.xz", ".txz", ".tar.zst", ".gz", ".bz2", ".xz", ".zst")
+    is_archive = any(fname_lower.endswith(ext) for ext in archive_exts)
+    if is_archive:
+        try:
+            if fname_lower.endswith(".zip"):
+                import zipfile
+                with zipfile.ZipFile(file_path, "r") as zf:
+                    for info in zf.infolist():
+                        if not info.is_dir():
+                            inner_files.append({"name": info.filename, "size": info.file_size, "type": get_file_type(info.filename)})
+            elif any(fname_lower.endswith(ext) for ext in (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".tar.zst")):
+                # tar 系列：tarfile 自动识别压缩格式（r:* 模式）
+                import tarfile
+                with tarfile.open(file_path, "r:*") as tf:
+                    for member in tf.getmembers():
+                        if member.isfile():
+                            inner_files.append({"name": member.name, "size": member.size, "type": get_file_type(member.name)})
+            # 单文件压缩（.gz/.bz2/.xz/.zst）：只有一个文件，不列内部清单
+        except Exception as e:
+            logger.warning("压缩包解析失败 %s: %s", file.filename, e)
+
+    add_audit_log(current_user.username, "upload", temp_id, f"上传文件: {file.filename} ({actual_size} bytes)", get_client_ip())
+
+    return jsonify({
+        "tempId": temp_id, "name": file.filename, "size": actual_size, "type": ftype,
+        "md5": file_md5, "matched": matched, "matchedRules": rules,
+        "isArchive": is_archive, "innerFiles": inner_files,
+    })
+
+@app.route("/api/submissions", methods=["POST"])
+@login_required
+@role_required("internal-user", "admin")
+def api_create_submission():
+    """创建提交单：将 staging 临时文件正式归档，生成 manifest，进入审批流"""
+    data = request.get_json()
+    temp_ids = data.get("tempIds", [])
+    receiver_name = data.get("receiverName", "")
+    receiver_email = data.get("receiverEmail", "")
+    receiver_type = data.get("receiverType", "non-partner")
+    security_level = data.get("securityLevel", "internal")
+    reason = data.get("reason", "")
+    expiry_days = data.get("expiryDays", 30)
+
+    if not temp_ids:
+        return jsonify({"error": "请先上传文件"}), 400
+    if not receiver_name:
+        return jsonify({"error": "请填写接收方姓名"}), 400
+
+    sub_id = gen_submission_id()
+    final_dir = STAGING_DIR / sub_id
+    final_files_dir = final_dir / "files"
+    final_files_dir.mkdir(parents=True, exist_ok=True)
+
+    files_info = []
+    total_size = 0
+    for tid in temp_ids:
+        temp_dir = STAGING_DIR / tid
+        if not temp_dir.exists():
+            continue
+        temp_files_dir = temp_dir / "files"
+        if temp_files_dir.exists():
+            for f in temp_files_dir.iterdir():
+                if f.is_file():
+                    dest = final_files_dir / f.name
+                    if dest.exists():
+                        dest.unlink()
+                    os.rename(str(f), str(dest))  # 0拷贝移动
+                    md5 = md5_file(dest)
+                    ftype = get_file_type(f.name)
+                    matched, _ = match_feature_rules(f.name, dest)
+                    files_info.append({"name": f.name, "size": dest.stat().st_size, "type": ftype, "md5": md5, "matched": matched})
+                    total_size += dest.stat().st_size
+        # 清理临时目录
+        try:
+            shutil.rmtree(temp_dir)
+        except Exception:
+            pass
+
+    if not files_info:
+        shutil.rmtree(final_dir, ignore_errors=True)
+        return jsonify({"error": "没有有效文件"}), 400
+
+    # 生成 manifest.json
+    manifest = {"submissionId": sub_id, "submitTime": now_str(), "submitter": current_user.username, "files": files_info}
+    with open(final_dir / "manifest.json", "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+    # 免审批判定
+    auto_result = check_auto_approval(files_info)
+    auto_approved = 1 if auto_result["canAutoApprove"] else 0
+
+    db = get_db()
+    if auto_approved:
+        status = "approved"
+        approved_time = now_str()
+    else:
+        status = "pending"
+        approved_time = None
+
+    # 先插入 submissions 记录（外键依赖）
+    db.execute(
+        """INSERT INTO submissions (id,submitter,submitter_name,receiver_name,receiver_email,receiver_type,security_level,reason,expiry_days,status,auto_approved,current_path,submit_time,approved_time,file_count,total_size)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (sub_id, current_user.username, current_user.display_name, receiver_name, receiver_email, receiver_type,
+         security_level, reason, expiry_days, status, auto_approved, str(final_dir),
+         now_str(), approved_time, len(files_info), total_size)
+    )
+    for fi in files_info:
+        db.execute(
+            "INSERT INTO submission_files (id,submission_id,path,name,size,type,md5,matched,is_archive) VALUES (?,?,?,?,?,?,?,?,?)",
+            (str(uuid.uuid4()), sub_id, f"files/{fi['name']}", fi["name"], fi["size"], fi["type"], fi["md5"], 1 if fi["matched"] else 0, 0)
+        )
+    # 免审批：插入审批记录后再 os.rename 摆渡到 external
+    if auto_approved:
+        db.execute(
+            "INSERT INTO approvals (id,submission_id,level,approver,approver_name,action,comment,time) VALUES (?,?,?,?,?,?,?,?)",
+            (str(uuid.uuid4()), sub_id, 0, "system", "系统", "approve", "免审批自动通过", now_str())
+        )
+        move_to_external(sub_id)
+        db.execute("UPDATE submissions SET current_path=? WHERE id=?", (str(EXTERNAL_DIR / sub_id), sub_id))
+    db.commit()
+
+    add_audit_log(current_user.username, "create_submission", sub_id,
+                  f"提交{len(files_info)}个文件，{'免审批自动通过' if auto_approved else '待审批'}", get_client_ip())
+
+    return jsonify({"id": sub_id, "status": status, "autoApproved": bool(auto_approved), "fileCount": len(files_info)})
+
+# ============================================================
+# 路由：提交单查询
+# ============================================================
+@app.route("/api/submissions")
+@login_required
+def api_list_submissions():
+    """提交单列表"""
+    status = request.args.get("status", "")
+    db = get_db()
+    query = "SELECT * FROM submissions WHERE 1=1"
+    params = []
+    if current_user.role == "internal-user":
+        query += " AND submitter=?"
+        params.append(current_user.username)
+    if status:
+        query += " AND status=?"
+        params.append(status)
+    query += " ORDER BY submit_time DESC LIMIT 200"
+    rows = db.execute(query, params).fetchall()
+    return jsonify(rows_to_list(rows))
+
+@app.route("/api/submissions/<sub_id>")
+@login_required
+def api_get_submission(sub_id):
+    """提交单详情"""
+    db = get_db()
+    sub = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
+    if not sub:
+        return jsonify({"error": "提交单不存在"}), 404
+    files = db.execute("SELECT * FROM submission_files WHERE submission_id=?", (sub_id,)).fetchall()
+    approvals = db.execute("SELECT * FROM approvals WHERE submission_id=? ORDER BY level,time", (sub_id,)).fetchall()
+    return jsonify({**row_to_dict(sub), "files": rows_to_list(files), "approvals": rows_to_list(approvals)})
+
+@app.route("/api/submissions/pending/my")
+@login_required
+@role_required("dept-manager", "executive", "admin")
+def api_my_pending():
+    """待我审批的列表"""
+    db = get_db()
+    if current_user.role == "executive":
+        rows = db.execute("SELECT * FROM submissions WHERE status='pending_approval_2' ORDER BY submit_time DESC").fetchall()
+    else:
+        rows = db.execute("SELECT * FROM submissions WHERE status='pending' ORDER BY submit_time DESC").fetchall()
+    return jsonify(rows_to_list(rows))
+
+# ============================================================
+# 路由：审批
+# ============================================================
+@app.route("/api/submissions/<sub_id>/approve", methods=["POST"])
+@login_required
+@role_required("dept-manager", "executive", "admin")
+def api_approve(sub_id):
+    """审批：通过/驳回。通过后 os.rename 到 external（0拷贝摆渡）"""
+    data = request.get_json()
+    action = data.get("action", "")  # approve / reject
+    comment = data.get("comment", "")
+
+    if action not in ("approve", "reject"):
+        return jsonify({"error": "无效的操作"}), 400
+
+    db = get_db()
+    sub = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
+    if not sub:
+        return jsonify({"error": "提交单不存在"}), 404
+
+    # 判断审批级别
+    if sub["status"] == "pending":
+        level = 1
+    elif sub["status"] == "pending_approval_2":
+        level = 2
+        if current_user.role not in ("executive", "admin"):
+            return jsonify({"error": "需要公司高管二级审批"}), 403
+    else:
+        return jsonify({"error": "当前状态不需要审批"}), 400
+
+    db.execute(
+        "INSERT INTO approvals (id,submission_id,level,approver,approver_name,action,comment,time) VALUES (?,?,?,?,?,?,?,?)",
+        (str(uuid.uuid4()), sub_id, level, current_user.username, current_user.display_name, action, comment, now_str())
+    )
+
+    if action == "reject":
+        # 驳回：os.rename 到 archive
+        move_to_archive(sub_id, from_dir="staging")
+        new_status = "rejected"
+        db.execute("UPDATE submissions SET status=?, archived_time=?, current_path=? WHERE id=?",
+                   (new_status, now_str(), str(ARCHIVE_DIR / sub_id), sub_id))
+    elif level == 1:
+        # 一级通过：合作方直接摆渡，非合作方进入二级
+        if sub["receiver_type"] == "partner":
+            move_to_external(sub_id)
+            new_status = "approved"
+            db.execute("UPDATE submissions SET status=?, approved_time=?, current_path=? WHERE id=?",
+                       (new_status, now_str(), str(EXTERNAL_DIR / sub_id), sub_id))
+        else:
+            new_status = "pending_approval_2"
+            db.execute("UPDATE submissions SET status=? WHERE id=?", (new_status, sub_id))
+    else:
+        # 二级通过：os.rename 摆渡到 external
+        move_to_external(sub_id)
+        new_status = "approved"
+        db.execute("UPDATE submissions SET status=?, approved_time=?, current_path=? WHERE id=?",
+                   (new_status, now_str(), str(EXTERNAL_DIR / sub_id), sub_id))
+
+    db.commit()
+    add_audit_log(current_user.username, f"approval_{action}", sub_id,
+                  f"{'通过' if action=='approve' else '驳回'}，级别{level}，备注：{comment}", get_client_ip())
+
+    return jsonify({"status": new_status, "message": "审批完成"})
+
+# ============================================================
+# 路由：外网下载
+# ============================================================
+@app.route("/api/external/files")
+@login_required
+def api_external_files():
+    """已摆渡到 external 的文件列表"""
+    db = get_db()
+    rows = db.execute("SELECT * FROM submissions WHERE status IN ('approved','downloaded') ORDER BY approved_time DESC LIMIT 200").fetchall()
+    return jsonify(rows_to_list(rows))
+
+@app.route("/api/external/<sub_id>/download/<path:filename>")
+@login_required
+def api_download_file(sub_id, filename):
+    """
+    下载文件：从 external 目录流式读取。
+    记录下载时间，物理文件不动。
+    """
+    db = get_db()
+    sub = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
+    if not sub or sub["status"] not in ("approved", "downloaded"):
+        return jsonify({"error": "文件不可下载"}), 404
+
+    file_path = EXTERNAL_DIR / sub_id / "files" / filename
+    if not file_path.exists():
+        # fallback: 从当前路径找
+        current_path = sub["current_path"] or str(EXTERNAL_DIR / sub_id)
+        file_path = Path(current_path) / "files" / filename
+        if not file_path.exists():
+            return jsonify({"error": "文件不存在"}), 404
+
+    # 记录下载
+    db.execute(
+        "INSERT INTO download_records (id,submission_id,filename,downloader,download_time,ip) VALUES (?,?,?,?,?,?)",
+        (str(uuid.uuid4()), sub_id, filename, current_user.username, now_str(), get_client_ip())
+    )
+    # 更新状态为 downloaded（如果还是 approved）
+    if sub["status"] == "approved":
+        db.execute("UPDATE submissions SET status='downloaded' WHERE id=?", (sub_id,))
+    db.commit()
+
+    add_audit_log(current_user.username, "download", sub_id, f"下载文件: {filename}", get_client_ip())
+
+    return send_file(str(file_path), as_attachment=True, download_name=filename)
+
+# ============================================================
+# 路由：用户管理（admin）
+# ============================================================
+@app.route("/api/admin/local-users")
+@login_required
+@role_required("admin")
+def api_list_local_users():
+    db = get_db()
+    rows = db.execute("SELECT id,username,display_name,email,role,status,created_at FROM local_users ORDER BY created_at").fetchall()
+    return jsonify(rows_to_list(rows))
+
+@app.route("/api/admin/local-users", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_create_local_user():
+    data = request.get_json()
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+    display_name = data.get("displayName", "")
+    email = data.get("email", "")
+    role = data.get("role", "internal-user")
+    if not username or not password:
+        return jsonify({"error": "用户名和密码不能为空"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "密码至少6位"}), 400
+    db = get_db()
+    exists = db.execute("SELECT COUNT(*) as c FROM local_users WHERE username=?", (username,)).fetchone()["c"]
+    if exists:
+        return jsonify({"error": "用户名已存在"}), 400
+    db.execute(
+        "INSERT INTO local_users (id,username,password_hash,display_name,email,role,status,created_at) VALUES (?,?,?,?,?,?,?,?)",
+        (str(uuid.uuid4()), username, hash_password(password), display_name, email, role, "active", now_str())
+    )
+    db.commit()
+    add_audit_log(current_user.username, "create_local_user", username, f"创建本地用户，角色{role}", get_client_ip())
+    return jsonify({"message": "创建成功"})
+
+@app.route("/api/admin/local-users/<username>", methods=["DELETE"])
+@login_required
+@role_required("admin")
+def api_delete_local_user(username):
+    if username == "admin":
+        return jsonify({"error": "不能删除admin"}), 400
+    db = get_db()
+    db.execute("DELETE FROM local_users WHERE username=?", (username,))
+    db.commit()
+    add_audit_log(current_user.username, "delete_local_user", username, "删除本地用户", get_client_ip())
+    return jsonify({"message": "删除成功"})
+
+@app.route("/api/admin/local-users/<username>/reset-password", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_reset_local_password(username):
+    new_pwd = "Init@123456"
+    db = get_db()
+    db.execute("UPDATE local_users SET password_hash=?, must_change_password=1 WHERE username=?",
+               (hash_password(new_pwd), username))
+    db.commit()
+    add_audit_log(current_user.username, "reset_password", username, "重置密码", get_client_ip())
+    return jsonify({"message": f"密码已重置为 {new_pwd}，用户首次登录需修改"})
+
+# ============================================================
+# 路由：AD 角色映射（admin）
+# ============================================================
+@app.route("/api/admin/role-mappings")
+@login_required
+@role_required("admin")
+def api_list_role_mappings():
+    db = get_db()
+    rows = db.execute("SELECT * FROM role_mappings ORDER BY granted_at DESC").fetchall()
+    return jsonify(rows_to_list(rows))
+
+@app.route("/api/admin/role-mappings", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_create_role_mapping():
+    data = request.get_json()
+    principal_type = data.get("principalType", "user")
+    principal_value = data.get("principalValue", "").strip()
+    display_name = data.get("displayName", "")
+    role = data.get("role", "internal-user")
+    note = data.get("note", "")
+    if not principal_value or not role:
+        return jsonify({"error": "参数不完整"}), 400
+    db = get_db()
+    db.execute(
+        "INSERT INTO role_mappings (id,principal_type,principal_value,display_name,role,granted_by,granted_at,note) VALUES (?,?,?,?,?,?,?,?)",
+        (str(uuid.uuid4()), principal_type, principal_value, display_name, role, current_user.username, now_str(), note)
+    )
+    db.commit()
+    add_audit_log(current_user.username, "create_role_mapping", principal_value,
+                  f"授予角色{role}，类型{principal_type}", get_client_ip())
+    return jsonify({"message": "角色映射创建成功"})
+
+@app.route("/api/admin/role-mappings/<mapping_id>", methods=["DELETE"])
+@login_required
+@role_required("admin")
+def api_delete_role_mapping(mapping_id):
+    db = get_db()
+    db.execute("DELETE FROM role_mappings WHERE id=?", (mapping_id,))
+    db.commit()
+    add_audit_log(current_user.username, "delete_role_mapping", mapping_id, "删除角色映射", get_client_ip())
+    return jsonify({"message": "删除成功"})
+
+@app.route("/api/admin/ad/search", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_search_ad():
+    """搜索 AD 用户（PMF 阶段模拟，生产接入真实 LDAP 查询）"""
+    keyword = request.form.get("keyword", "") if request.form else (request.get_json() or {}).get("keyword", "")
+    if not AD_ENABLED:
+        # 模拟返回
+        mock = [
+            {"username": "zhangsan", "displayName": "张三", "email": "zhangsan@nexskysemi.com", "department": "研发部"},
+            {"username": "lisi", "displayName": "李四", "email": "lisi@nexskysemi.com", "department": "研发部"},
+            {"username": "wangzong", "displayName": "王总", "email": "wangzong@nexskysemi.com", "department": "公司高管"},
+            {"username": "zhaoliu", "displayName": "赵六", "email": "zhaoliu@nexskysemi.com", "department": "市场部"},
+        ]
+        result = [u for u in mock if keyword.lower() in u["username"].lower() or keyword in u["displayName"]]
+        return jsonify(result)
+    # TODO: 生产环境真实 AD 查询
+    return jsonify([])
+
+# ============================================================
+# 路由：系统配置
+# ============================================================
+@app.route("/api/config/feature-rules")
+@login_required
+def api_feature_rules():
+    db = get_db()
+    rows = db.execute("SELECT * FROM feature_rules ORDER BY created_at").fetchall()
+    return jsonify(rows_to_list(rows))
+
+@app.route("/api/config/system")
+@login_required
+def api_get_system_config():
+    db = get_db()
+    rows = db.execute("SELECT key,value FROM system_config").fetchall()
+    return jsonify({r["key"]: r["value"] for r in rows})
+
+@app.route("/api/config/system", methods=["PUT"])
+@login_required
+@role_required("admin")
+def api_update_system_config():
+    config = request.get_json()
+    db = get_db()
+    for k, v in config.items():
+        db.execute("INSERT OR REPLACE INTO system_config (key,value) VALUES (?,?)", (k, str(v)))
+    db.commit()
+    add_audit_log(current_user.username, "update_system_config", "", json.dumps(config, ensure_ascii=False), get_client_ip())
+    return jsonify({"message": "配置已保存"})
+
+# ============================================================
+# 路由：审计日志与统计
+# ============================================================
+@app.route("/api/audit-logs")
+@login_required
+@role_required("admin", "dept-manager", "executive")
+def api_audit_logs():
+    action = request.args.get("action", "")
+    user = request.args.get("user", "")
+    limit = int(request.args.get("limit", "200"))
+    db = get_db()
+    query = "SELECT * FROM audit_logs WHERE 1=1"
+    params = []
+    if action:
+        query += " AND action LIKE ?"
+        params.append(f"%{action}%")
+    if user:
+        query += " AND user LIKE ?"
+        params.append(f"%{user}%")
+    query += " ORDER BY time DESC LIMIT ?"
+    params.append(limit)
+    rows = db.execute(query, params).fetchall()
+    return jsonify(rows_to_list(rows))
+
+@app.route("/api/stats")
+@login_required
+def api_stats():
+    db = get_db()
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    today_count = db.execute("SELECT COUNT(*) as c FROM submissions WHERE submit_time LIKE ?", (f"{today}%",)).fetchone()["c"]
+    pending = db.execute("SELECT COUNT(*) as c FROM submissions WHERE status LIKE 'pending%'").fetchone()["c"]
+    approved = db.execute("SELECT COUNT(*) as c FROM submissions WHERE status IN ('approved','downloaded')").fetchone()["c"]
+    auto = db.execute("SELECT COUNT(*) as c FROM submissions WHERE auto_approved=1").fetchone()["c"]
+    total = db.execute("SELECT COUNT(*) as c FROM submissions").fetchone()["c"]
+    files = db.execute("SELECT COUNT(*) as c FROM submission_files").fetchone()["c"]
+    return jsonify({
+        "todaySubmitted": today_count, "pendingApproval": pending, "ready": approved,
+        "autoApprovalRate": round(auto / total * 100, 1) if total else 0,
+        "archivedFiles": files, "avgFerryTime": "~0.1s",
+    })
+
+@app.route("/api/health")
+def api_health():
+    return jsonify({"status": "ok", "time": now_str(), "version": "1.5.0"})
+
+# ============================================================
+# 手动触发过期清理（admin）
+# ============================================================
+@app.route("/api/admin/cleanup-expired", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_cleanup_expired():
+    count = cleanup_expired_files()
+    return jsonify({"message": f"清理完成，共处理 {count} 个过期文件", "cleaned": count})
+
+# ============================================================
+# 错误处理
+# ============================================================
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({"error": f"文件过大，最大支持 {MAX_CONTENT_LENGTH//1024//1024}MB"}), 413
+
+@app.errorhandler(404)
+def not_found(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "接口不存在"}), 404
+    return redirect(url_for("login_page"))
+
+# ============================================================
+# 启动
+# ============================================================
+if __name__ == "__main__":
+    init_db()
+    scheduler = start_scheduler()
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    logger.info("=" * 60)
+    logger.info("SecureTrans 启动: http://%s:%s", host, port)
+    logger.info("初始管理员: admin / Admin@123")
+    logger.info("存储目录: %s", NAS_ROOT)
+    logger.info("数据库: %s", DB_PATH)
+    logger.info("=" * 60)
+    # 生产环境用 waitress/gunicorn，开发用 flask 自带服务器
+    debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+    app.run(host=host, port=port, debug=debug)
