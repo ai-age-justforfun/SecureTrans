@@ -33,21 +33,21 @@
 
 ### 第一步：上传代码
 
-将 `backend-flask/` 目录上传到测试服务器，例如 `/opt/securetrans/`：
+将 `src/` 目录上传到测试服务器，例如 `/opt/securetrans/`：
 
 ```bash
 # 方式1：scp 上传
-scp -r backend-flask/ user@test-server:/opt/securetrans/
+scp -r src/ user@test-server:/opt/securetrans/
 
 # 方式2：从 Gitea 克隆
 git clone http://gitea-server/openwrtadmin/SecureTrans.git
-cd SecureTrans/Phase1-PSF/sprint-5/backend-flask
+cd SecureTrans/src
 ```
 
 ### 第二步：配置环境变量
 
 ```bash
-cd /opt/securetrans/backend-flask
+cd /opt/securetrans
 
 # 使用测试环境配置（直接复制 .env.testing 即可）
 cp .env.testing .env
@@ -198,7 +198,7 @@ df -h /mnt/nas/securetrans/staging /mnt/nas/securetrans/external /mnt/nas/secure
 bash start-production.sh
 
 # 或配置 systemd 服务（推荐）
-# 参考 sprint-4 部署包中的 config/securetrans.service
+# 参考 infra/securetrans.service
 ```
 
 **代码完全不变**，只是配置和启动方式不同。这就是 `DEPLOY_MODE` 开关的价值。
@@ -230,19 +230,27 @@ A: 在 `.env` 中修改 `PORT=8001` 或其他端口。
 ## 六、文件清单
 
 ```
-backend-flask/
-├── app.py                  # 主程序 v1.5.0
-├── requirements.txt        # Python 依赖
-├── test_api.py             # 35项全量测试
-├── start.sh                # 测试环境启动脚本（Flask）
-├── start-production.sh     # 生产环境启动脚本（gunicorn）
-├── .env.testing            # 测试环境配置模板 ← 测试用这个
-├── .env.production         # 生产环境配置模板
-├── .env.example            # 通用配置示例
-├── README.md               # 后端说明
-└── static/
-    ├── index.html          # 主应用 SPA
-    └── login.html          # 登录页
+项目根目录/
+├── src/                      # 源代码
+│   ├── app.py                # 主程序 v1.5.0
+│   ├── requirements.txt      # Python 依赖
+│   ├── start.sh              # 测试环境启动脚本（Flask）
+│   ├── start-production.sh   # 生产环境启动脚本（gunicorn）
+│   ├── .env.testing          # 测试环境配置模板 ← 测试用这个
+│   ├── .env.production       # 生产环境配置模板
+│   ├── .env.example          # 通用配置示例
+│   ├── README.md             # 后端说明
+│   └── static/
+│       ├── index.html        # 主应用 SPA
+│       └── login.html        # 登录页
+├── tests/
+│   └── test_api.py           # 35项全量测试
+└── infra/                    # 部署配置（生产环境用）
+    ├── deploy.sh
+    ├── verify.sh
+    ├── DEPLOY.md
+    ├── nginx-securetrans.conf
+    └── securetrans.service
 ```
 
 ---

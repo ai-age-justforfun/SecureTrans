@@ -35,22 +35,24 @@
 ## 二、部署包内容说明
 
 ```
-securetrans-deploy/
-├── deploy.sh                  # 一键部署脚本（核心）
-├── verify.sh                  # 部署后验证脚本（35项全量测试）
-├── DEPLOY.md                  # 本部署指南
-├── backend-flask/             # 后端程序（清理后的干净版本）
-│   ├── app.py                 # Flask 主程序（单文件，含所有 API）
-│   ├── requirements.txt       # Python 依赖（含 gunicorn）
-│   ├── test_api.py            # 全量 API 测试脚本（35项）
-│   ├── .env.example           # 环境变量示例
-│   ├── start.sh               # 开发模式启动脚本（可选）
-│   └── static/                # 前端静态文件
-│       ├── index.html         # 主应用（完整 SPA，对接所有 API）
-│       └── login.html         # 登录页
-└── config/                    # 生产环境配置模板
-    ├── .env.production        # 生产环境变量模板
-    ├── securetrans.service    # systemd 服务文件
+项目根目录/
+├── src/                      # 后端程序
+│   ├── app.py                # Flask 主程序（单文件，含所有 API）
+│   ├── requirements.txt      # Python 依赖
+│   ├── .env.example          # 环境变量示例
+│   ├── .env.production       # 生产环境变量模板
+│   ├── start.sh              # 测试环境启动脚本
+│   ├── start-production.sh   # 生产环境启动脚本（gunicorn）
+│   └── static/               # 前端静态文件
+│       ├── index.html        # 主应用（完整 SPA，对接所有 API）
+│       └── login.html        # 登录页
+├── tests/
+│   └── test_api.py           # 全量 API 测试脚本（35项）
+└── infra/                    # 部署配置（本目录）
+    ├── deploy.sh             # 一键部署脚本（核心）
+    ├── verify.sh             # 部署后验证脚本（35项全量测试）
+    ├── DEPLOY.md             # 本部署指南
+    ├── securetrans.service   # systemd 服务文件
     └── nginx-securetrans.conf # Nginx 反向代理配置
 ```
 
@@ -185,7 +187,7 @@ deploy.sh 会自动完成以下 9 个步骤：
 1. **前置检查** — 验证 Python 3.10+、venv 模块可用
 2. **创建服务用户** — 创建 `securetrans` 系统用户（无登录权限）
 3. **备份旧版本** — 如果 `/opt/securetrans` 已存在，自动备份
-4. **复制程序文件** — 复制到 `/opt/securetrans/backend-flask/`
+4. **复制程序文件** — 复制到 `/opt/securetrans/`
 5. **配置 .env** — 从模板生成，自动生成随机 SECRET_KEY
 6. **创建虚拟环境** — 安装 Python 依赖（Flask、gunicorn 等）
 7. **NAS 存储目录** — 创建 staging/external/archive，验证同文件系统
@@ -200,7 +202,7 @@ deploy.sh 完成后，需要根据实际环境修改以下配置：
 #### A. 修改 .env 配置
 
 ```bash
-sudo vi /opt/securetrans/backend-flask/.env
+sudo vi /opt/securetrans/.env
 ```
 
 **必须修改的项：**
@@ -228,7 +230,7 @@ sudo systemctl restart securetrans
 
 ```bash
 # 复制配置模板
-sudo cp /tmp/securetrans-deploy/config/nginx-securetrans.conf /etc/nginx/conf.d/securetrans.conf
+sudo cp /tmp/securetrans-deploy/infra/nginx-securetrans.conf /etc/nginx/conf.d/securetrans.conf
 
 # 编辑配置，修改 server_name 为实际域名或 IP
 sudo vi /etc/nginx/conf.d/securetrans.conf
@@ -359,16 +361,16 @@ sudo journalctl -u securetrans -n 100      # 最近100行
 sudo journalctl -u securetrans --since today  # 今天的日志
 
 # 应用日志
-tail -f /opt/securetrans/backend-flask/data/securetrans.log
-tail -f /opt/securetrans/backend-flask/data/gunicorn-error.log
-tail -f /opt/securetrans/backend-flask/data/gunicorn-access.log
+tail -f /opt/securetrans/data/securetrans.log
+tail -f /opt/securetrans/data/gunicorn-error.log
+tail -f /opt/securetrans/data/gunicorn-access.log
 ```
 
 ### 6.2 数据备份
 
 ```bash
 # 数据库备份（SQLite 热备份）
-sudo sqlite3 /opt/securetrans/backend-flask/data/securetrans.db ".backup /backup/securetrans_$(date +%Y%m%d).db"
+sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$(date +%Y%m%d).db"
 
 # 归档文件备份（NAS 层保障冗余，如需额外备份）
 rsync -av /mnt/nas/securetrans/archive/ /backup/archive/
@@ -376,7 +378,7 @@ rsync -av /mnt/nas/securetrans/archive/ /backup/archive/
 # 定时备份（crontab）
 sudo crontab -e
 # 每天凌晨 3 点备份数据库
-0 3 * * * sqlite3 /opt/securetrans/backend-flask/data/securetrans.db ".backup /backup/securetrans_$(date +\%Y\%m\%d).db"
+0 3 * * * sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$(date +\%Y\%m\%d).db"
 ```
 
 ### 6.3 定时任务说明
@@ -459,9 +461,9 @@ bash verify.sh
 
 ## 十、联系方式与技术支持
 
-- 后端主程序：`/opt/securetrans/backend-flask/app.py`（单文件，约 1200 行，含详细注释）
+- 后端主程序：`/opt/securetrans/app.py`（单文件，约 1200 行，含详细注释）
 - API 文档：见 `README.md` 中的 API 接口一览
-- 测试脚本：`/opt/securetrans/backend-flask/test_api.py`（35 项全量测试）
+- 测试脚本：`/opt/securetrans/test_api.py`（35 项全量测试）
 
 ---
 

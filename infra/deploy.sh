@@ -1,8 +1,9 @@
 #!/bin/bash
 # ============================================================
 # SecureTrans 一键部署脚本 (Linux)
-# 适用：Ubuntu 20.04+ / Debian 11+ / CentOS 7+ / RHEL 8+
+# 适用：Ubuntu 20.04+ / Debian 11+ / CentOS 7+ / RHEL 8+ / Rocky 8+
 # 用法：sudo bash deploy.sh
+# 目录结构：infra/deploy.sh, src/ (源码), tests/ (测试)
 # ============================================================
 set -euo pipefail
 
@@ -17,6 +18,7 @@ SERVICE_USER="securetrans"
 BACKUP_DIR="/opt/securetrans_backup_$(date +%Y%m%d_%H%M%S)"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_DIR="$SCRIPT_DIR/../src"
 
 echo -e "${GREEN}============================================================${NC}"
 echo -e "${GREEN}  SecureTrans 一键部署脚本${NC}"
@@ -62,6 +64,13 @@ if ! python3 -m venv --help &> /dev/null; then
     fi
 fi
 
+# 检查源码目录
+if [ ! -d "$SRC_DIR" ]; then
+    echo -e "${RED}错误: 未找到源码目录 ${SRC_DIR}${NC}"
+    echo "  请确保在项目根目录下运行: bash infra/deploy.sh"
+    exit 1
+fi
+
 # ============================================================
 # 1. 创建服务用户
 # ============================================================
@@ -90,11 +99,11 @@ fi
 # ============================================================
 echo -e "${YELLOW}[3/9] 复制程序文件到 ${INSTALL_DIR}...${NC}"
 mkdir -p "$INSTALL_DIR"
-cp -a "$SCRIPT_DIR/backend-flask/." "$INSTALL_DIR/backend-flask/"
+cp -a "$SRC_DIR/." "$INSTALL_DIR/"
 
 # 创建必要目录
-mkdir -p "$INSTALL_DIR/backend-flask/data"
-mkdir -p "$INSTALL_DIR/backend-flask/static"
+mkdir -p "$INSTALL_DIR/data"
+mkdir -p "$INSTALL_DIR/static"
 
 echo -e "  程序文件已复制 ${GREEN}OK${NC}"
 
@@ -102,13 +111,13 @@ echo -e "  程序文件已复制 ${GREEN}OK${NC}"
 # 4. 配置 .env
 # ============================================================
 echo -e "${YELLOW}[4/9] 配置环境变量...${NC}"
-if [ ! -f "$INSTALL_DIR/backend-flask/.env" ]; then
-    cp "$SCRIPT_DIR/config/.env.production" "$INSTALL_DIR/backend-flask/.env"
+if [ ! -f "$INSTALL_DIR/.env" ]; then
+    cp "$SRC_DIR/.env.production" "$INSTALL_DIR/.env"
     # 生成随机 SECRET_KEY
     RANDOM_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-    sed -i "s/^SECRET_KEY=.*/SECRET_KEY=${RANDOM_KEY}/" "$INSTALL_DIR/backend-flask/.env"
+    sed -i "s/^SECRET_KEY=.*/SECRET_KEY=${RANDOM_KEY}/" "$INSTALL_DIR/.env"
     echo -e "  .env 已创建，SECRET_KEY 已随机生成 ${GREEN}OK${NC}"
-    echo -e "  ${YELLOW}请编辑 ${INSTALL_DIR}/backend-flask/.env 修改 NAS_ROOT 等配置${NC}"
+    echo -e "  ${YELLOW}请编辑 ${INSTALL_DIR}/.env 修改 NAS_ROOT 等配置${NC}"
 else
     echo -e "  .env 已存在，保留原有配置 ${GREEN}OK${NC}"
 fi
@@ -117,7 +126,7 @@ fi
 # 5. 创建 Python 虚拟环境并安装依赖
 # ============================================================
 echo -e "${YELLOW}[5/9] 创建虚拟环境并安装依赖...${NC}"
-cd "$INSTALL_DIR/backend-flask"
+cd "$INSTALL_DIR"
 
 if [ ! -d "venv" ]; then
     python3 -m venv venv
@@ -129,15 +138,16 @@ fi
 source venv/bin/activate
 pip install --upgrade pip -q
 pip install -r requirements.txt -q
+pip install gunicorn -q
 deactivate
-echo -e "  依赖安装完成 ${GREEN}OK${NC}"
+echo -e "  依赖安装完成（含 gunicorn） ${GREEN}OK${NC}"
 
 # ============================================================
 # 6. NAS 存储目录准备
 # ============================================================
 echo -e "${YELLOW}[6/9] 存储目录准备...${NC}"
 # 从 .env 读取 NAS_ROOT
-NAS_ROOT=$(grep -E '^NAS_ROOT=' "$INSTALL_DIR/backend-flask/.env" | cut -d= -f2)
+NAS_ROOT=$(grep -E '^NAS_ROOT=' "$INSTALL_DIR/.env" | cut -d= -f2)
 NAS_ROOT="${NAS_ROOT:-/mnt/nas/securetrans}"
 
 mkdir -p "$NAS_ROOT/staging" "$NAS_ROOT/external" "$NAS_ROOT/archive"
@@ -161,16 +171,16 @@ fi
 echo -e "${YELLOW}[7/9] 设置文件权限...${NC}"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$NAS_ROOT"
-chmod 750 "$INSTALL_DIR/backend-flask"
-chmod 640 "$INSTALL_DIR/backend-flask/.env"
-chmod 600 "$INSTALL_DIR/backend-flask/data/"*.db 2>/dev/null || true
+chmod 750 "$INSTALL_DIR"
+chmod 640 "$INSTALL_DIR/.env"
+chmod 600 "$INSTALL_DIR/data/"*.db 2>/dev/null || true
 echo -e "  权限设置完成 ${GREEN}OK${NC}"
 
 # ============================================================
 # 8. 安装 systemd 服务
 # ============================================================
 echo -e "${YELLOW}[8/9] 安装 systemd 服务...${NC}"
-cp "$SCRIPT_DIR/config/securetrans.service" /etc/systemd/system/securetrans.service
+cp "$SCRIPT_DIR/securetrans.service" /etc/systemd/system/securetrans.service
 systemctl daemon-reload
 systemctl enable securetrans
 echo -e "  systemd 服务已安装并设为开机自启 ${GREEN}OK${NC}"
@@ -206,9 +216,9 @@ echo -e "${GREEN}============================================================${N
 echo -e "${GREEN}  部署完成！${NC}"
 echo -e "${GREEN}============================================================${NC}"
 echo ""
-echo "  安装目录:   ${INSTALL_DIR}/backend-flask"
-echo "  配置文件:   ${INSTALL_DIR}/backend-flask/.env"
-echo "  数据目录:   ${INSTALL_DIR}/backend-flask/data"
+echo "  安装目录:   ${INSTALL_DIR}"
+echo "  配置文件:   ${INSTALL_DIR}/.env"
+echo "  数据目录:   ${INSTALL_DIR}/data"
 echo "  存储目录:   ${NAS_ROOT}"
 echo "  服务状态:   systemctl status securetrans"
 echo "  服务日志:   journalctl -u securetrans -f"
@@ -217,7 +227,7 @@ echo "  初始账号:   admin / Admin@123  (首次登录强制修改密码)"
 echo ""
 echo -e "${YELLOW}  后续步骤:${NC}"
 echo "  1. 编辑 .env 确认 NAS_ROOT 指向真实 NAS 挂载"
-echo "  2. 配置 nginx 反向代理 (参考 config/nginx-securetrans.conf)"
-echo "  3. 运行全量测试: bash verify.sh"
+echo "  2. 配置 nginx 反向代理 (参考 infra/nginx-securetrans.conf)"
+echo "  3. 运行全量测试: bash infra/verify.sh"
 echo "  4. 登录系统修改 admin 初始密码"
 echo ""

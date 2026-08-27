@@ -1,6 +1,6 @@
 # SecureTrans 后端部署说明（Flask 版）
 
-> 轻量级跨网文件审批摆渡系统 - v1.4
+> 轻量级跨网文件审批摆渡系统 - v1.5.0
 > Flask + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 适配初创公司 50 人规模，支撑到 200 人不改架构
 
@@ -9,12 +9,15 @@
 ## 目录结构
 
 ```
-backend-flask/
+src/
 ├── app.py              # Flask 主程序（单文件，含所有 API）
 ├── requirements.txt    # Python 依赖
 ├── .env.example        # 环境变量配置示例
+├── .env.testing        # 测试环境配置模板
+├── .env.production     # 生产环境配置模板
 ├── start.bat           # Windows 一键启动
-├── start.sh            # Linux 一键启动
+├── start.sh            # 测试环境启动（Flask自带服务器）
+├── start-production.sh # 生产环境启动（gunicorn）
 ├── README.md           # 本文件
 ├── data/               # 运行时数据（自动创建）
 │   ├── securetrans.db  # SQLite 数据库
@@ -23,7 +26,9 @@ backend-flask/
 │   ├── staging/        # 刚上传，待审核
 │   ├── external/       # 审核通过，可外网下载
 │   └── archive/        # 过期/驳回，永久归档
-└── static/             # 前端静态文件（放入 index.html）
+└── static/             # 前端静态文件
+    ├── index.html      # 主应用SPA
+    └── login.html      # 登录页
 ```
 
 ---
@@ -188,9 +193,9 @@ After=network.target
 [Service]
 Type=simple
 User=securetrans
-WorkingDirectory=/opt/securetrans/backend-flask
-EnvironmentFile=/opt/securetrans/backend-flask/.env
-ExecStart=/opt/securetrans/backend-flask/venv/bin/gunicorn -w 2 -b 0.0.0.0:8000 -t 300 app:app
+WorkingDirectory=/opt/securetrans
+EnvironmentFile=/opt/securetrans/.env
+ExecStart=/opt/securetrans/venv/bin/gunicorn -w 2 -b 127.0.0.1:8000 -t 300 app:app
 Restart=always
 RestartSec=5
 

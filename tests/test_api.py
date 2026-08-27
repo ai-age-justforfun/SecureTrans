@@ -262,7 +262,8 @@ test("手动触发过期清理（无过期文件）", code == 200 and 'cleaned' 
 # 21. 验证 os.rename 物理文件移动
 print("\n--- 12. 物理文件验证（os.rename 0拷贝） ---")
 import pathlib
-nas_root = pathlib.Path(__file__).parent / "nas"
+# NAS_ROOT 可通过环境变量覆盖；默认指向 src/nas（测试脚本在 tests/，服务在 src/）
+nas_root = pathlib.Path(os.getenv("NAS_ROOT", str(pathlib.Path(__file__).parent.parent / "src" / "nas")))
 staging_dir = nas_root / "staging"
 external_dir = nas_root / "external"
 archive_dir = nas_root / "archive"

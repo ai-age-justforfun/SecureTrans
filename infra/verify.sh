@@ -3,11 +3,13 @@
 # SecureTrans 部署后验证脚本
 # 运行全量 35 项 API 测试，确认服务器部署正确
 # 用法：bash verify.sh [BASE_URL]
+# 目录结构：infra/verify.sh, tests/test_api.py
 # ============================================================
 set -euo pipefail
 
 BASE_URL="${1:-http://127.0.0.1:8000}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEST_SCRIPT_PATH="$SCRIPT_DIR/../tests/test_api.py"
 
 echo "============================================================"
 echo "  SecureTrans 部署验证"
@@ -35,7 +37,7 @@ fi
 # 2. 检查关键目录
 echo ""
 echo "[2/4] 存储目录与文件系统检查..."
-INSTALL_DIR="/opt/securetrans/backend-flask"
+INSTALL_DIR="/opt/securetrans"
 if [ -f "$INSTALL_DIR/.env" ]; then
     NAS_ROOT=$(grep -E '^NAS_ROOT=' "$INSTALL_DIR/.env" | cut -d= -f2)
 else
@@ -69,10 +71,17 @@ echo "[3/4] 运行全量 API 测试 (35项)..."
 echo "  (测试脚本会创建测试用户和测试文件，完成后自动清理)"
 echo ""
 
+# 检查测试脚本是否存在
+if [ ! -f "$TEST_SCRIPT_PATH" ]; then
+    echo "  错误: 未找到测试脚本 ${TEST_SCRIPT_PATH}"
+    echo "  请确保在项目根目录下运行: bash infra/verify.sh"
+    exit 1
+fi
+
 # 修改 test_api.py 的 BASE_URL 并运行
 TEST_SCRIPT=$(mktemp /tmp/securetrans_test_XXXXXX.py)
 sed "s|BASE_URL = \"http://localhost:8000\"|BASE_URL = \"${BASE_URL}\"|" \
-    "$SCRIPT_DIR/backend-flask/test_api.py" > "$TEST_SCRIPT"
+    "$TEST_SCRIPT_PATH" > "$TEST_SCRIPT"
 
 python3 "$TEST_SCRIPT"
 TEST_EXIT=$?
@@ -101,5 +110,5 @@ echo ""
 echo "  常用排查命令:"
 echo "    systemctl status securetrans"
 echo "    journalctl -u securetrans -n 100 --no-pager"
-echo "    tail -f /opt/securetrans/backend-flask/data/securetrans.log"
-echo "    tail -f /opt/securetrans/backend-flask/data/gunicorn-error.log"
+echo "    tail -f /opt/securetrans/data/securetrans.log"
+echo "    tail -f /opt/securetrans/data/gunicorn-error.log"
