@@ -112,6 +112,7 @@ def init_db():
         email TEXT,
         role TEXT DEFAULT 'internal-user',
         status TEXT DEFAULT 'active',
+        enabled INTEGER DEFAULT 1,
         must_change_password INTEGER DEFAULT 0,
         created_at TEXT
     );
@@ -134,6 +135,7 @@ def init_db():
         receiver_name TEXT,
         receiver_email TEXT,
         receiver_type TEXT,
+        receiver_org TEXT,
         security_level TEXT,
         reason TEXT,
         expiry_days INTEGER DEFAULT 7,
@@ -186,6 +188,7 @@ def init_db():
         name TEXT,
         contact TEXT,
         email TEXT,
+        enabled INTEGER DEFAULT 1,
         created_at TEXT
     );
 
@@ -221,6 +224,19 @@ def init_db():
         ip TEXT
     );
     """)
+
+    # ---- 数据库迁移（兼容已存在的旧库，补列）----
+    def _column_exists(table, col):
+        cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        return col in cols
+
+    if not _column_exists("local_users", "enabled"):
+        conn.execute("ALTER TABLE local_users ADD COLUMN enabled INTEGER DEFAULT 1")
+    if not _column_exists("partners", "enabled"):
+        conn.execute("ALTER TABLE partners ADD COLUMN enabled INTEGER DEFAULT 1")
+    if not _column_exists("submissions", "receiver_org"):
+        conn.execute("ALTER TABLE submissions ADD COLUMN receiver_org TEXT")
+    conn.commit()
 
     # 初始管理员
     cursor = conn.execute("SELECT COUNT(*) as c FROM local_users WHERE username='admin'")
@@ -331,17 +347,23 @@ def add_audit_log(user: str, action: str, target: str = "", detail: str = "", ip
     db.commit()
 
 def is_partner(name: str) -> bool:
-    """判断接收方是否为合作方白名单成员（名称精确或包含匹配）"""
+    """判断接收方是否为合作方白名单成员（仅 enabled=1 的合作方生效）"""
     if not name:
         return False
     db = get_db()
-    rows = db.execute("SELECT name FROM partners").fetchall()
+    rows = db.execute("SELECT name FROM partners WHERE enabled=1").fetchall()
     name = name.strip()
     for r in rows:
         pname = r["name"].strip()
         if name == pname or pname in name:
             return True
     return False
+
+def get_config_value(key: str, default: str = None) -> str:
+    """读取系统配置项，不存在返回 default"""
+    db = get_db()
+    row = db.execute("SELECT value FROM system_config WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else default
 
 def can_approve_level(level: int) -> bool:
     """判断当前用户是否有权审批指定级别（角色判定或 approvers 表配置，宽松兼容）"""
@@ -554,9 +576,9 @@ def load_user(user_id):
     )
 
 def authenticate_local(username: str, password: str):
-    """本地用户认证"""
+    """本地用户认证（enabled=1 且 status='active' 才允许登录）"""
     db = get_db()
-    row = db.execute("SELECT * FROM local_users WHERE username=? AND status='active'", (username,)).fetchone()
+    row = db.execute("SELECT * FROM local_users WHERE username=? AND status='active' AND enabled=1", (username,)).fetchone()
     if row and verify_password(password, row["password_hash"]):
         return row_to_dict(row)
     return None
@@ -934,18 +956,38 @@ def api_create_submission():
     temp_ids = data.get("tempIds", [])
     receiver_name = data.get("receiverName", "")
     receiver_email = data.get("receiverEmail", "")
+    receiver_org = data.get("receiverOrg", "")
     # receiverType: partner/non-partner/auto；auto 时按合作方白名单自动判定
     receiver_type = data.get("receiverType", "auto")
     if receiver_type == "auto":
         receiver_type = "partner" if is_partner(receiver_name) else "non-partner"
     security_level = data.get("securityLevel", "internal")
     reason = data.get("reason", "")
-    expiry_days = data.get("expiryDays", 7)
+    # 有效期统一由系统配置控制（唯一设置处：系统配置→默认有效期），提交时不允许指定
+    cfg_expiry = get_config_value("default_expiry_days", "7")
+    try:
+        expiry_days = int(cfg_expiry)
+    except (TypeError, ValueError):
+        expiry_days = 7
 
     if not temp_ids:
         return jsonify({"error": "请先上传文件"}), 400
     if not receiver_name:
         return jsonify({"error": "请填写接收方姓名"}), 400
+    if not receiver_org:
+        return jsonify({"error": "请填写接收方单位"}), 400
+
+    # 信任模式：普通用户选中"合作方"但名称不在清单时，自动加入合作方清单
+    if receiver_type == "partner" and not is_partner(receiver_name):
+        db = get_db()
+        exists = db.execute("SELECT COUNT(*) as c FROM partners WHERE name=?", (receiver_name,)).fetchone()["c"]
+        if not exists:
+            db.execute(
+                "INSERT INTO partners (id,name,contact,email,enabled,created_at) VALUES (?,?,?,?,1,?)",
+                (str(uuid.uuid4()), receiver_name, "", receiver_email, now_str())
+            )
+            db.commit()
+            add_audit_log(current_user.username, "create_partner", receiver_name, "提交时自动加入合作方清单", get_client_ip())
 
     sub_id = gen_submission_id()
     final_dir = STAGING_DIR / sub_id
@@ -1000,10 +1042,10 @@ def api_create_submission():
 
     # 先插入 submissions 记录（外键依赖）
     db.execute(
-        """INSERT INTO submissions (id,submitter,submitter_name,receiver_name,receiver_email,receiver_type,security_level,reason,expiry_days,status,auto_approved,current_path,submit_time,approved_time,file_count,total_size)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        """INSERT INTO submissions (id,submitter,submitter_name,receiver_name,receiver_email,receiver_type,receiver_org,security_level,reason,expiry_days,status,auto_approved,current_path,submit_time,approved_time,file_count,total_size)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (sub_id, current_user.username, current_user.display_name, receiver_name, receiver_email, receiver_type,
-         security_level, reason, expiry_days, status, auto_approved, str(final_dir),
+         receiver_org, security_level, reason, expiry_days, status, auto_approved, str(final_dir),
          now_str(), approved_time, len(files_info), total_size)
     )
     for fi in files_info:
@@ -1024,7 +1066,8 @@ def api_create_submission():
     add_audit_log(current_user.username, "create_submission", sub_id,
                   f"提交{len(files_info)}个文件，{'免审批自动通过' if auto_approved else '待审批'}", get_client_ip())
 
-    return jsonify({"id": sub_id, "status": status, "autoApproved": bool(auto_approved), "fileCount": len(files_info)})
+    return jsonify({"id": sub_id, "status": status, "autoApproved": bool(auto_approved), "fileCount": len(files_info),
+                    "expiry_days": expiry_days, "receiver_type": receiver_type})
 
 # ============================================================
 # 路由：提交单查询
@@ -1203,7 +1246,7 @@ def api_download_file(sub_id, filename):
 @role_required("admin")
 def api_list_local_users():
     db = get_db()
-    rows = db.execute("SELECT id,username,display_name,email,role,status,created_at FROM local_users ORDER BY created_at").fetchall()
+    rows = db.execute("SELECT id,username,display_name,email,role,status,enabled,created_at FROM local_users ORDER BY created_at").fetchall()
     return jsonify(rows_to_list(rows))
 
 @app.route("/api/admin/local-users", methods=["POST"])
@@ -1225,11 +1268,11 @@ def api_create_local_user():
     if exists:
         return jsonify({"error": "用户名已存在"}), 400
     db.execute(
-        "INSERT INTO local_users (id,username,password_hash,display_name,email,role,status,created_at) VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO local_users (id,username,password_hash,display_name,email,role,status,enabled,created_at) VALUES (?,?,?,?,?,?,?,1,?)",
         (str(uuid.uuid4()), username, hash_password(password), display_name, email, role, "active", now_str())
     )
     db.commit()
-    add_audit_log(current_user.username, "create_local_user", username, f"创建本地用户，角色{role}", get_client_ip())
+    add_audit_log(current_user.username, "create_local_user", username, f"创建本地用户，角色{role}（默认使能）", get_client_ip())
     return jsonify({"message": "创建成功"})
 
 @app.route("/api/admin/local-users/<username>", methods=["DELETE"])
@@ -1255,6 +1298,25 @@ def api_reset_local_password(username):
     db.commit()
     add_audit_log(current_user.username, "reset_password", username, "重置密码", get_client_ip())
     return jsonify({"message": f"密码已重置为 {new_pwd}，用户首次登录需修改"})
+
+@app.route("/api/admin/local-users/<username>/enabled", methods=["PUT"])
+@login_required
+@role_required("admin")
+def api_toggle_local_user_enabled(username):
+    """启用/禁用用户。admin 永久使能，不可禁用（防止锁死自己）。"""
+    data = request.get_json(silent=True) or {}
+    enabled = 1 if data.get("enabled", True) else 0
+    if username == "admin" and not enabled:
+        return jsonify({"error": "admin 为系统内置管理员，永久使能，不可禁用"}), 400
+    db = get_db()
+    exists = db.execute("SELECT COUNT(*) as c FROM local_users WHERE username=?", (username,)).fetchone()["c"]
+    if not exists:
+        return jsonify({"error": "用户不存在"}), 404
+    db.execute("UPDATE local_users SET enabled=? WHERE username=?", (enabled, username))
+    db.commit()
+    state = "启用" if enabled else "禁用"
+    add_audit_log(current_user.username, "toggle_user_enabled", username, f"{state}用户", get_client_ip())
+    return jsonify({"message": f"用户已{state}", "enabled": bool(enabled)})
 
 # ============================================================
 # 路由：AD 角色映射（admin）
@@ -1326,7 +1388,11 @@ def api_search_ad():
 @role_required("admin")
 def api_list_partners():
     db = get_db()
-    rows = db.execute("SELECT * FROM partners ORDER BY created_at DESC").fetchall()
+    enabled_filter = request.args.get("enabled")
+    if enabled_filter is not None:
+        rows = db.execute("SELECT * FROM partners WHERE enabled=? ORDER BY created_at DESC", (1 if enabled_filter in ("1", "true") else 0,)).fetchall()
+    else:
+        rows = db.execute("SELECT * FROM partners ORDER BY created_at DESC").fetchall()
     return jsonify(rows_to_list(rows))
 
 @app.route("/api/admin/partners", methods=["POST"])
@@ -1337,6 +1403,7 @@ def api_create_partner():
     name = data.get("name", "").strip()
     contact = data.get("contact", "")
     email = data.get("email", "")
+    enabled = 1 if data.get("enabled", True) else 0
     if not name:
         return jsonify({"error": "合作方名称不能为空"}), 400
     db = get_db()
@@ -1344,8 +1411,8 @@ def api_create_partner():
     if exists:
         return jsonify({"error": "合作方已存在"}), 400
     db.execute(
-        "INSERT INTO partners (id,name,contact,email,created_at) VALUES (?,?,?,?,?)",
-        (str(uuid.uuid4()), name, contact, email, now_str())
+        "INSERT INTO partners (id,name,contact,email,enabled,created_at) VALUES (?,?,?,?,?,?)",
+        (str(uuid.uuid4()), name, contact, email, enabled, now_str())
     )
     db.commit()
     partner_id = db.execute("SELECT id FROM partners WHERE name=?", (name,)).fetchone()["id"]
@@ -1361,6 +1428,31 @@ def api_delete_partner(partner_id):
     db.commit()
     add_audit_log(current_user.username, "delete_partner", partner_id, "删除合作方", get_client_ip())
     return jsonify({"message": "删除成功"})
+
+@app.route("/api/admin/partners/<partner_id>/enabled", methods=["PUT"])
+@login_required
+@role_required("admin")
+def api_toggle_partner_enabled(partner_id):
+    """启用/禁用合作方。禁用后不再参与白名单自动判定，也不出现在提交下拉选项。"""
+    data = request.get_json(silent=True) or {}
+    enabled = 1 if data.get("enabled", True) else 0
+    db = get_db()
+    row = db.execute("SELECT * FROM partners WHERE id=?", (partner_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "合作方不存在"}), 404
+    db.execute("UPDATE partners SET enabled=? WHERE id=?", (enabled, partner_id))
+    db.commit()
+    state = "启用" if enabled else "禁用"
+    add_audit_log(current_user.username, "toggle_partner_enabled", row["name"], f"{state}合作方", get_client_ip())
+    return jsonify({"message": f"合作方已{state}", "enabled": bool(enabled)})
+
+# 合作方选项（登录即可访问，仅返回 enabled=1，供提交表单下拉选择）
+@app.route("/api/partners")
+@login_required
+def api_partner_options():
+    db = get_db()
+    rows = db.execute("SELECT id,name,email FROM partners WHERE enabled=1 ORDER BY name").fetchall()
+    return jsonify(rows_to_list(rows))
 
 # ============================================================
 # 路由：审批人配置（admin）

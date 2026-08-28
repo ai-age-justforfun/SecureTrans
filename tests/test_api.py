@@ -110,6 +110,12 @@ test("错误密码登录被拒绝", code == 401, f"code={code}")
 # 重新登录
 request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
 
+# 初始化关键系统配置（自动化回归前置条件，避免受手工操作影响）
+code, data = request('PUT', '/api/config/system', json_data={
+    "auto_approval_enabled": "true", "default_expiry_days": "7"
+})
+test("初始化免审批总开关开启+默认有效期7天", code == 200, f"code={code}")
+
 # 6. 文件上传
 print("\n--- 3. 文件上传 ---")
 # 创建测试文件
@@ -135,13 +141,16 @@ code, data = request('POST', '/api/submissions', json_data={
     "tempIds": [pdf_temp_id],
     "receiverName": "张三（合作方）",
     "receiverEmail": "zhangsan@partner.com",
+    "receiverOrg": "合作方科技公司",
     "receiverType": "partner",
     "securityLevel": "internal",
     "reason": "项目合作文档外发",
-    "expiryDays": 30
+    "expiryDays": 30  # 前端传的值应被忽略，实际使用系统配置默认有效期
 })
 test("创建提交单（免审批自动通过）", code == 200 and data.get('autoApproved') == True and data.get('status') == 'approved',
      f"code={code}, status={data.get('status')}, autoApproved={data.get('autoApproved')}")
+test("有效期统一走系统配置（忽略前端expiryDays=30）", code == 200 and data.get('expiry_days') == 7,
+     f"code={code}, expiry_days={data.get('expiry_days')}")
 auto_sub_id = data.get('id')
 
 # 8. 创建提交单 - 需要审批场景（EXE 不匹配）
@@ -149,6 +158,7 @@ code, data = request('POST', '/api/submissions', json_data={
     "tempIds": [exe_temp_id],
     "receiverName": "李四（非合作方）",
     "receiverEmail": "lisi@external.com",
+    "receiverOrg": "外部咨询公司",
     "receiverType": "non-partner",
     "securityLevel": "secret",
     "reason": "外部工具软件",
@@ -265,6 +275,7 @@ code, data = request('POST', '/api/submissions', json_data={
     "tempIds": [partner_temp_id],
     "receiverName": "Nexus半导体",
     "receiverEmail": "partner@nexus.com",
+    "receiverOrg": "Nexus半导体有限公司",
     "receiverType": "auto",  # 自动判定
     "securityLevel": "internal",
     "reason": "合作方白名单自动判定测试",
@@ -354,6 +365,7 @@ code, data = request('POST', '/api/submissions', json_data={
     "tempIds": [ap_temp_id],
     "receiverName": "外部公司",
     "receiverEmail": "ext@company.com",
+    "receiverOrg": "外部科技有限公司",
     "receiverType": "non-partner",
     "securityLevel": "secret",
     "reason": "审批人配置生效测试",
@@ -432,6 +444,7 @@ code, data = request('POST', '/api/submissions', json_data={
     "tempIds": [dual_temp_id],
     "receiverName": "普通接收方",
     "receiverEmail": "receiver@external.com",
+    "receiverOrg": "普通接收公司",
     "receiverType": "non-partner",
     "securityLevel": "secret",
     "reason": "语义B自动跳过二级测试",
@@ -684,6 +697,7 @@ code, data = request('POST', '/api/submissions', json_data={
     "tempIds": [reject_temp_id],
     "receiverName": "测试驳回",
     "receiverEmail": "reject@test.com",
+    "receiverOrg": "测试公司",
     "receiverType": "non-partner",
     "securityLevel": "internal",
     "reason": "测试驳回流程",
@@ -709,22 +723,32 @@ test("驳回提交单文件已 os.rename 到 archive", reject_in_archive,
 # 20d. 过期归档流程
 print("\n--- 10d. 过期归档流程 ---")
 
-# 上传 PDF（免审批自动通过），设置 expiryDays=0 立即可过期
+# 上传 PDF（免审批自动通过），将系统配置默认有效期临时改为0实现立即过期
 code, data = upload_file(test_pdf, "expire_test.pdf")
 expire_temp_id = data.get('tempId')
+
+# 有效期统一由系统配置控制：临时改为0，提交单应使用该值
+code, data = request('PUT', '/api/config/system', json_data={"default_expiry_days": "0"})
+test("系统配置默认有效期改为0", code == 200, f"code={code}")
 
 code, data = request('POST', '/api/submissions', json_data={
     "tempIds": [expire_temp_id],
     "receiverName": "过期测试",
     "receiverEmail": "expire@test.com",
+    "receiverOrg": "过期测试公司",
     "receiverType": "partner",
     "securityLevel": "internal",
-    "reason": "测试过期归档",
-    "expiryDays": 0
+    "reason": "测试过期归档"
 })
 expire_sub_id = data.get('id')
-test("创建过期测试提交单（expiryDays=0，免审批自动通过）", code == 200 and data.get('status') == 'approved',
+test("创建过期测试提交单（系统配置有效期=0，免审批自动通过）", code == 200 and data.get('status') == 'approved',
      f"code={code}, status={data.get('status')}")
+test("提交单有效期来自系统配置(=0)", code == 200 and data.get('expiry_days') == 0,
+     f"code={code}, expiry_days={data.get('expiry_days')}")
+
+# 恢复系统配置默认有效期为7天
+code, data = request('PUT', '/api/config/system', json_data={"default_expiry_days": "7"})
+test("恢复系统配置默认有效期7天", code == 200, f"code={code}")
 
 # 触发过期清理
 code, data = request('POST', '/api/admin/cleanup-expired')
@@ -859,6 +883,107 @@ test("internal面提交列表放行", code == 200, f"code={code}")
 
 code, data = request('GET', '/api/admin/local-users')
 test("internal面用户管理放行", code == 200, f"code={code}")
+
+# 22e. 本期逻辑调整（有效期统一/合作方管理/用户使能/接收方单位）
+print("\n--- 22e. 本期逻辑调整 ---")
+
+# --- 接收方单位必填 ---
+code, data = upload_file(test_pdf, "org_test.pdf")
+org_temp_id = data.get('tempId')
+code, data = request('POST', '/api/submissions', json_data={
+    "tempIds": [org_temp_id],
+    "receiverName": "无单位接收方",
+    "receiverType": "non-partner",
+    "securityLevel": "internal"
+})
+test("接收方单位必填（缺失返回400）", code == 400 and '单位' in str(data), f"code={code}, data={data}")
+
+# --- 提交传 expiryDays 无效（统一走系统配置，默认7天） ---
+code, data = request('POST', '/api/submissions', json_data={
+    "tempIds": [org_temp_id],
+    "receiverName": "有效期测试接收方",
+    "receiverOrg": "有效期测试公司",
+    "receiverType": "non-partner",
+    "securityLevel": "internal",
+    "expiryDays": 999  # 无效值，应被忽略
+})
+test("提交传expiryDays=999被忽略（仍用系统配置7天）", code == 200 and data.get('expiry_days') == 7,
+     f"code={code}, expiry_days={data.get('expiry_days')}")
+
+# --- 合作方自动加入清单（信任模式） ---
+code, data = upload_file(test_pdf, "partner_auto_test.pdf")
+auto_org_temp = data.get('tempId')
+code, data = request('POST', '/api/submissions', json_data={
+    "tempIds": [auto_org_temp],
+    "receiverName": "自动加入合作方测试",
+    "receiverEmail": "auto@partner.com",
+    "receiverOrg": "自动加入合作方测试公司",
+    "receiverType": "partner",
+    "securityLevel": "internal",
+    "reason": "测试合作方自动加入"
+})
+test("选择合作方且名称不在清单→提交成功并判定partner", code == 200 and data.get('receiver_type') == 'partner',
+     f"code={code}, receiver_type={data.get('receiver_type')}")
+code, data = request('GET', '/api/admin/partners')
+auto_added = any(p.get('name') == '自动加入合作方测试' for p in data) if isinstance(data, list) else False
+test("提交后自动加入合作方清单", auto_added, f"count={len(data) if isinstance(data,list) else 'N/A'}")
+
+# --- 合作方使能开关 ---
+code, data = request('POST', '/api/admin/partners', json_data={"name": "使能开关测试", "enabled": True})
+test("创建合作方(使能开关测试,enabled=1)", code == 200, f"code={code}, data={data}")
+tog_partner_id = data.get('id')
+code, data = request('GET', '/api/partners')
+test("启用合作方出现在提交选项(/api/partners)", code == 200 and any(p.get('name') == '使能开关测试' for p in data),
+     f"code={code}, names={[p.get('name') for p in data] if isinstance(data,list) else 'N/A'}")
+code, data = request('PUT', f'/api/admin/partners/{tog_partner_id}/enabled', json_data={"enabled": False})
+test("禁用合作方", code == 200, f"code={code}, data={data}")
+code, data = request('GET', '/api/partners')
+test("禁用后不出现在提交选项", code == 200 and not any(p.get('name') == '使能开关测试' for p in data),
+     f"code={code}")
+code, data = request('PUT', f'/api/admin/partners/{tog_partner_id}/enabled', json_data={"enabled": True})
+test("重新启用合作方", code == 200, f"code={code}, data={data}")
+
+# 清理：删除自动加入 + 使能测试合作方
+code, data = request('GET', '/api/admin/partners')
+auto_pid = next((p.get('id') for p in data if p.get('name') == '自动加入合作方测试'), None) if isinstance(data, list) else None
+if auto_pid:
+    request('DELETE', f'/api/admin/partners/{auto_pid}')
+request('DELETE', f'/api/admin/partners/{tog_partner_id}')
+test("清理测试合作方", True, "")
+
+# --- 用户使能开关 ---
+code, data = request('POST', '/api/admin/local-users', json_data={
+    "username": "enable_test1", "password": "Enable@123",
+    "displayName": "使能测试", "email": "et1@test.com", "role": "internal-user"
+})
+test("创建测试用户 enable_test1", code == 200, f"code={code}, data={data}")
+code, data = request('GET', '/api/admin/local-users')
+et1 = next((u for u in data if u.get('username') == 'enable_test1'), None) if isinstance(data, list) else None
+test("新建用户默认使能(enabled=1)", code == 200 and et1 and et1.get('enabled') == 1, f"enabled={et1.get('enabled') if et1 else 'N/A'}")
+
+# 用新用户登录（成功）
+code, data = request('POST', '/api/auth/login', json_data={"username": "enable_test1", "password": "Enable@123"})
+test("使能用户可正常登录", code == 200, f"code={code}")
+
+# 切回 admin
+code, data = request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+test("切回admin登录", code == 200, f"code={code}")
+
+# 禁用 enable_test1
+code, data = request('PUT', '/api/admin/local-users/enable_test1/enabled', json_data={"enabled": False})
+test("禁用用户enable_test1", code == 200, f"code={code}, data={data}")
+# 被禁用用户登录失败（401/302）
+code, data = request('POST', '/api/auth/login', json_data={"username": "enable_test1", "password": "Enable@123"})
+test("禁用后用户无法登录", code != 200, f"code={code}, data={data if code != 200 else ''}")
+# 重新启用
+code, data = request('PUT', '/api/admin/local-users/enable_test1/enabled', json_data={"enabled": True})
+test("重新启用用户enable_test1", code == 200, f"code={code}, data={data}")
+# admin 永久使能不可禁用
+code, data = request('PUT', '/api/admin/local-users/admin/enabled', json_data={"enabled": False})
+test("admin永久使能不可禁用(返回400)", code == 400, f"code={code}, data={data}")
+# 清理测试用户
+code, data = request('DELETE', '/api/admin/local-users/enable_test1')
+test("清理测试用户enable_test1", code == 200, f"code={code}")
 
 # 22. 退出登录
 print("\n--- 13. 退出登录 ---")
