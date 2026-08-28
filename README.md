@@ -46,7 +46,7 @@ cd src && python app.py
 # 另一个终端运行测试
 cd tests
 python test_api.py
-# 预期：74项测试全部通过，通过率100%
+# 预期：88项测试全部通过，通过率100%
 ```
 
 ### 测试环境部署（服务器验证）
@@ -59,7 +59,7 @@ python test_api.py
 # 部署脚本在 infra/
 cd infra
 sudo bash deploy.sh    # 一键部署（9步自动化）
-bash verify.sh         # 部署验证（74项全量测试）
+bash verify.sh         # 部署验证（88项全量测试）
 ```
 
 详见 [生产环境部署指南](infra/DEPLOY.md)。
@@ -88,7 +88,7 @@ SecureTrans/
 │       ├── index.html        # 主应用SPA
 │       └── login.html        # 登录页
 ├── tests/                    # 自动化测试
-│   └── test_api.py           # 全量API测试脚本（17大类74项）
+│   └── test_api.py           # 全量API测试脚本（17大类88项）
 ├── docs/                     # 统一文档（数字前缀排序，持续刷新）
 │   ├── 00-lean-startup-phase-map.md   # Lean Startup三阶段映射与决策门
 │   ├── 01-scrum-io-definition.md      # Scrum各阶段输入输出定义
@@ -96,12 +96,12 @@ SecureTrans/
 │   ├── 03-psf-process.md              # PSF阶段标准流程
 │   ├── 04-pmf-process.md              # PMF阶段标准流程（下一阶段准备）
 │   ├── 05-test-cases.md               # 测试用例
-│   ├── 06-test-report.md              # 测试报告（74项全通过）
+│   ├── 06-test-report.md              # 测试报告（88项全通过）
 │   ├── 07-psf-sprint4-retrospective.md # PSF阶段迭代小结
 │   └── TESTING-DEPLOY.md              # 测试环境部署指南
 └── infra/                    # 基础设施配置
     ├── deploy.sh             # 一键部署脚本（9步自动化）
-    ├── verify.sh             # 部署验证脚本（74项全量测试）
+    ├── verify.sh             # 部署验证脚本（88项全量测试）
     ├── DEPLOY.md             # 生产环境详细部署指南
     ├── nginx-securetrans.conf # Nginx反向代理配置
     └── securetrans.service   # systemd服务配置
@@ -196,7 +196,7 @@ main ────●────●────●────●────  �
 - [产品需求文档 PRD v1.4](docs/02-prd-v1.4.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（74项全通过）](docs/06-test-report.md)
+- [测试报告（88项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [测试环境部署指南](docs/TESTING-DEPLOY.md)
 

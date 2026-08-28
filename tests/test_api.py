@@ -406,6 +406,87 @@ for u in ["deptmgr1", "execmgr1", "notapprover"]:
     request('DELETE', f'/api/admin/local-users/{u}')
 test("清理测试本地用户", True, "deptmgr1/execmgr1/notapprover 已删除")
 
+# 22b. 特征码规则管理 + 系统配置默认值
+print("\n--- 10h. 特征码规则管理 + 系统配置默认值 ---")
+
+# 系统配置默认值验证
+code, data = request('GET', '/api/config/system')
+test("默认有效期为7天", code == 200 and data.get('default_expiry_days') == '7',
+     f"code={code}, default_expiry_days={data.get('default_expiry_days')}")
+test("最大文件大小为800MB", code == 200 and data.get('max_file_size_mb') == '800',
+     f"code={code}, max_file_size_mb={data.get('max_file_size_mb')}")
+test("免审批总开关存在", code == 200 and 'auto_approval_enabled' in data,
+     f"code={code}, auto_approval_enabled={data.get('auto_approval_enabled')}")
+
+# 创建特征码规则
+code, data = request('POST', '/api/admin/feature-rules', json_data={
+    "name": "测试自定义规则", "ruleType": "extension", "pattern": ".testext", "enabled": True
+})
+test_rule_id = data.get('id', '')
+test("创建特征码规则", code == 200 and test_rule_id, f"code={code}, id={test_rule_id}")
+
+# 重复/非法参数拒绝
+code, data = request('POST', '/api/admin/feature-rules', json_data={
+    "name": "", "ruleType": "extension", "pattern": ".x"
+})
+test("空名称创建被拒绝", code == 400, f"code={code}")
+code, data = request('POST', '/api/admin/feature-rules', json_data={
+    "name": "非法类型", "ruleType": "invalid", "pattern": ".x"
+})
+test("非法规则类型被拒绝", code == 400, f"code={code}")
+
+# 修改特征码规则
+code, data = request('PUT', f'/api/admin/feature-rules/{test_rule_id}', json_data={
+    "name": "测试自定义规则(已修改)", "pattern": ".modifiedext", "enabled": True
+})
+test("修改特征码规则", code == 200, f"code={code}")
+
+# 开关切换（禁用）
+code, data = request('POST', f'/api/admin/feature-rules/{test_rule_id}/toggle')
+test("开关切换-禁用", code == 200 and data.get('enabled') == False,
+     f"code={code}, enabled={data.get('enabled')}")
+
+# 单个开关生效验证：禁用后，.modifiedext 文件不再匹配该规则
+# （上传一个 .modifiedext 文件，验证 matchedRules 不含该规则）
+mod_path = os.path.join(test_dir, "test_file.modifiedext")
+with open(mod_path, 'wb') as f:
+    f.write(b"test content")
+code, data = upload_file(mod_path, "test_file.modifiedext")
+matched_rules = data.get('matchedRules', [])
+rule_still_matched = any("测试自定义规则" in str(r) for r in matched_rules)
+test("禁用规则后该类型不再匹配", code == 200 and not rule_still_matched,
+     f"code={code}, matchedRules={matched_rules}")
+
+# 开关切换（启用）
+code, data = request('POST', f'/api/admin/feature-rules/{test_rule_id}/toggle')
+test("开关切换-启用", code == 200 and data.get('enabled') == True,
+     f"code={code}, enabled={data.get('enabled')}")
+
+# 非admin权限控制（用普通用户）
+code, data = request('POST', '/api/admin/local-users', json_data={
+    "username": "ruletestuser", "password": "Test@123456", "displayName": "规则测试用户",
+    "email": "rt@company.com", "role": "internal-user"
+})
+request('POST', '/api/auth/login', json_data={"username": "ruletestuser", "password": "Test@123456"})
+code, data = request('POST', '/api/admin/feature-rules', json_data={
+    "name": "越权测试", "ruleType": "extension", "pattern": ".x"
+})
+test("非admin创建规则被拒绝", code == 403, f"code={code}")
+code, data = request('POST', f'/api/admin/feature-rules/{test_rule_id}/toggle')
+test("非admin开关切换被拒绝", code == 403, f"code={code}")
+
+# 切回admin，清理
+request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+request('DELETE', '/api/admin/local-users/ruletestuser')
+
+# 删除特征码规则
+code, data = request('DELETE', f'/api/admin/feature-rules/{test_rule_id}')
+test("删除特征码规则", code == 200, f"code={code}")
+
+# 删除不存在的规则
+code, data = request('DELETE', '/api/admin/feature-rules/nonexistent-id')
+test("删除不存在规则返回404", code == 404, f"code={code}")
+
 # 18. 系统配置
 print("\n--- 10. 系统配置 ---")
 code, data = request('GET', '/api/config/feature-rules')

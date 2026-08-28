@@ -37,7 +37,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
-MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(1 * 1024 * 1024 * 1024)))  # 1GB 上传上限
+MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(800 * 1024 * 1024)))  # 800MB 上传上限
 
 # 部署模式：testing（本地文件系统+Flask自带服务器）/ production（NAS+gunicorn）
 # testing 为默认值，适合开发和测试环境验证；生产环境设为 production
@@ -54,7 +54,7 @@ AD_BIND_DN = os.getenv("AD_BIND_DN", "")
 AD_BIND_PASSWORD = os.getenv("AD_BIND_PASSWORD", "")
 
 # 过期清理配置
-EXTERNAL_EXPIRY_DAYS = int(os.getenv("EXTERNAL_EXPIRY_DAYS", "30"))  # external 文件默认 30 天过期
+EXTERNAL_EXPIRY_DAYS = int(os.getenv("EXTERNAL_EXPIRY_DAYS", "7"))  # external 文件默认 7 天过期
 
 # 日志
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -136,7 +136,7 @@ def init_db():
         receiver_type TEXT,
         security_level TEXT,
         reason TEXT,
-        expiry_days INTEGER DEFAULT 30,
+        expiry_days INTEGER DEFAULT 7,
         status TEXT DEFAULT 'pending',
         auto_approved INTEGER DEFAULT 0,
         current_path TEXT,
@@ -235,8 +235,8 @@ def init_db():
     # 初始系统配置
     defaults = {
         "auto_approval_enabled": "true",
-        "default_expiry_days": "30",
-        "max_file_size_gb": "1",
+        "default_expiry_days": "7",
+        "max_file_size_mb": "800",
         "app_name": "SecureTrans",
     }
     for k, v in defaults.items():
@@ -909,7 +909,7 @@ def api_create_submission():
         receiver_type = "partner" if is_partner(receiver_name) else "non-partner"
     security_level = data.get("securityLevel", "internal")
     reason = data.get("reason", "")
-    expiry_days = data.get("expiryDays", 30)
+    expiry_days = data.get("expiryDays", 7)
 
     if not temp_ids:
         return jsonify({"error": "请先上传文件"}), 400
@@ -1376,6 +1376,89 @@ def api_feature_rules():
     db = get_db()
     rows = db.execute("SELECT * FROM feature_rules ORDER BY created_at").fetchall()
     return jsonify(rows_to_list(rows))
+
+# 特征码规则管理（admin）
+@app.route("/api/admin/feature-rules", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_create_feature_rule():
+    """创建特征码规则"""
+    data = request.get_json()
+    name = data.get("name", "").strip()
+    rule_type = data.get("ruleType", "extension")  # extension / filename / binary
+    pattern = data.get("pattern", "").strip()
+    enabled = 1 if data.get("enabled", True) else 0
+    if not name or not pattern:
+        return jsonify({"error": "规则名称和匹配模式不能为空"}), 400
+    if rule_type not in ("extension", "filename", "binary"):
+        return jsonify({"error": "规则类型只能为 extension/filename/binary"}), 400
+    db = get_db()
+    rule_id = str(uuid.uuid4())
+    db.execute(
+        "INSERT INTO feature_rules (id,name,rule_type,pattern,enabled,created_at) VALUES (?,?,?,?,?,?)",
+        (rule_id, name, rule_type, pattern, enabled, now_str())
+    )
+    db.commit()
+    add_audit_log(current_user.username, "create_feature_rule", rule_id,
+                  f"创建特征码规则: {name} ({rule_type}: {pattern})", get_client_ip())
+    return jsonify({"message": "规则创建成功", "id": rule_id})
+
+@app.route("/api/admin/feature-rules/<rule_id>", methods=["PUT"])
+@login_required
+@role_required("admin")
+def api_update_feature_rule(rule_id):
+    """修改特征码规则"""
+    data = request.get_json()
+    db = get_db()
+    rule = db.execute("SELECT * FROM feature_rules WHERE id=?", (rule_id,)).fetchone()
+    if not rule:
+        return jsonify({"error": "规则不存在"}), 404
+    name = data.get("name", rule["name"])
+    rule_type = data.get("ruleType", rule["rule_type"])
+    pattern = data.get("pattern", rule["pattern"])
+    enabled = 1 if data.get("enabled", bool(rule["enabled"])) else 0
+    if rule_type not in ("extension", "filename", "binary"):
+        return jsonify({"error": "规则类型只能为 extension/filename/binary"}), 400
+    db.execute(
+        "UPDATE feature_rules SET name=?, rule_type=?, pattern=?, enabled=? WHERE id=?",
+        (name, rule_type, pattern, enabled, rule_id)
+    )
+    db.commit()
+    add_audit_log(current_user.username, "update_feature_rule", rule_id,
+                  f"修改特征码规则: {name}", get_client_ip())
+    return jsonify({"message": "规则已更新"})
+
+@app.route("/api/admin/feature-rules/<rule_id>", methods=["DELETE"])
+@login_required
+@role_required("admin")
+def api_delete_feature_rule(rule_id):
+    """删除特征码规则"""
+    db = get_db()
+    rule = db.execute("SELECT * FROM feature_rules WHERE id=?", (rule_id,)).fetchone()
+    if not rule:
+        return jsonify({"error": "规则不存在"}), 404
+    db.execute("DELETE FROM feature_rules WHERE id=?", (rule_id,))
+    db.commit()
+    add_audit_log(current_user.username, "delete_feature_rule", rule_id,
+                  f"删除特征码规则: {rule['name']}", get_client_ip())
+    return jsonify({"message": "规则已删除"})
+
+@app.route("/api/admin/feature-rules/<rule_id>/toggle", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_toggle_feature_rule(rule_id):
+    """开关切换特征码规则（启用/禁用）"""
+    db = get_db()
+    rule = db.execute("SELECT * FROM feature_rules WHERE id=?", (rule_id,)).fetchone()
+    if not rule:
+        return jsonify({"error": "规则不存在"}), 404
+    new_enabled = 0 if rule["enabled"] else 1
+    db.execute("UPDATE feature_rules SET enabled=? WHERE id=?", (new_enabled, rule_id))
+    db.commit()
+    status_text = "启用" if new_enabled else "禁用"
+    add_audit_log(current_user.username, "toggle_feature_rule", rule_id,
+                  f"{status_text}特征码规则: {rule['name']}", get_client_ip())
+    return jsonify({"message": f"规则已{status_text}", "enabled": bool(new_enabled)})
 
 @app.route("/api/config/system")
 @login_required
