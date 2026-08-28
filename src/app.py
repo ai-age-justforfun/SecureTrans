@@ -1121,6 +1121,19 @@ def api_approve(sub_id):
             new_status = "approved"
             db.execute("UPDATE submissions SET status=?, approved_time=?, current_path=? WHERE id=?",
                        (new_status, now_str(), str(EXTERNAL_DIR / sub_id), sub_id))
+        elif can_approve_level(2):
+            # 语义B：当前一级审批人同时具备二级审批权限（如二级审批人被配置为一级审批人），
+            # 一级已由同一人把关，自动跳过二级审批，直接摆渡。避免同人重复审批。
+            move_to_external(sub_id)
+            new_status = "approved"
+            db.execute("UPDATE submissions SET status=?, approved_time=?, current_path=? WHERE id=?",
+                       (new_status, now_str(), str(EXTERNAL_DIR / sub_id), sub_id))
+            # 审计链补充：记录二级自动跳过
+            db.execute(
+                "INSERT INTO approvals (id,submission_id,level,approver,approver_name,action,comment,time) VALUES (?,?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), sub_id, 2, current_user.username, current_user.display_name,
+                 "approve", "自动跳过二级：审批人同时具备一级和二级审批权限", now_str())
+            )
         else:
             new_status = "pending_approval_2"
             db.execute("UPDATE submissions SET status=? WHERE id=?", (new_status, sub_id))

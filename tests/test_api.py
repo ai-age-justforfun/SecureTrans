@@ -173,21 +173,19 @@ print("\n--- 6. 审批流程 ---")
 code, data = request('GET', '/api/submissions/pending/my')
 test("待我审批列表", code == 200 and isinstance(data, list), f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
 
-# 12. 一级审批通过
+# 12. 一级审批通过（admin 同时具备一级+二级权限 → 语义B自动跳过二级）
 code, data = request('POST', f'/api/submissions/{pending_sub_id}/approve', json_data={
     "action": "approve",
-    "comment": "一级审批通过，进入二级审批"
+    "comment": "一级审批通过"
 })
-test("一级审批通过（非合作方进入二级审批）", code == 200 and data.get('status') == 'pending_approval_2',
+test("一级审批通过（admin同时具备二级权限→自动跳过二级直接摆渡）", code == 200 and data.get('status') == 'approved',
      f"code={code}, status={data.get('status')}")
 
-# 13. 二级审批通过
-code, data = request('POST', f'/api/submissions/{pending_sub_id}/approve', json_data={
-    "action": "approve",
-    "comment": "二级审批通过，同意外发"
-})
-test("二级审批通过（os.rename 摆渡到 external）", code == 200 and data.get('status') == 'approved',
-     f"code={code}, status={data.get('status')}")
+# 验证自动跳过二级的审计记录（level2 自动跳过已写入）
+code, data = request('GET', f'/api/submissions/{pending_sub_id}')
+approval_levels = [(a.get('level'), a.get('action')) for a in data.get('approvals', [])]
+test("自动跳过二级审计记录存在(level2 approve)", (2, 'approve') in approval_levels and len(data.get('approvals', [])) >= 2,
+     f"approvals={approval_levels}")
 
 # 14. 外网文件列表
 print("\n--- 7. 外网下载 ---")
@@ -405,6 +403,70 @@ test("清理剩余审批人配置", True, "execmgr1 配置已删除")
 for u in ["deptmgr1", "execmgr1", "notapprover"]:
     request('DELETE', f'/api/admin/local-users/{u}')
 test("清理测试本地用户", True, "deptmgr1/execmgr1/notapprover 已删除")
+
+# 22b. 语义B：审批人同时具备一级+二级权限时，一级通过后自动跳过二级
+print("\n--- 10g2. 语义B 自动跳过二级 ---")
+
+# 创建用户 dual1 并配置为一级+二级审批人（语义B场景：二级审批人被配置为一级审批人）
+code, data = request('POST', '/api/admin/local-users', json_data={
+    "username": "dual1", "password": "Test@123456", "displayName": "双级审批人",
+    "role": "internal-user"
+})
+test("创建本地用户-双级审批人(dual1)", code == 200, f"code={code}")
+code, data = request('POST', '/api/admin/approvers', json_data={
+    "level": 1, "username": "dual1", "displayName": "双级审批人", "scope": "all"
+})
+test("配置dual1为一级审批人", code == 200, f"code={code}")
+code, data = request('POST', '/api/admin/approvers', json_data={
+    "level": 2, "username": "dual1", "displayName": "双级审批人", "scope": "all"
+})
+test("配置dual1为二级审批人", code == 200, f"code={code}")
+
+# 创建 non-partner 提交单（EXE 不匹配 → 需人工审批）
+b_exe = os.path.join(test_dir, "dual_test.exe")
+with open(b_exe, 'wb') as f:
+    f.write(b"MZ\x90\x00" + b"\x00" * 500)
+code, data = upload_file(b_exe, "dual_test.exe")
+dual_temp_id = data.get('tempId')
+code, data = request('POST', '/api/submissions', json_data={
+    "tempIds": [dual_temp_id],
+    "receiverName": "普通接收方",
+    "receiverEmail": "receiver@external.com",
+    "receiverType": "non-partner",
+    "securityLevel": "secret",
+    "reason": "语义B自动跳过二级测试",
+    "expiryDays": 7
+})
+dual_sub_id = data.get('id')
+test("创建语义B测试提交单(pending)", code == 200 and data.get('status') == 'pending',
+     f"code={code}, status={data.get('status')}")
+
+# dual1 一级审批通过 → 应自动跳过二级，直接 approved 摆渡
+request('POST', '/api/auth/login', json_data={"username": "dual1", "password": "Test@123456"})
+code, data = request('POST', f'/api/submissions/{dual_sub_id}/approve', json_data={
+    "action": "approve", "comment": "语义B一级通过"
+})
+test("语义B: 一级审批通过自动跳过二级(直接approved)", code == 200 and data.get('status') == 'approved',
+     f"code={code}, status={data.get('status')}")
+
+# 审计记录含 level2 自动跳过
+code, data = request('GET', f'/api/submissions/{dual_sub_id}')
+approval_levels = [(a.get('level'), a.get('action')) for a in data.get('approvals', [])]
+test("语义B: 审计记录含level2自动跳过", (2, 'approve') in approval_levels, f"approvals={approval_levels}")
+
+# 文件已摆渡到 external（os.path 计算路径，避免依赖后文 pathlib）
+_dual_nas_root = os.getenv("NAS_ROOT", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "nas"))
+dual_in_external = os.path.exists(os.path.join(_dual_nas_root, "external", dual_sub_id))
+test("语义B: 文件已摆渡到external", dual_in_external, f"path={os.path.join(_dual_nas_root, 'external', dual_sub_id)}")
+
+# 切回 admin，清理 dual1 测试数据
+request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+code, data = request('GET', '/api/admin/approvers')
+for a in (data if isinstance(data, list) else []):
+    if a.get('username') == 'dual1':
+        request('DELETE', f"/api/admin/approvers/{a.get('id')}")
+request('DELETE', f'/api/admin/local-users/dual1')
+test("清理dual1测试数据", True, "dual1 用户与审批人配置已删除")
 
 # 22b. 特征码规则管理 + 系统配置默认值
 print("\n--- 10h. 特征码规则管理 + 系统配置默认值 ---")
