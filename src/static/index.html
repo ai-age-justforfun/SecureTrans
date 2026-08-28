@@ -266,7 +266,8 @@ async function loadUser() {
     window._networkZone = networkZone;
     // Show/hide admin nav items
     const isAdmin = currentUser.role === 'admin';
-    const isApprover = ['admin', 'dept-manager', 'executive'].includes(currentUser.role);
+    // 审批权限：角色判定 或 approvers 表配置（与后端 can_approve_level 一致，普通用户被配为审批人也显示"待我审批"）
+    const isApprover = isAdmin || currentUser.canApproveLevel1 || currentUser.canApproveLevel2;
     document.querySelectorAll('.admin-only').forEach(el => {
       if (el.dataset.page === 'pending') el.style.display = isApprover ? '' : 'none';
       else el.style.display = isAdmin ? '' : 'none';

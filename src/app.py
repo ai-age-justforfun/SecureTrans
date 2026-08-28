@@ -844,9 +844,12 @@ def api_logout():
 @app.route("/api/auth/me")
 @login_required
 def api_me():
-    """获取当前用户信息（含网络面标识，供前端自适应显示）"""
+    """获取当前用户信息（含网络面标识+审批权限，供前端自适应显示）"""
     data = current_user.to_dict()
     data["networkZone"] = get_network_zone()
+    # 审批权限：角色判定 或 approvers 表显式配置（与后端 can_approve_level 完全一致）
+    data["canApproveLevel1"] = can_approve_level(1)
+    data["canApproveLevel2"] = can_approve_level(2)
     return jsonify(data)
 
 @app.route("/api/auth/change-password", methods=["POST"])
