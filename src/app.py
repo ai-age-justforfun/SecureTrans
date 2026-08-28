@@ -368,16 +368,9 @@ def get_config_value(key: str, default: str = None) -> str:
     return row["value"] if row else default
 
 def can_approve_level(level: int) -> bool:
-    """判断当前用户是否有权审批指定级别（角色判定或 approvers 表配置，宽松兼容）"""
+    """审批权限纯由 approvers 表配置（不设 role 体系）；admin 作为系统管理员可审批任意级别"""
     if current_user.role == "admin":
         return True
-    if level == 1:
-        if current_user.role in ("dept-manager", "executive"):
-            return True
-    elif level == 2:
-        if current_user.role == "executive":
-            return True
-    # approvers 表显式配置
     db = get_db()
     row = db.execute("SELECT COUNT(*) as c FROM approvers WHERE level=? AND username=?",
                      (level, current_user.username)).fetchone()
@@ -1266,7 +1259,8 @@ def api_create_local_user():
     password = data.get("password", "")
     display_name = data.get("displayName", "")
     email = data.get("email", "")
-    role = data.get("role", "internal-user")
+    # 不设 role 体系：所有非 admin 用户统一为普通用户，审批权由 approvers 表配置
+    role = "internal-user"
     if not username or not password:
         return jsonify({"error": "用户名和密码不能为空"}), 400
     if len(password) < 6:
@@ -1347,6 +1341,9 @@ def api_create_role_mapping():
     display_name = data.get("displayName", "")
     role = data.get("role", "internal-user")
     note = data.get("note", "")
+    # 不设 role 体系：角色仅 admin / internal-user（普通），审批权由 approvers 表配置
+    if role not in ("admin", "internal-user"):
+        return jsonify({"error": "角色仅支持 admin / internal-user（审批权限请在审批人配置中设置）"}), 400
     if not principal_value or not role:
         return jsonify({"error": "参数不完整"}), 400
     db = get_db()
@@ -1628,7 +1625,7 @@ def api_update_system_config():
 # ============================================================
 @app.route("/api/audit-logs")
 @login_required
-@role_required("admin", "dept-manager", "executive")
+@role_required("admin")
 def api_audit_logs():
     action = request.args.get("action", "")
     user = request.args.get("user", "")
@@ -1647,8 +1644,74 @@ def api_audit_logs():
     rows = db.execute(query, params).fetchall()
     return jsonify(rows_to_list(rows))
 
+@app.route("/api/audit-logs/stats")
+@login_required
+@role_required("admin")
+def api_audit_stats():
+    """审计统计：人员×文件类型×每日 汇总（默认近30天到当日）"""
+    import re
+    from_d = request.args.get("from", "")
+    to_d = request.args.get("to", "")
+    try:
+        today = datetime.date.today()
+        if not from_d:
+            from_d = (today - datetime.timedelta(days=29)).isoformat()
+        if not to_d:
+            to_d = today.isoformat()
+        datetime.datetime.strptime(from_d, "%Y-%m-%d")
+        datetime.datetime.strptime(to_d, "%Y-%m-%d")
+        from_ts = from_d + " 00:00:00"
+        to_ts = to_d + " 23:59:59"
+    except Exception:
+        return jsonify({"error": "日期格式错误，应为 YYYY-MM-DD"}), 400
+    db = get_db()
+    rows = db.execute(
+        "SELECT time,user,action,detail FROM audit_logs WHERE time>=? AND time<=?",
+        (from_ts, to_ts)
+    ).fetchall()
+    ext_map = {
+        "pdf": "PDF文档", "doc": "Word文档", "docx": "Word文档",
+        "xls": "Excel表格", "xlsx": "Excel表格", "csv": "Excel表格",
+        "ppt": "PPT演示", "pptx": "PPT演示",
+        "png": "图片", "jpg": "图片", "jpeg": "图片", "gif": "图片", "bmp": "图片", "svg": "图片",
+        "zip": "压缩包", "tar": "压缩包", "gz": "压缩包", "tgz": "压缩包",
+        "bz2": "压缩包", "tbz2": "压缩包", "xz": "压缩包", "txz": "压缩包", "zst": "压缩包",
+        "bit": "FPGA文件",
+    }
+    users, ftypes, by_type, by_day = set(), set(), {}, {}
+    for r in rows:
+        u = r["user"] or "unknown"
+        day = r["time"][:10] if r["time"] else ""
+        # 文件类型：从 detail 提取文件名扩展名归类，无法提取的归为"管理操作"
+        m = re.search(r'([\w\u4e00-\u9fff.\-]+\.\w{1,8})', r["detail"] or "")
+        if m:
+            ext = m.group(1).lower().rsplit(".", 1)[-1]
+            ftype = ext_map.get(ext, "其他文件")
+        else:
+            ftype = "管理操作"
+        users.add(u); ftypes.add(ftype)
+        by_type[(u, ftype)] = by_type.get((u, ftype), 0) + 1
+        if day:
+            by_day[(u, day)] = by_day.get((u, day), 0) + 1
+    # 日期连续填充（含0值），默认近30天
+    day_list = []
+    d = datetime.datetime.strptime(from_d, "%Y-%m-%d").date()
+    end = datetime.datetime.strptime(to_d, "%Y-%m-%d").date()
+    while d <= end:
+        day_list.append(d.isoformat())
+        d += datetime.timedelta(days=1)
+    users = sorted(users)
+    ftypes = sorted(ftypes)
+    return jsonify({
+        "from": from_d, "to": to_d,
+        "users": users, "types": ftypes, "days": day_list,
+        "byType": {u: {t: by_type.get((u, t), 0) for t in ftypes} for u in users},
+        "byDay": {u: {day: by_day.get((u, day), 0) for day in day_list} for u in users},
+    })
+
 @app.route("/api/stats")
 @login_required
+@role_required("admin")
 def api_stats():
     db = get_db()
     today = datetime.date.today().strftime("%Y-%m-%d")

@@ -46,6 +46,11 @@
   .stat-card .value { font-size: 28px; font-weight: 700; color: #1e40af; }
   .stat-card .sub { font-size: 12px; color: #9ca3af; margin-top: 4px; }
 
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid #e5e7eb; }
+  .tab-btn { padding: 8px 16px; font-size: 13px; border: none; background: none; cursor: pointer; color: #6b7280; border-bottom: 2px solid transparent; }
+  .tab-btn.active { color: #2563eb; font-weight: 600; border-bottom-color: #2563eb; }
+
   /* Tables */
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th { text-align: left; padding: 10px 12px; background: #f9fafb; color: #6b7280; font-weight: 600; font-size: 12px; border-bottom: 1px solid #e5e7eb; }
@@ -150,7 +155,6 @@
       <p>文件审批摆渡系统 v1.4</p>
     </div>
     <div class="sidebar-nav" id="sidebarNav">
-      <div class="nav-item active" data-page="dashboard"><span class="icon">📊</span>仪表盘</div>
       <div class="nav-item" data-page="submit"><span class="icon">📤</span>文件提交</div>
       <div class="nav-item" data-page="my-submissions"><span class="icon">📋</span>我的提交</div>
       <div class="nav-item admin-only" data-page="pending"><span class="icon">✅</span>待我审批</div>
@@ -159,6 +163,7 @@
       <div class="nav-item admin-only" data-page="partners"><span class="icon">🤝</span>合作方管理</div>
       <div class="nav-item admin-only" data-page="config"><span class="icon">⚙️</span>系统配置</div>
       <div class="nav-item admin-only" data-page="audit"><span class="icon">📝</span>审计日志</div>
+      <div class="nav-item admin-only" data-page="dashboard"><span class="icon">📊</span>仪表盘</div>
     </div>
     <div class="sidebar-user">
       <div class="name" id="userName">--</div>
@@ -200,8 +205,6 @@ let uploadedFiles = []; // {tempId, name, size, type, md5, matched, matchedRules
 
 const ROLE_LABELS = {
   'admin': '系统管理员',
-  'dept-manager': '部门主管',
-  'executive': '公司高管',
   'internal-user': '普通用户'
 };
 
@@ -771,10 +774,7 @@ function showCreateUser() {
     <div class="form-group mb-8"><label>邮箱</label><input type="email" id="newEmail" placeholder="user@company.com"></div>
     <div class="form-group"><label>角色</label>
       <select id="newRole">
-        <option value="internal-user">普通用户</option>
-        <option value="dept-manager">部门主管（一级审批）</option>
-        <option value="executive">公司高管（二级审批）</option>
-        <option value="admin">系统管理员</option>
+        <option value="internal-user">普通用户（审批权限请在审批人配置中授予）</option>
       </select>
     </div>
   `;
@@ -1113,11 +1113,29 @@ async function saveRule() {
 // Audit Logs
 // ============================================================
 async function renderAudit() {
+  document.getElementById('content').innerHTML = `
+    <div class="tabs">
+      <button class="tab-btn active" id="auditTabDetail" onclick="switchAuditTab('detail')">📋 明细</button>
+      <button class="tab-btn" id="auditTabStats" onclick="switchAuditTab('stats')">📊 统计</button>
+    </div>
+    <div id="auditTabContent"></div>
+  `;
+  renderAuditDetail();
+}
+
+function switchAuditTab(tab) {
+  document.getElementById('auditTabDetail').classList.toggle('active', tab === 'detail');
+  document.getElementById('auditTabStats').classList.toggle('active', tab === 'stats');
+  if (tab === 'detail') renderAuditDetail();
+  else renderAuditStats();
+}
+
+async function renderAuditDetail() {
   try {
     const logs = await api('/api/audit-logs?limit=200');
-    document.getElementById('content').innerHTML = `
+    document.getElementById('auditTabContent').innerHTML = `
       <div class="card">
-        <div class="card-title">审计日志 (最近 ${logs.length} 条)</div>
+        <div class="card-title">审计日志明细 (最近 ${logs.length} 条)</div>
         <table>
           <thead><tr><th>时间</th><th>用户</th><th>操作</th><th>目标</th><th>详情</th><th>IP</th></tr></thead>
           <tbody>
@@ -1134,7 +1152,80 @@ async function renderAudit() {
       </div>
     `;
   } catch (e) {
-    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+    document.getElementById('auditTabContent').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+async function renderAuditStats() {
+  const today = new Date();
+  const from = new Date(today); from.setDate(today.getDate() - 29);
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  document.getElementById('auditTabContent').innerHTML = `
+    <div class="card">
+      <div class="card-title">审计统计（人员 × 文件类型 × 每日）</div>
+      <div class="form-row" style="align-items:end;">
+        <div class="form-group"><label>起始日期</label><input type="date" id="statFrom" value="${fmt(from)}"></div>
+        <div class="form-group"><label>结束日期</label><input type="date" id="statTo" value="${fmt(today)}"></div>
+        <div class="form-group"><button class="btn btn-primary" onclick="loadAuditStats()">查询</button></div>
+      </div>
+      <div class="tabs" style="margin:12px 0 8px;">
+        <button class="tab-btn active" id="statViewType" onclick="switchStatView('type')">按文件类型</button>
+        <button class="tab-btn" id="statViewDay" onclick="switchStatView('day')">按每日</button>
+      </div>
+      <div id="statMatrix"></div>
+    </div>
+  `;
+  loadAuditStats();
+}
+
+let _auditStats = null;
+async function loadAuditStats() {
+  const from = document.getElementById('statFrom').value;
+  const to = document.getElementById('statTo').value;
+  try {
+    _auditStats = await api(`/api/audit-logs/stats?from=${from}&to=${to}`);
+    renderStatMatrix();
+  } catch (e) {
+    document.getElementById('statMatrix').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+function switchStatView(view) {
+  document.getElementById('statViewType').classList.toggle('active', view === 'type');
+  document.getElementById('statViewDay').classList.toggle('active', view === 'day');
+  renderStatMatrix(view);
+}
+
+function renderStatMatrix(view) {
+  if (!_auditStats) return;
+  const s = _auditStats;
+  const activeView = document.getElementById('statViewType').classList.contains('active') ? 'type' : 'day';
+  if (activeView === 'type') {
+    // 人员 × 文件类型 矩阵
+    const head = `<tr><th>人员 / 文件类型</th>${s.types.map(t => `<th>${t}</th>`).join('')}<th>合计</th></tr>`;
+    const rows = s.users.map(u => {
+      const row = s.byType[u] || {};
+      const total = s.types.reduce((a, t) => a + (row[t] || 0), 0);
+      return `<tr><td>${u}</td>${s.types.map(t => `<td>${row[t] || 0}</td>`).join('')}<td><strong>${total}</strong></td></tr>`;
+    }).join('');
+    document.getElementById('statMatrix').innerHTML = `
+      <div class="text-sm text-muted" style="margin-bottom:8px;">统计范围：${s.from} 至 ${s.to}</div>
+      <table>
+        <thead>${head}</thead><tbody>${rows}</tbody>
+      </table>`;
+  } else {
+    // 人员 × 每日 矩阵（横向滚动）
+    const head = `<tr><th>人员 / 日期</th>${s.days.map(d => `<th class="text-sm">${d.slice(5)}</th>`).join('')}<th>合计</th></tr>`;
+    const rows = s.users.map(u => {
+      const row = s.byDay[u] || {};
+      const total = s.days.reduce((a, d) => a + (row[d] || 0), 0);
+      return `<tr><td>${u}</td>${s.days.map(d => `<td>${row[d] || 0}</td>`).join('')}<td><strong>${total}</strong></td></tr>`;
+    }).join('');
+    document.getElementById('statMatrix').innerHTML = `
+      <div class="text-sm text-muted" style="margin-bottom:8px;">统计范围：${s.from} 至 ${s.to}（${s.days.length} 天）</div>
+      <div style="overflow-x:auto;"><table>
+        <thead>${head}</thead><tbody>${rows}</tbody>
+      </table></div>`;
   }
 }
 
@@ -1148,7 +1239,10 @@ document.getElementById('modalOverlay').addEventListener('click', e => { if (e.t
 // ============================================================
 // Init
 // ============================================================
-loadUser().then(() => navigate('dashboard'));
+loadUser().then(() => {
+  // 仪表盘为管理视图（admin-only）：admin 默认进仪表盘，普通用户默认进文件提交
+  navigate(currentUser && currentUser.role === 'admin' ? 'dashboard' : 'submit');
+});
 </script>
 </body>
 </html>

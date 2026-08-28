@@ -244,10 +244,16 @@ code, data = request('POST', '/api/admin/role-mappings', json_data={
     "principalType": "user",
     "principalValue": "zhangsan",
     "displayName": "张三（研发部）",
-    "role": "dept-manager",
-    "note": "研发部一级审批人"
+    "role": "internal-user",
+    "note": "研发部（审批权限通过审批人配置授予）"
 })
 test("创建 AD 用户角色映射", code == 200, f"code={code}, data={data}")
+
+code, data = request('POST', '/api/admin/role-mappings', json_data={
+    "principalType": "user", "principalValue": "lisi",
+    "displayName": "李四", "role": "dept-manager", "note": "非法角色应拒绝"
+})
+test("非法角色映射被拒绝(仅admin/internal-user)", code == 400, f"code={code}, data={data}")
 
 code, data = request('POST', '/api/admin/ad/search', data={"keyword": "zhang"})
 test("搜索 AD 用户（打桩模拟）", code == 200 and isinstance(data, list), f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
@@ -618,6 +624,12 @@ test("审计日志查询", code == 200 and len(data) >= 5, f"code={code}, count=
 code, data = request('GET', '/api/stats')
 test("统计数据", code == 200 and 'todaySubmitted' in data, f"code={code}, data={data}")
 
+code, data = request('GET', '/api/audit-logs/stats')
+test("审计统计(默认近30天)", code == 200 and 'byType' in data and 'byDay' in data and 'days' in data,
+     f"code={code}, users={len(data.get('users',[])) if isinstance(data,dict) else 'N/A'}")
+code, data = request('GET', '/api/audit-logs/stats?from=bad-date&to=2026-08-28')
+test("审计统计非法日期拒绝(400)", code == 400, f"code={code}")
+
 # 20. 手动触发过期清理
 code, data = request('POST', '/api/admin/cleanup-expired')
 test("手动触发过期清理（无过期文件）", code == 200 and 'cleaned' in data, f"code={code}, data={data}")
@@ -987,6 +999,10 @@ test("新建用户默认使能(enabled=1)", code == 200 and et1 and et1.get('ena
 # 用新用户登录（成功）
 code, data = request('POST', '/api/auth/login', json_data={"username": "enable_test1", "password": "Enable@123"})
 test("使能用户可正常登录", code == 200, f"code={code}")
+
+# 普通用户访问统计接口应被拒（仪表盘 admin-only 后端保障）
+code, data = request('GET', '/api/stats')
+test("普通用户访问统计被拒403(仪表盘admin-only)", code == 403, f"code={code}")
 
 # 切回 admin
 code, data = request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
