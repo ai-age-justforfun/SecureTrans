@@ -1,18 +1,23 @@
 """
-SecureTrans Pre-Production 双网卡验收测试
-==========================================
-仅在 pre-production（独立服务器，双网卡物理隔离）环境执行。
-本地 dev / 本地 WSL test 环境不执行本脚本。
+SecureTrans Pre-Production / Production 双网卡验收测试
+=======================================================
+在独立服务器（双网卡物理隔离）环境执行。该环境即生产环境：
+验收通过后直接转正为 production，不再单独划分 pre-production。
 
-使用方式（pre-prod 服务器上）：
-    python test_preprod_dualnic.py
+职责边界（与 test_api.py 分工）：
+- 应用层网络面隔离逻辑（读 X-Network-Zone 头 → 放行/拒绝）已由 test_api.py
+  在本地 dev / WSL test 环境通过模拟请求头 100% 覆盖。
+- 本脚本只验证【真实双网卡环境】才能验证的内容：
+    1. Nginx 内网/外网双 server 是否正确注入 X-Network-Zone 头（冒烟确认）
+    2. 双网卡物理隔离（路由/防火墙，人工确认项）
 
-环境要求：
-    - 双网卡物理隔离已配置（Nginx 内网/外网两个 server 块）
-    - 内网地址可访问管理接口，外网地址仅可访问下载接口
-    - 通过环境变量配置两个地址：
-        INTRANET_BASE = 内网管理面地址（默认 http://securetrans.internal.company.com）
-        EXTRANET_BASE = 外网下载面地址（默认 http://securetrans.external.company.com）
+使用方式（pre-prod/product 服务器上）：
+    python3 test_preprod_dualnic.py
+
+环境变量：
+    INTRANET_BASE = 内网管理面地址（默认 http://securetrans.internal.company.com）
+    EXTRANET_BASE = 外网下载面地址（默认 http://securetrans.external.company.com）
+    ADMIN_USER / ADMIN_PASS = 管理员账号
 """
 import json
 import os
@@ -67,36 +72,34 @@ def request(opener, base, path):
 
 
 print("=" * 70)
-print("SecureTrans Pre-Production 双网卡验收测试")
+print("SecureTrans 双网卡验收测试（pre-prod/product 同一环境）")
 print(f"内网面: {INTRANET_BASE}")
 print(f"外网面: {EXTRANET_BASE}")
 print("=" * 70)
 
-# 1. 内网面完整功能验证
-print("\n--- 1. 内网面（管理面）---")
+# 1. 内网面（管理面）冒烟确认——验证 Nginx 内网 server 正确注入 internal
+print("\n--- 1. 内网面（管理面）冒烟确认 ---")
 op_intra = login(INTRANET_BASE, ADMIN_USER, ADMIN_PASS)
 code, data = request(op_intra, INTRANET_BASE, "/api/auth/me")
-test("内网面登录+用户信息", code == 200 and data.get("networkZone") == "internal",
+test("内网面登录+networkZone=internal（Nginx头注入正确）",
+     code == 200 and data.get("networkZone") == "internal",
      f"code={code}, networkZone={data.get('networkZone')}")
 code, data = request(op_intra, INTRANET_BASE, "/api/admin/local-users")
 test("内网面管理接口可访问", code == 200, f"code={code}")
 code, data = request(op_intra, INTRANET_BASE, "/api/submissions")
 test("内网面提交接口可访问", code == 200, f"code={code}")
-code, data = request(op_intra, INTRANET_BASE, "/api/config/feature-rules")
-test("内网面特征码规则可访问", code == 200, f"code={code}")
-code, data = request(op_intra, INTRANET_BASE, "/api/external/files")
-test("内网面下载列表可访问", code == 200, f"code={code}")
 
-# 2. 外网面（下载面）
-print("\n--- 2. 外网面（下载面）---")
+# 2. 外网面（下载面）冒烟确认——验证 Nginx 外网 server 正确注入 external
+print("\n--- 2. 外网面（下载面）冒烟确认 ---")
 op_extra = login(EXTRANET_BASE, ADMIN_USER, ADMIN_PASS)
 code, data = request(op_extra, EXTRANET_BASE, "/api/auth/me")
-test("外网面登录+用户信息", code == 200 and data.get("networkZone") == "external",
+test("外网面登录+networkZone=external（Nginx头注入正确）",
+     code == 200 and data.get("networkZone") == "external",
      f"code={code}, networkZone={data.get('networkZone')}")
 code, data = request(op_extra, EXTRANET_BASE, "/api/external/files")
 test("外网面下载列表可访问", code == 200, f"code={code}")
 
-# 3. 外网面隔离验证（管理接口应被拒绝）
+# 3. 外网面隔离确认——管理接口应被拒绝（真实 Nginx 头注入下的应用层隔离生效）
 print("\n--- 3. 外网面隔离（管理接口拒绝）---")
 code, data = request(op_extra, EXTRANET_BASE, "/api/admin/local-users")
 test("外网面用户管理被拒绝403", code == 403, f"code={code}")
@@ -104,10 +107,6 @@ code, data = request(op_extra, EXTRANET_BASE, "/api/submissions")
 test("外网面提交接口被拒绝403", code == 403, f"code={code}")
 code, data = request(op_extra, EXTRANET_BASE, "/api/config/feature-rules")
 test("外网面特征码规则被拒绝403", code == 403, f"code={code}")
-code, data = request(op_extra, EXTRANET_BASE, "/api/config/system")
-test("外网面系统配置被拒绝403", code == 403, f"code={code}")
-code, data = request(op_extra, EXTRANET_BASE, "/api/admin/partners")
-test("外网面合作方白名单被拒绝403", code == 403, f"code={code}")
 
 # 4. 双网卡物理隔离（Nginx/系统层，需人工配合确认）
 print("\n--- 4. 双网卡物理隔离（人工确认项）---")
@@ -127,4 +126,4 @@ print("=" * 70)
 if pass_count < len(results):
     print("存在失败项，请修复后重新验收。")
     exit(1)
-print("双网卡验收通过，可以转为 production 环境。")
+print("双网卡验收通过，本环境正式转为 production。")

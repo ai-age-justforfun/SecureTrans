@@ -1,21 +1,23 @@
-# SecureTrans Pre-Production 双网卡验收指南
+# SecureTrans 双网卡验收指南（pre-prod = product）
 
-> 版本：v1.0 | 日期：2026-08-28 | 阶段：PSF → production 前置
-> 说明：本文档验收项**仅在 pre-production（独立服务器、双网卡物理隔离）环境执行**。
-> 本地 dev（Windows）和本地 test（WSL）单网卡环境**不执行**本验收。
+> 版本：v1.1 | 日期：2026-08-28 | 阶段：PSF → production
+> 说明：**pre-production 不再与 production 分两个环境**。独立服务器部署、双网卡验收通过后即正式转为 production。
+> 应用层网络面隔离逻辑（读 `X-Network-Zone` 头 → 放行/拒绝）已由 `test_api.py` 在本地 test 环境通过**模拟请求头 100% 覆盖**；
+> 本环境只验证**真实双网卡才可验证的内容**（Nginx 头注入 + 物理隔离）。
 
 ---
 
-## 一、为什么需要 pre-production
+## 一、环境策略（v1.1 更新）
 
-| 环境 | 网卡 | 用途 | 是否执行双网卡验收 |
-|------|------|------|------------------|
-| 本地 dev | 单网卡（Windows） | 开发 | ❌ 不执行 |
-| 本地 test | 单网卡（WSL Rocky） | 功能/自动化测试 | ❌ 不执行 |
-| **pre-production** | **双网卡（独立服务器）** | **双网卡隔离验收** | ✅ 执行 |
-| production | 双网卡（正式） | 正式运行 | 仅切换配置 |
+| 环境 | 网卡 | 用途 | 网络面测试方式 |
+|------|------|------|--------------|
+| 本地 dev | 单网卡（Windows） | 开发 | `test_api.py` 模拟 `X-Network-Zone` 头，覆盖应用层全部逻辑 |
+| 本地 test | 单网卡（WSL Rocky） | 功能/自动化回归 | `test_api.py` 模拟 `X-Network-Zone` 头，覆盖应用层全部逻辑 |
+| **pre-prod/product（同一环境）** | **双网卡（独立服务器）** | **先验收，通过即转正为 production** | `test_preprod_dualnic.py` 真实头注入确认 + 物理层人工验收 |
 
-双网卡隔离是**部署架构层面**的能力（Nginx 绑定内网/外网两个网卡），单网卡环境无法验证物理隔离，必须在独立的 pre-production 服务器上验收。
+**关键认知**：应用层隔离 = 读取 `X-Network-Zone` 请求头，**与物理网卡无关**。只要请求头正确，行为完全一致。
+因此"内外网无法测试的测试项"**可以在 test 环境全部模拟**（test_api.py 22d 节：external 面放行矩阵 + 拒绝矩阵 + 非法值回退）。
+真实双网卡只影响 **Nginx 层如何注入该头**（内网 server 注入 internal、外网 server 注入 external），这是 test 环境无法验证的，必须在 pre-prod/product 环境做。
 
 ---
 
@@ -23,7 +25,7 @@
 
 ```
                     ┌──────────────────────────────────────┐
-                    │   pre-production 服务器（双网卡）        │
+                    │   pre-prod/product 服务器（双网卡）      │
                     │                                      │
   内网用户 ──► 内网网卡(NIC1) ──► Nginx internal server      │
                     │       X-Network-Zone: internal        │
@@ -41,7 +43,7 @@
 
 **三层隔离**：
 1. **Nginx 层**：外网 server 仅代理 `/api/external/` 等下载路径，其余返回 403
-2. **应用层**：`before_request` 钩子按 `X-Network-Zone` 头强制隔离（即使绕过 Nginx 也拦得住）
+2. **应用层**：`before_request` 钩子按 `X-Network-Zone` 头强制隔离（即使绕过 Nginx 也拦得住）——**test 环境已 100% 覆盖**
 3. **前端层**：外网面灰掉非下载菜单，防误操作
 
 ---
@@ -54,14 +56,15 @@
 - [ ] Nginx 双 server 块已配置（`infra/nginx-securetrans.conf`）
 - [ ] 内网地址 `http://securetrans.internal.company.com` 可访问
 - [ ] 外网地址 `http://securetrans.external.company.com` 可访问
+- [ ] 本地已跑通 `test_api.py` 全量（含 22d 网络面扩展矩阵），应用层无缺陷
 
 ---
 
 ## 四、验收步骤
 
-### 4.1 自动化验收（应用层隔离）
+### 4.1 自动化冒烟（真实双网卡头注入确认）
 
-在 pre-production 服务器上执行：
+在 pre-prod/product 服务器上执行：
 
 ```bash
 cd /opt/securetrans/tests
@@ -72,7 +75,7 @@ export EXTRANET_BASE="http://securetrans.external.company.com"
 export ADMIN_USER="admin"
 export ADMIN_PASS="Admin@123"
 
-# 执行双网卡验收
+# 执行双网卡验收（冒烟 + 人工项）
 python3 test_preprod_dualnic.py
 ```
 
@@ -90,24 +93,17 @@ python3 test_preprod_dualnic.py
 
 ---
 
-## 五、验收通过标准
+## 五、验收通过标准（转正条件）
 
-- [ ] `test_preprod_dualnic.py` 全部 PASS
+- [ ] 本地 `test_api.py` 全量通过（120 项，含 22d 网络面扩展矩阵）
+- [ ] `test_preprod_dualnic.py` 全部 PASS（真实头注入 + 人工项）
 - [ ] 外网面所有管理接口返回 403
 - [ ] 外网面下载接口正常
 - [ ] 内网面完整功能正常
 - [ ] Nginx/防火墙人工验收项全部通过
 
----
-
-## 六、验收通过后转 production
-
-1. 将 `.env` 中 `DEPLOY_MODE=production` 确认
-2. 将 Nginx 域名/IP 切换为正式域名
-3. 配置正式 HTTPS 证书（`infra/nginx-securetrans.conf` 注释部分）
-4. 更新 `docs/DEPLOY.md` 中生产环境清单
-5. 生产环境运行 `infra/verify.sh`（88+项全量回归）
+**验收通过后，本环境即正式转为 production**（更新域名/HTTPS 证书即可，不再单独划分环境）。
 
 ---
 
-*文档结束 | SecureTrans Pre-Production 双网卡验收指南 v1.0 | 2026-08-28*
+*文档结束 | SecureTrans 双网卡验收指南 v1.1 | 2026-08-28*

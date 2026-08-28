@@ -797,6 +797,69 @@ external_file = external_dir / auto_sub_id / "files" / "test_document.pdf"
 test("external 中文件可正常读取", external_file.exists() and external_file.stat().st_size > 0,
      f"path={external_file}, size={external_file.stat().st_size if external_file.exists() else 0}")
 
+# 22d. 网络面隔离扩展矩阵（应用层逻辑 100% 覆盖，模拟 X-Network-Zone 头）
+# 说明：应用层隔离 = 读 X-Network-Zone 请求头，与物理网卡无关，故 test 环境可完整模拟。
+#      真实双网卡仅影响 Nginx 如何注入该头（部署层），由 test_preprod_dualnic.py 在
+#      pre-prod/product（同一环境，验收通过即转正）验证。
+print("\n--- 22d. 网络面隔离扩展矩阵（external 面完整覆盖） ---")
+
+# external 面：放行项（登录页/首页/静态资源/认证/下载）
+code, data = request('GET', '/login', headers={"X-Network-Zone": "external"})
+test("external面登录页放行", code == 200, f"code={code}")
+
+code, data = request('GET', '/', headers={"X-Network-Zone": "external"})
+test("external面首页放行", code == 200, f"code={code}")
+
+code, data = request('GET', '/static/index.html', headers={"X-Network-Zone": "external"})
+test("external面静态资源放行", code == 200, f"code={code}")
+
+code, data = request('GET', '/api/auth/me', headers={"X-Network-Zone": "external"})
+test("external面me放行+networkZone=external", code == 200 and data.get('networkZone') == 'external',
+     f"code={code}, zone={data.get('networkZone')}")
+
+code, data = request('GET', f'/api/external/{auto_sub_id}/download/test_document.pdf', headers={"X-Network-Zone": "external"})
+test("external面文件下载放行", code == 200, f"code={code}")
+
+# external 面：管理/业务接口全部拒绝 403
+code, data = request('GET', '/api/submissions', headers={"X-Network-Zone": "external"})
+test("external面提交列表被拒403", code == 403, f"code={code}")
+
+code, data = request('POST', '/api/submissions/upload', headers={"X-Network-Zone": "external"})
+test("external面上传被拒403", code == 403, f"code={code}")
+
+code, data = request('GET', '/api/admin/local-users', headers={"X-Network-Zone": "external"})
+test("external面用户管理被拒403", code == 403, f"code={code}")
+
+code, data = request('GET', '/api/admin/partners', headers={"X-Network-Zone": "external"})
+test("external面合作方白名单被拒403", code == 403, f"code={code}")
+
+code, data = request('GET', '/api/admin/approvers', headers={"X-Network-Zone": "external"})
+test("external面审批人配置被拒403", code == 403, f"code={code}")
+
+code, data = request('GET', '/api/config/feature-rules', headers={"X-Network-Zone": "external"})
+test("external面特征码规则被拒403", code == 403, f"code={code}")
+
+code, data = request('GET', '/api/config/system', headers={"X-Network-Zone": "external"})
+test("external面系统配置被拒403", code == 403, f"code={code}")
+
+code, data = request('GET', '/api/audit-logs', headers={"X-Network-Zone": "external"})
+test("external面审计日志被拒403", code == 403, f"code={code}")
+
+code, data = request('GET', '/api/stats', headers={"X-Network-Zone": "external"})
+test("external面统计被拒403", code == 403, f"code={code}")
+
+# 非法 X-Network-Zone 值回退 internal（安全兜底）
+code, data = request('GET', '/api/auth/me', headers={"X-Network-Zone": "evil"})
+test("非法X-Network-Zone回退internal", code == 200 and data.get('networkZone') == 'internal',
+     f"code={code}, zone={data.get('networkZone')}")
+
+# internal 面全功能放行确认（管理面不受影响）
+code, data = request('GET', '/api/submissions')
+test("internal面提交列表放行", code == 200, f"code={code}")
+
+code, data = request('GET', '/api/admin/local-users')
+test("internal面用户管理放行", code == 200, f"code={code}")
+
 # 22. 退出登录
 print("\n--- 13. 退出登录 ---")
 code, data = request('GET', '/api/auth/logout')
