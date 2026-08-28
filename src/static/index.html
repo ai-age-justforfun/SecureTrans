@@ -275,14 +275,14 @@ async function loadUser() {
       if (el.dataset.page === 'pending') el.style.display = isApprover ? '' : 'none';
       else el.style.display = isAdmin ? '' : 'none';
     });
-    // 外网面：仅下载可用，其余菜单灰掉（防误操作 + 后端已强制隔离）
-    document.querySelectorAll('.nav-item').forEach(el => {
-      if (networkZone === 'external' && el.dataset.page !== 'external') {
-        el.classList.add('disabled');
-      } else {
-        el.classList.remove('disabled');
-      }
-    });
+    // 外网面（下载面）：仅保留"外网下载"菜单，隐藏其余全部菜单
+    // （防止从网外看到/触发上传申请、审批、管理等内网功能；后端已强制隔离做兜底）
+    // 注意：仅在外网面执行，内网面不得覆盖上方 admin-only 的隐藏状态
+    if (networkZone === 'external') {
+      document.querySelectorAll('.nav-item').forEach(el => {
+        el.style.display = (el.dataset.page === 'external') ? '' : 'none';
+      });
+    }
   } catch (e) {
     console.error('loadUser error:', e);
     window.location.href = '/login';
