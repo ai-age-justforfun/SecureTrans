@@ -261,31 +261,33 @@ def init_db():
     # 初始特征码规则
     cursor = conn.execute("SELECT COUNT(*) as c FROM feature_rules")
     if cursor.fetchone()["c"] == 0:
+        # 内置特征码规则作为【模板】，默认全部禁用（enabled=0），由管理员按需启用。
+        # 安全策略：即使免审批总开关开启，无启用的规则则无匹配 → 全部走人工审批（默认保守）。
         rules = [
             # === 文档类（extension）===
-            ("PDF文档", "extension", ".pdf", 1),
-            ("Word文档", "extension", ".doc,.docx", 1),
-            ("Excel表格", "extension", ".xls,.xlsx", 1),
-            ("PPT演示", "extension", ".ppt,.pptx", 1),
-            ("图片文件", "extension", ".png,.jpg,.jpeg,.gif,.bmp,.svg", 1),
-            ("文本文件", "extension", ".txt,.csv,.md,.log,.json,.xml,.yaml,.yml", 1),
+            ("PDF文档", "extension", ".pdf", 0),
+            ("Word文档", "extension", ".doc,.docx", 0),
+            ("Excel表格", "extension", ".xls,.xlsx", 0),
+            ("PPT演示", "extension", ".ppt,.pptx", 0),
+            ("图片文件", "extension", ".png,.jpg,.jpeg,.gif,.bmp,.svg", 0),
+            ("文本文件", "extension", ".txt,.csv,.md,.log,.json,.xml,.yaml,.yml", 0),
             # === 压缩包类（extension）- Linux 默认支持 ===
-            ("ZIP压缩包", "extension", ".zip", 1),
-            ("TAR归档", "extension", ".tar", 1),
-            ("GZIP压缩", "extension", ".gz,.tgz", 1),
-            ("BZIP2压缩", "extension", ".bz2,.tbz2", 1),
-            ("XZ压缩", "extension", ".xz,.txz", 1),
-            ("ZSTD压缩", "extension", ".zst", 1),
+            ("ZIP压缩包", "extension", ".zip", 0),
+            ("TAR归档", "extension", ".tar", 0),
+            ("GZIP压缩", "extension", ".gz,.tgz", 0),
+            ("BZIP2压缩", "extension", ".bz2,.tbz2", 0),
+            ("XZ压缩", "extension", ".xz,.txz", 0),
+            ("ZSTD压缩", "extension", ".zst", 0),
             # === 压缩包类（binary 特征码 / Magic Number）===
-            ("ZIP特征码", "binary", "hex:504B0304", 1),
-            ("GZIP特征码", "binary", "hex:1F8B", 1),
-            ("BZIP2特征码", "binary", "hex:425A68", 1),
-            ("XZ特征码", "binary", "hex:FD377A585A00", 1),
-            ("ZSTD特征码", "binary", "hex:28B52FFD", 1),
-            ("TAR特征码(ustar)", "binary", "ustar", 1),
+            ("ZIP特征码", "binary", "hex:504B0304", 0),
+            ("GZIP特征码", "binary", "hex:1F8B", 0),
+            ("BZIP2特征码", "binary", "hex:425A68", 0),
+            ("XZ特征码", "binary", "hex:FD377A585A00", 0),
+            ("ZSTD特征码", "binary", "hex:28B52FFD", 0),
+            ("TAR特征码(ustar)", "binary", "ustar", 0),
             # === FPGA / EDA ===
-            ("Vivado Bitstream(.bit)", "extension", ".bit", 1),
-            ("Vivado Bit同步字", "binary", "hex:5599AA66", 1),
+            ("Vivado Bitstream(.bit)", "extension", ".bit", 0),
+            ("Vivado Bit同步字", "binary", "hex:5599AA66", 0),
         ]
         for name, rtype, pattern, enabled in rules:
             conn.execute(
@@ -977,14 +979,17 @@ def api_create_submission():
     if not receiver_org:
         return jsonify({"error": "请填写接收方单位"}), 400
 
-    # 信任模式：普通用户选中"合作方"但名称不在清单时，自动加入合作方清单
+    # 信任模式：普通用户选中"合作方"但名称不在清单时，自动加入合作方清单（去重：名称不区分大小写）
     if receiver_type == "partner" and not is_partner(receiver_name):
         db = get_db()
-        exists = db.execute("SELECT COUNT(*) as c FROM partners WHERE name=?", (receiver_name,)).fetchone()["c"]
+        exists = db.execute(
+            "SELECT COUNT(*) as c FROM partners WHERE name=? COLLATE NOCASE",
+            (receiver_name.strip(),)
+        ).fetchone()["c"]
         if not exists:
             db.execute(
                 "INSERT INTO partners (id,name,contact,email,enabled,created_at) VALUES (?,?,?,?,1,?)",
-                (str(uuid.uuid4()), receiver_name, "", receiver_email, now_str())
+                (str(uuid.uuid4()), receiver_name.strip(), "", receiver_email, now_str())
             )
             db.commit()
             add_audit_log(current_user.username, "create_partner", receiver_name, "提交时自动加入合作方清单", get_client_ip())

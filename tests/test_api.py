@@ -116,6 +116,14 @@ code, data = request('PUT', '/api/config/system', json_data={
 })
 test("初始化免审批总开关开启+默认有效期7天", code == 200, f"code={code}")
 
+# 启用所有特征码规则（内置规则默认禁用=模板，按需开启；测试需启用以便跑免审批场景）
+code, rules = request('GET', '/api/config/feature-rules')
+if isinstance(rules, list):
+    for r in rules:
+        if r.get('enabled') == 0:
+            request('PUT', f"/api/admin/feature-rules/{r['id']}", json_data={"enabled": True})
+test("启用所有特征码规则(默认模板禁用→测试启用)", code == 200, f"code={code}, rules={len(rules) if isinstance(rules,list) else 'N/A'}")
+
 # 6. 文件上传
 print("\n--- 3. 文件上传 ---")
 # 创建测试文件
@@ -927,6 +935,21 @@ test("选择合作方且名称不在清单→提交成功并判定partner", code
 code, data = request('GET', '/api/admin/partners')
 auto_added = any(p.get('name') == '自动加入合作方测试' for p in data) if isinstance(data, list) else False
 test("提交后自动加入合作方清单", auto_added, f"count={len(data) if isinstance(data,list) else 'N/A'}")
+
+# 合作方去重：再次提交同名合作方 → 不重复加入清单
+code, data = upload_file(test_pdf, "partner_dup_test.pdf")
+dup_temp_id = data.get('tempId')
+code, data = request('POST', '/api/submissions', json_data={
+    "tempIds": [dup_temp_id],
+    "receiverName": "自动加入合作方测试",  # 与已配置一致
+    "receiverOrg": "自动加入合作方测试公司",
+    "receiverType": "partner",
+    "securityLevel": "internal"
+})
+test("同名合作方再次提交成功", code == 200, f"code={code}")
+code, data = request('GET', '/api/admin/partners')
+dup_count = sum(1 for p in data if p.get('name') == '自动加入合作方测试') if isinstance(data, list) else 0
+test("合作方去重：同名不重复加入清单(count=1)", dup_count == 1, f"count={dup_count}")
 
 # --- 合作方使能开关 ---
 code, data = request('POST', '/api/admin/partners', json_data={"name": "使能开关测试", "enabled": True})
