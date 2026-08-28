@@ -47,7 +47,7 @@ python app.py
 运行测试（另一个终端）：
 ```bash
 cd tests
-python test_api.py    # 94项全通过
+python test_api.py    # 102项全通过
 ```
 
 ### 2.3 方式 B：WSL Rocky Linux（模拟生产环境）
@@ -166,7 +166,7 @@ python app.py
 # 另一个 WSL 终端
 cd ~/securetrans/tests
 python3 test_api.py
-# 预期: 94项全部通过，通过率100%
+# 预期: 102项全部通过，通过率100%
 ```
 
 ### 3.6 WSL 中验证生产模式（可选）
@@ -281,7 +281,7 @@ sudo nginx -t && sudo systemctl reload nginx
 ```bash
 cd /tmp/securetrans
 bash infra/verify.sh
-# 预期: 健康检查通过 + 94项API测试全通过
+# 预期: 健康检查通过 + 102项API测试全通过
 ```
 
 ### 4.6 初始账号
@@ -355,7 +355,7 @@ sudo systemctl start securetrans
 │   ├── .env.production       # 生产环境配置
 │   └── static/               # 前端SPA
 ├── tests/
-│   └── test_api.py           # 94项全量测试
+│   └── test_api.py           # 102项全量测试
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署
 │   ├── verify.sh             # 部署验证
