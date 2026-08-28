@@ -114,7 +114,7 @@ main ────●────●────●────●────  �
 1. **需求**：Sprint Planning，拆分Story，确认验收标准
 2. **设计**：复杂功能技术方案，API定义，ADR记录
 3. **开发**：编码 + 单元测试 + 每日站会
-4. **测试**：全量回归（`tests/test_api.py` 88项）+ Bug修复
+4. **测试**：全量回归（`tests/test_api.py` 94项）+ Bug修复
 5. **验证**：Sprint Review，PO验收，收集反馈
 6. **复盘**：Retrospective，输出迭代小结文档（`docs/07-psf-sprintN-retrospective.md`）
 
@@ -133,7 +133,7 @@ main ────●────●────●────●────  �
 ### 自动化测试
 
 - **测试脚本**：`tests/test_api.py`，使用Python标准库urllib，无额外依赖
-- **测试范围**：18大类88项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置）
+- **测试范围**：19大类94项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置）
 - **运行方式**：先启动服务（`cd src && python app.py`），再 `cd tests && python test_api.py`，预期通过率100%
 - **新增功能**：必须在 test_api.py 中添加对应测试用例
 
@@ -160,7 +160,7 @@ main ────●────●────●────●────  �
 ### 部署脚本（infra/）
 
 - `infra/deploy.sh`：一键部署（9步自动化），必须在Linux服务器以root运行
-- `infra/verify.sh`：部署验证（88项全量测试），确认部署正确
+- `infra/verify.sh`：部署验证（94项全量测试），确认部署正确
 - `infra/nginx-securetrans.conf`：Nginx反向代理配置
 - `infra/securetrans.service`：systemd服务配置
 - 脚本必须使用LF换行，不能有CRLF
@@ -183,6 +183,8 @@ main ────●────●────●────●────  �
 - **审计**：所有关键操作（登录、提交、审批、配置变更）记录审计日志
 - **文件上传**：限制大小（MAX_CONTENT_LENGTH），流式写入磁盘
 - **会话**：Flask-Login，HTTPOnly cookie，SameSite=Lax
+- **权限模型（简化）**：仅 admin 可管理配置（用户/系统/特征码/合作方/审批人）；其他用户默认普通用户无提权能力；审批权限通过 approvers 表由 admin 配置，不设复杂 role/group 体系
+- **双网卡隔离**：Nginx 内网/外网双 server 注入 `X-Network-Zone` 头；应用层 `before_request` 强制隔离——外网面仅开放登录+下载接口，管理接口返回 403
 
 ---
 

@@ -171,6 +171,18 @@
 | 1 | 点击顶部"退出"按钮 | 退出登录，回到登录页 |
 | 2 | 浏览器后退 | 不能回到系统内部（需重新登录） |
 
+#### TC-016：网络面隔离（应用层，本地/WSL 模拟验证）
+> 说明：应用层隔离在本地 dev / WSL test 单网卡环境通过注入 `X-Network-Zone` 头模拟验证；
+> **双网卡物理隔离（Nginx+防火墙）仅在 pre-production 环境验收**（见 docs/09-preprod-verification.md）。
+| 步骤 | 操作 | 预期结果 |
+|------|------|---------|
+| 1 | 默认（无X-Network-Zone头）访问 /api/auth/me | networkZone=internal |
+| 2 | 带 X-Network-Zone: external 访问 /api/auth/me | networkZone=external |
+| 3 | external 面访问管理接口（/api/admin/*） | 返回 403 |
+| 4 | external 面访问下载接口（/api/external/*） | 放行正常 |
+| 5 | internal 面访问管理接口 | 放行正常 |
+| 6 | 前端外网面灰掉非下载菜单 | 页面正确灰化 |
+
 ---
 
 ## 3. 验收标准
