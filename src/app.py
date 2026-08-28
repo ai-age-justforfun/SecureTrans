@@ -370,6 +370,35 @@ def rows_to_list(rows) -> list:
 def get_client_ip() -> str:
     return request.remote_addr or "unknown"
 
+def get_network_zone() -> str:
+    """识别当前请求来自内网(管理面)还是外网(下载面)。
+    由 Nginx 反向代理注入 X-Network-Zone 请求头；无代理(测试模式)默认 internal。"""
+    zone = request.headers.get("X-Network-Zone", "internal").strip().lower()
+    return zone if zone in ("internal", "external") else "internal"
+
+# 外网面(下载面)允许访问的路径前缀；其余接口一律拒绝，防止绕过前端直接调用管理API
+EXTERNAL_ALLOW_PREFIXES = (
+    "/login",
+    "/static/",
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/auth/me",
+    "/api/external/",
+)
+
+@app.before_request
+def enforce_network_zone():
+    """双网卡隔离的应用层兜底：外网面仅开放登录+下载，管理接口拒绝访问。"""
+    if get_network_zone() != "external":
+        return None
+    path = request.path
+    if path == "/":
+        return None
+    for p in EXTERNAL_ALLOW_PREFIXES:
+        if path == p or path.startswith(p):
+            return None
+    return jsonify({"error": "外网面仅提供文件下载服务，管理操作请从内网访问"}), 403
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
@@ -791,8 +820,10 @@ def api_logout():
 @app.route("/api/auth/me")
 @login_required
 def api_me():
-    """获取当前用户信息"""
-    return jsonify(current_user.to_dict())
+    """获取当前用户信息（含网络面标识，供前端自适应显示）"""
+    data = current_user.to_dict()
+    data["networkZone"] = get_network_zone()
+    return jsonify(data)
 
 @app.route("/api/auth/change-password", methods=["POST"])
 @login_required

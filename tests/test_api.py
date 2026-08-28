@@ -487,6 +487,35 @@ test("删除特征码规则", code == 200, f"code={code}")
 code, data = request('DELETE', '/api/admin/feature-rules/nonexistent-id')
 test("删除不存在规则返回404", code == 404, f"code={code}")
 
+# 22c. 网络面隔离（应用层，模拟 X-Network-Zone 头）
+print("\n--- 10i. 网络面隔离（双网卡应用层兜底） ---")
+
+# 默认(internal)面 networkZone
+code, data = request('GET', '/api/auth/me')
+test("默认internal面networkZone识别", code == 200 and data.get('networkZone') == 'internal',
+     f"code={code}, networkZone={data.get('networkZone')}")
+
+# external面 networkZone 识别
+code, data = request('GET', '/api/auth/me', headers={"X-Network-Zone": "external"})
+test("external面networkZone识别", code == 200 and data.get('networkZone') == 'external',
+     f"code={code}, networkZone={data.get('networkZone')}")
+
+# external面管理接口被拒
+code, data = request('GET', '/api/admin/local-users', headers={"X-Network-Zone": "external"})
+test("external面管理接口被拒绝403", code == 403, f"code={code}")
+
+# external面下载接口放行
+code, data = request('GET', '/api/external/files', headers={"X-Network-Zone": "external"})
+test("external面下载接口放行", code == 200 and isinstance(data, list), f"code={code}")
+
+# internal面管理接口放行
+code, data = request('GET', '/api/admin/local-users')
+test("internal面管理接口放行", code == 200 and isinstance(data, list), f"code={code}")
+
+# internal面配置类接口放行（特征码规则）
+code, data = request('GET', '/api/config/feature-rules')
+test("internal面特征码规则接口放行", code == 200, f"code={code}")
+
 # 18. 系统配置
 print("\n--- 10. 系统配置 ---")
 code, data = request('GET', '/api/config/feature-rules')

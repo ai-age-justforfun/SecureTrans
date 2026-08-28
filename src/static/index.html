@@ -19,6 +19,10 @@
   .nav-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
   .nav-item.active { background: rgba(37,99,235,0.3); color: #fff; border-left-color: #3b82f6; }
   .nav-item .icon { width: 20px; margin-right: 10px; text-align: center; }
+  .nav-item.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+  .network-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; margin-left: 8px; vertical-align: middle; }
+  .network-badge.internal { background: #dcfce7; color: #166534; }
+  .network-badge.external { background: #fef3c7; color: #92400e; }
   .sidebar-user { padding: 16px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 13px; }
   .sidebar-user .name { color: #fff; font-weight: 500; }
   .sidebar-user .role { color: #93c5fd; font-size: 12px; margin-top: 2px; }
@@ -157,7 +161,7 @@
     </div>
     <div class="sidebar-user">
       <div class="name" id="userName">--</div>
-      <div class="role" id="userRole">--</div>
+      <div class="role" id="userRole">-- <span class="network-badge internal" id="networkBadge">内网</span></div>
       <button class="btn-logout" onclick="logout()">退出登录</button>
     </div>
   </div>
@@ -247,12 +251,31 @@ async function loadUser() {
     currentUser = await api('/api/auth/me');
     document.getElementById('userName').textContent = currentUser.displayName || currentUser.username;
     document.getElementById('userRole').textContent = ROLE_LABELS[currentUser.role] || currentUser.role;
+    // 网络面标识（内网管理面 / 外网下载面）
+    const networkZone = currentUser.networkZone || 'internal';
+    const badge = document.getElementById('networkBadge');
+    if (networkZone === 'external') {
+      badge.textContent = '外网';
+      badge.className = 'network-badge external';
+    } else {
+      badge.textContent = '内网';
+      badge.className = 'network-badge internal';
+    }
+    window._networkZone = networkZone;
     // Show/hide admin nav items
     const isAdmin = currentUser.role === 'admin';
     const isApprover = ['admin', 'dept-manager', 'executive'].includes(currentUser.role);
     document.querySelectorAll('.admin-only').forEach(el => {
       if (el.dataset.page === 'pending') el.style.display = isApprover ? '' : 'none';
       else el.style.display = isAdmin ? '' : 'none';
+    });
+    // 外网面：仅下载可用，其余菜单灰掉（防误操作 + 后端已强制隔离）
+    document.querySelectorAll('.nav-item').forEach(el => {
+      if (networkZone === 'external' && el.dataset.page !== 'external') {
+        el.classList.add('disabled');
+      } else {
+        el.classList.remove('disabled');
+      }
     });
   } catch (e) {
     window.location.href = '/login';
@@ -272,6 +295,11 @@ document.querySelectorAll('.nav-item').forEach(item => {
 });
 
 function navigate(page) {
+  // 外网面仅允许下载页
+  if (window._networkZone === 'external' && page !== 'external') {
+    toast('外网面仅提供文件下载', 'error');
+    return;
+  }
   currentPage = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   const titles = {
