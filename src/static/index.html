@@ -161,7 +161,8 @@
     </div>
     <div class="sidebar-user">
       <div class="name" id="userName">--</div>
-      <div class="role" id="userRole">-- <span class="network-badge internal" id="networkBadge">内网</span></div>
+      <div class="role" id="userRole">--</div>
+      <div style="margin-top:6px;"><span class="network-badge internal" id="networkBadge">内网</span></div>
       <button class="btn-logout" onclick="logout()">退出登录</button>
     </div>
   </div>
@@ -278,6 +279,7 @@ async function loadUser() {
       }
     });
   } catch (e) {
+    console.error('loadUser error:', e);
     window.location.href = '/login';
   }
 }

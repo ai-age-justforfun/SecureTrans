@@ -108,6 +108,18 @@
 
 **验证**：配置的 internal-user 审批人可通过一级/二级审批，未配置的 internal-user 仍被 403 拒绝。
 
+### BUG-005：登录后闪回登录页（loadUser 报错）
+
+**现象**：输入 admin/Admin@123 登录后"闪一下"又回到登录页。
+
+**根因**：网络面隔离改动时，将 `<span id="networkBadge">` 放在 `<div id="userRole">` 内部；`loadUser()` 中 `document.getElementById('userRole').textContent = ...` 赋值会**清空并替换该元素所有子节点**，把 networkBadge span 删除；随后 `document.getElementById('networkBadge')` 返回 null，`badge.textContent = ...` 抛出 "Cannot set properties of null"，被 catch 捕获后 `window.location.href='/login'` 跳回登录页。任何浏览器均会触发。
+
+**修复**：将 networkBadge span 移出 userRole div（sidebar-user 内独立元素），userRole 文本赋值不再影响网络面标识。
+
+**验证**：真实浏览器登录后正常进入主界面（URL=/），networkBadge 正常显示"内网/internal"；全量 102 项测试 100% 通过，无回归。
+
+**备注**：若本地浏览器仍闪回，请硬刷新（Ctrl+F5）清除旧版 index.html 缓存。
+
 ---
 
 ## 五、新增功能（partners/approvers 落地）
