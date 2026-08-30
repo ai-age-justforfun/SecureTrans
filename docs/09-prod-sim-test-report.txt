@@ -1,0 +1,210 @@
+﻿======================================================================
+SecureTrans 本地全量 API 测试
+======================================================================
+
+--- 1. 基础服务 ---
+✅ PASS | 健康检查
+✅ PASS | 未登录访问受保护接口被重定向到登录页
+
+--- 2. 认证 ---
+✅ PASS | admin 登录成功
+✅ PASS | 获取当前用户信息
+✅ PASS | 错误密码登录被拒绝
+✅ PASS | 初始化免审批总开关开启+默认有效期7天
+✅ PASS | 启用所有特征码规则(默认模板禁用→测试启用)
+
+--- 3. 文件上传 ---
+✅ PASS | 上传 PDF 文件（匹配特征码）
+✅ PASS | 上传 EXE 文件（不匹配特征码）
+
+--- 4. 提交单创建 ---
+✅ PASS | 创建提交单（免审批自动通过）
+✅ PASS | 有效期统一走系统配置（忽略前端expiryDays=30）
+✅ PASS | 创建提交单（需要人工审批）
+
+--- 5. 提交单查询 ---
+✅ PASS | 提交单列表
+✅ PASS | 提交单详情（含文件清单和审批记录）
+
+--- 6. 审批流程 ---
+✅ PASS | 待我审批列表
+✅ PASS | 一级审批通过（admin同时具备二级权限→自动跳过二级直接摆渡）
+✅ PASS | 自动跳过二级审计记录存在(level2 approve)
+
+--- 7. 外网下载 ---
+✅ PASS | 已摆渡文件列表（external）
+✅ PASS | 文件下载（流式读取）
+
+--- 8. 用户管理（admin） ---
+✅ PASS | 本地用户列表
+✅ PASS | 创建本地用户
+✅ PASS | 重置本地用户密码
+✅ PASS | 删除本地用户
+
+--- 9. AD 角色映射（admin） ---
+✅ PASS | AD 角色映射列表
+✅ PASS | 创建 AD 用户角色映射
+✅ PASS | 非法角色映射被拒绝(仅admin/internal-user)
+✅ PASS | 搜索 AD 用户（打桩模拟）
+
+--- 10f. 合作方白名单（partners） ---
+✅ PASS | 创建合作方
+✅ PASS | 重复创建合作方被拒绝
+✅ PASS | 合作方白名单列表
+✅ PASS | 白名单自动判定为合作方(receiverType=auto)
+✅ PASS | 合作方一级审批通过直接摆渡到external
+✅ PASS | 删除合作方
+
+--- 10g. 审批人配置（approvers） ---
+✅ PASS | 创建本地用户-部门主管(deptmgr1)
+✅ PASS | 创建本地用户-高管(execmgr1)
+✅ PASS | 创建本地用户-未配置审批人(notapprover)
+✅ PASS | 配置一级审批人(deptmgr1)
+✅ PASS | 配置二级审批人(execmgr1)
+✅ PASS | 重复配置审批人被拒绝
+✅ PASS | 非法审批级别被拒绝
+✅ PASS | 审批人配置列表
+✅ PASS | 非admin访问合作方白名单被拒绝
+✅ PASS | 非admin访问审批人配置被拒绝
+✅ PASS | 创建审批人测试提交单(pending)
+✅ PASS | 未配置的普通用户审批被拒绝
+✅ PASS | 配置的一级审批人审批通过(进入二级)
+✅ PASS | 配置的二级审批人审批通过(摆渡到external)
+✅ PASS | 删除审批人配置
+✅ PASS | 清理剩余审批人配置
+✅ PASS | 清理测试本地用户
+
+--- 10g2. 语义B 自动跳过二级 ---
+✅ PASS | 创建本地用户-双级审批人(dual1)
+✅ PASS | 配置dual1为一级审批人
+✅ PASS | 配置dual1为二级审批人
+✅ PASS | 创建语义B测试提交单(pending)
+✅ PASS | 语义B: 一级审批通过自动跳过二级(直接approved)
+✅ PASS | 语义B: 审计记录含level2自动跳过
+✅ PASS | 语义B: 文件已摆渡到external
+✅ PASS | 清理dual1测试数据
+
+--- 10h. 特征码规则管理 + 系统配置默认值 ---
+✅ PASS | 默认有效期为7天
+✅ PASS | 最大文件大小为800MB
+✅ PASS | 免审批总开关存在
+✅ PASS | 创建特征码规则
+✅ PASS | 空名称创建被拒绝
+✅ PASS | 非法规则类型被拒绝
+✅ PASS | 修改特征码规则
+✅ PASS | 开关切换-禁用
+✅ PASS | 禁用规则后该类型不再匹配
+✅ PASS | 开关切换-启用
+✅ PASS | 非admin创建规则被拒绝
+✅ PASS | 非admin开关切换被拒绝
+✅ PASS | 删除特征码规则
+✅ PASS | 删除不存在规则返回404
+
+--- 10i. 网络面隔离（双网卡应用层兜底） ---
+✅ PASS | 默认internal面networkZone识别
+✅ PASS | external面networkZone识别
+✅ PASS | external面管理接口被拒绝403
+✅ PASS | external面下载接口放行
+✅ PASS | internal面管理接口放行
+✅ PASS | internal面特征码规则接口放行
+
+--- 10. 系统配置 ---
+✅ PASS | 特征码规则列表
+✅ PASS | 系统配置获取
+✅ PASS | 系统配置更新
+
+--- 11. 审计与统计 ---
+✅ PASS | 审计日志查询
+✅ PASS | 统计数据
+✅ PASS | 审计统计(默认近30天)
+✅ PASS | 审计统计非法日期拒绝(400)
+✅ PASS | 手动触发过期清理（无过期文件）
+
+--- 10b. 特征码全量验证 ---
+✅ PASS | 上传ZIP压缩包（匹配特征码+自动解包）
+✅ PASS | 上传TAR.GZ压缩包（匹配特征码+自动解包）
+✅ PASS | 上传Vivado Bitstream(.bit)（二进制特征码匹配）
+✅ PASS | 上传XYZ文件（不匹配特征码）
+✅ PASS | 特征码规则列表（20条规则完整）
+
+--- 10c. 审批驳回流程 ---
+✅ PASS | 创建驳回测试提交单
+✅ PASS | 一级审批驳回（os.rename到archive）
+✅ PASS | 驳回提交单文件已 os.rename 到 archive
+
+--- 10d. 过期归档流程 ---
+✅ PASS | 系统配置默认有效期改为0
+✅ PASS | 创建过期测试提交单（系统配置有效期=0，免审批自动通过）
+✅ PASS | 提交单有效期来自系统配置(=0)
+✅ PASS | 恢复系统配置默认有效期7天
+✅ PASS | 手动触发过期清理（处理过期文件）
+✅ PASS | 过期提交单状态变为 archived
+✅ PASS | 过期提交单文件已 os.rename 到 archive
+✅ PASS | 归档文件不在 external 下载列表
+
+--- 10e. 修改密码 ---
+✅ PASS | 修改管理员密码
+✅ PASS | 错误旧密码被拒绝
+✅ PASS | 改回原密码（保持环境一致）
+
+--- 12. 物理文件验证（os.rename 0拷贝） ---
+✅ PASS | 免审批提交单文件已 os.rename 到 external
+✅ PASS | 审批通过提交单文件已 os.rename 到 external
+✅ PASS | staging 目录无已完成提交单（全部已 os.rename 移走）
+✅ PASS | external 中文件可正常读取
+
+--- 22d. 网络面隔离扩展矩阵（external 面完整覆盖） ---
+✅ PASS | external面登录页放行
+✅ PASS | external面首页放行
+✅ PASS | external面静态资源放行
+✅ PASS | external面me放行+networkZone=external
+✅ PASS | external面文件下载放行
+✅ PASS | external面提交列表被拒403
+✅ PASS | external面上传被拒403
+✅ PASS | external面用户管理被拒403
+✅ PASS | external面合作方白名单被拒403
+✅ PASS | external面审批人配置被拒403
+✅ PASS | external面特征码规则被拒403
+✅ PASS | external面系统配置被拒403
+✅ PASS | external面审计日志被拒403
+✅ PASS | external面统计被拒403
+✅ PASS | 非法X-Network-Zone回退internal
+✅ PASS | internal面提交列表放行
+✅ PASS | internal面用户管理放行
+
+--- 22e. 本期逻辑调整 ---
+✅ PASS | 接收方单位必填（缺失返回400）
+✅ PASS | 提交传expiryDays=999被忽略（仍用系统配置7天）
+✅ PASS | 选择合作方且名称不在清单→提交成功并判定partner
+✅ PASS | 提交后自动加入合作方清单
+✅ PASS | 同名合作方再次提交成功
+✅ PASS | 合作方去重：同名不重复加入清单(count=1)
+✅ PASS | 创建合作方(使能开关测试,enabled=1)
+✅ PASS | 启用合作方出现在提交选项(/api/partners)
+✅ PASS | 禁用合作方
+✅ PASS | 禁用后不出现在提交选项
+✅ PASS | 重新启用合作方
+✅ PASS | 清理测试合作方
+✅ PASS | 创建测试用户 enable_test1
+✅ PASS | 新建用户默认使能(enabled=1)
+✅ PASS | 使能用户可正常登录
+✅ PASS | 普通用户访问统计被拒403(仪表盘admin-only)
+✅ PASS | 切回admin登录
+✅ PASS | 禁用用户enable_test1
+✅ PASS | 禁用后用户无法登录
+✅ PASS | 重新启用用户enable_test1
+✅ PASS | admin永久使能不可禁用(返回400)
+✅ PASS | 清理测试用户enable_test1
+
+--- 13. 退出登录 ---
+✅ PASS | 退出登录
+✅ PASS | 退出后访问受保护接口被重定向到登录页
+
+======================================================================
+测试报告
+======================================================================
+总计: 150 | 通过: 150 | 失败: 0
+通过率: 100.0%
+======================================================================
+
+测试完成。

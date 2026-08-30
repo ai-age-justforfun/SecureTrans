@@ -231,22 +231,31 @@ def init_db():
         return col in cols
 
     if not _column_exists("local_users", "enabled"):
-        conn.execute("ALTER TABLE local_users ADD COLUMN enabled INTEGER DEFAULT 1")
+        try:
+            conn.execute("ALTER TABLE local_users ADD COLUMN enabled INTEGER DEFAULT 1")
+        except sqlite3.OperationalError:
+            pass  # 并发迁移时列已存在，忽略
     if not _column_exists("partners", "enabled"):
-        conn.execute("ALTER TABLE partners ADD COLUMN enabled INTEGER DEFAULT 1")
+        try:
+            conn.execute("ALTER TABLE partners ADD COLUMN enabled INTEGER DEFAULT 1")
+        except sqlite3.OperationalError:
+            pass
     if not _column_exists("submissions", "receiver_org"):
-        conn.execute("ALTER TABLE submissions ADD COLUMN receiver_org TEXT")
+        try:
+            conn.execute("ALTER TABLE submissions ADD COLUMN receiver_org TEXT")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
 
-    # 初始管理员
-    cursor = conn.execute("SELECT COUNT(*) as c FROM local_users WHERE username='admin'")
-    if cursor.fetchone()["c"] == 0:
-        admin_hash = bcrypt.hashpw("Admin@123".encode(), bcrypt.gensalt()).decode()
-        conn.execute(
-            "INSERT INTO local_users (id,username,password_hash,display_name,email,role,status,must_change_password,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-            (str(uuid.uuid4()), "admin", admin_hash, "系统管理员", "admin@localhost", "admin", "active", 1, now_str())
-        )
-        logger.info("初始管理员 admin 已创建（密码 Admin@123，首次登录需修改）")
+    # 初始管理员（幂等插入）
+    # 注意：gunicorn 多 worker 并发启动时，每个 worker 都执行 init_db()。
+    # 若用 SELECT-COUNT + INSERT 检查，两个 worker 可能同时判定 admin 不存在并插入 → UNIQUE 冲突，
+    # 导致 worker 启动失败。必须用 INSERT OR IGNORE（用户名 UNIQUE 约束冲突时忽略，幂等安全）。
+    admin_hash = bcrypt.hashpw("Admin@123".encode(), bcrypt.gensalt()).decode()
+    conn.execute(
+        "INSERT OR IGNORE INTO local_users (id,username,password_hash,display_name,email,role,status,must_change_password,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        (str(uuid.uuid4()), "admin", admin_hash, "系统管理员", "admin@localhost", "admin", "active", 1, now_str())
+    )
 
     # 初始系统配置
     defaults = {
