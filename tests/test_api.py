@@ -776,6 +776,15 @@ cleaned_count = data.get('cleaned', 0)
 test("手动触发过期清理（处理过期文件）", code == 200 and cleaned_count >= 1,
      f"code={code}, cleaned={cleaned_count}")
 
+# i18n: 清理消息英文动态模板（单复数）
+_clean_msg = data.get("message_en", "")
+test("i18n: 清理消息英文动态模板（message_en）", code == 200 and "expired file" in _clean_msg,
+     f"message_en={_clean_msg}")
+if cleaned_count == 1:
+    test("i18n: 清理英文单复数（1 expired file）", "1 expired file" in _clean_msg, f"message_en={_clean_msg}")
+else:
+    test("i18n: 清理英文单复数（N expired files）", "expired files" in _clean_msg, f"message_en={_clean_msg}")
+
 # 验证提交单状态变为 archived
 code, data = request('GET', f'/api/submissions/{expire_sub_id}')
 test("过期提交单状态变为 archived", code == 200 and data.get('status') == 'archived',
@@ -1081,11 +1090,12 @@ try:
 except Exception as e:
     test("i18n: 登录页资源检查", False, str(e))
 try:
-    _resp = _ur.urlopen(BASE_URL + '/static/index.html')
+    _resp = _ur.urlopen(BASE_URL + '/index.html')
     _html = _resp.read().decode('utf-8')
     test("i18n: 主界面包含 I18N 字典", 'const I18N' in _html and "'zh'" in _html and "'en'" in _html)
     test("i18n: 主界面包含语言切换函数", 'function switchLang' in _html and 'function applyI18n' in _html)
     test("i18n: 主界面使用 data-i18n 属性", 'data-i18n=' in _html)
+    test("i18n: 语言按钮跨页面重建逻辑（applyI18n 内）", 'createElement' in _html and 'langSwitch' in _html and 'insertBefore' in _html)
 except Exception as e:
     test("i18n: 主界面资源检查", False, str(e))
 

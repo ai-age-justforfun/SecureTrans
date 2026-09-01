@@ -148,7 +148,7 @@ I18N_MESSAGE_TEMPLATES = [
     (re.compile(r"^合作方已(启用|禁用)$"), lambda m: f"Partner {'enabled' if m.group(1) == '启用' else 'disabled'}"),
     (re.compile(r"^用户已(启用|禁用)$"), lambda m: f"User {'enabled' if m.group(1) == '启用' else 'disabled'}"),
     (re.compile(r"^密码已重置为 (\S+)，用户首次登录需修改$"), lambda m: f"Password reset to {m.group(1)}, user must change on first login"),
-    (re.compile(r"^清理完成，共处理 (\d+) 个过期文件$"), lambda m: f"Cleanup completed, {m.group(1)} expired files processed"),
+    (re.compile(r"^清理完成，共处理 (\d+) 个过期文件$"), lambda m: f"Cleanup completed, {m.group(1)} expired file{'s' if int(m.group(1)) != 1 else ''} processed"),
 ]
 
 def _i18n_translate(text, is_error=False):

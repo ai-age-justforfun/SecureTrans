@@ -28,6 +28,7 @@
   .sidebar-user .role { color: #93c5fd; font-size: 12px; margin-top: 2px; }
   .btn-logout { margin-top: 10px; width: 100%; padding: 7px; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; cursor: pointer; font-size: 13px; }
   .btn-logout:hover { background: rgba(239,68,68,0.3); }
+.sidebar-tz { color: #93c5fd; font-size: 11px; margin-top: 8px; opacity: 0.85; }
 
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .topbar { background: #fff; padding: 14px 24px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; }
@@ -152,7 +153,7 @@
   <div class="sidebar">
     <div class="sidebar-brand">
       <h1>SecureTrans</h1>
-      <p data-i18n="brand.subtitle">文件审批摆渡系统 v1.4</p>
+      <p data-i18n="brand.subtitle">文件审批摆渡系统 v2.0.0</p>
     </div>
     <div class="sidebar-nav" id="sidebarNav">
       <div class="nav-item" data-page="submit"><span class="icon">📤</span><span data-i18n="nav.submit">文件提交</span></div>
@@ -169,6 +170,7 @@
       <div class="name" id="userName">--</div>
       <div class="role" id="userRole">--</div>
       <div style="margin-top:6px;"><span class="network-badge internal" id="networkBadge" data-i18n="net.internal">内网</span></div>
+      <div class="sidebar-tz" data-i18n="sidebar.tz">时间=服务器系统时区</div>
       <button class="btn-logout" onclick="logout()" data-i18n="sidebar.logout">退出登录</button>
     </div>
   </div>
@@ -205,12 +207,12 @@
 // ============================================================
 const I18N = {
   zh: {
-    'brand.subtitle': '文件审批摆渡系统 v1.4',
+    'brand.subtitle': '文件审批摆渡系统 v2.0.0',
     'nav.submit': '文件提交', 'nav.mySubmissions': '我的提交', 'nav.pending': '待我审批',
     'nav.external': '外网下载', 'nav.users': '用户管理', 'nav.partners': '合作方管理',
     'nav.config': '系统配置', 'nav.audit': '审计日志', 'nav.dashboard': '仪表盘',
     'net.internal': '内网', 'net.external': '外网',
-    'sidebar.logout': '退出登录',
+    'sidebar.logout': '退出登录', 'sidebar.tz': '时间=服务器系统时区',
     'role.admin': '系统管理员', 'role.internalUser': '普通用户',
     'status.pending': '待一级审批', 'status.pending2': '待二级审批', 'status.approved': '已摆渡',
     'status.downloaded': '已下载', 'status.rejected': '已驳回', 'status.archived': '已归档', 'status.auto': '免审批',
@@ -257,7 +259,7 @@ const I18N = {
     'detail.expiry': '天（系统配置）', 'detail.autoApproved': '免审批', 'detail.yes': '是', 'detail.no': '否',
     'detail.matched': '匹配', 'detail.unmatched': '不匹配',
     'detail.submitted': '提交申请', 'detail.approved': '审批通过', 'detail.rejected': '驳回',
-    'detail.systemAuto': '系统自动', 'detail.level': '第{0}级', 'detail.comment': '备注: ',
+    'detail.systemAuto': '系统自动', 'detail.level': '第{0}级', 'detail.comment': '备注: ', 'detail.fileCount': '{0} 个',
     'detail.ferryInfo': '接收方: {0} | 摆渡时间: {1}',
     'user.newBtn': '+ 新建用户', 'user.createTitle': '新建本地用户',
     'user.username': '用户名', 'user.usernamePh': '登录用户名', 'user.password': '密码 *', 'user.passwordPh': '至少6位',
@@ -309,12 +311,12 @@ const I18N = {
     'prompt.approveComment': '审批通过备注（可选）：', 'prompt.rejectReason': '驳回原因：'
   },
   en: {
-    'brand.subtitle': 'Cross-Network File Approval & Ferry System v1.4',
+    'brand.subtitle': 'Cross-Network File Approval & Ferry System v2.0.0',
     'nav.submit': 'Submit Files', 'nav.mySubmissions': 'My Submissions', 'nav.pending': 'Pending Approval',
     'nav.external': 'External Download', 'nav.users': 'User Management', 'nav.partners': 'Partner Management',
     'nav.config': 'System Config', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
     'net.internal': 'Intranet', 'net.external': 'Extranet',
-    'sidebar.logout': 'Logout',
+    'sidebar.logout': 'Logout', 'sidebar.tz': 'Times = Server System Timezone',
     'role.admin': 'System Administrator', 'role.internalUser': 'Regular User',
     'status.pending': 'Pending L1', 'status.pending2': 'Pending L2', 'status.approved': 'Ferried',
     'status.downloaded': 'Downloaded', 'status.rejected': 'Rejected', 'status.archived': 'Archived', 'status.auto': 'Auto',
@@ -361,7 +363,7 @@ const I18N = {
     'detail.expiry': 'days (system config)', 'detail.autoApproved': 'Auto-Approved', 'detail.yes': 'Yes', 'detail.no': 'No',
     'detail.matched': 'Matched', 'detail.unmatched': 'Not matched',
     'detail.submitted': 'submitted', 'detail.approved': 'approved', 'detail.rejected': 'rejected',
-    'detail.systemAuto': 'System auto', 'detail.level': 'L{0}', 'detail.comment': 'Comment: ',
+    'detail.systemAuto': 'System auto', 'detail.level': 'L{0}', 'detail.comment': 'Comment: ', 'detail.fileCount': '{0}',
     'detail.ferryInfo': 'Recipient: {0} | Ferried At: {1}',
     'user.newBtn': '+ New User', 'user.createTitle': 'Create Local User',
     'user.username': 'Username', 'user.usernamePh': 'Login username', 'user.password': 'Password *', 'user.passwordPh': 'At least 6 chars',
@@ -439,7 +441,19 @@ function applyI18n() {
   }
   const nb = document.getElementById('networkBadge');
   if (nb && window._networkZone) nb.textContent = window._networkZone === 'external' ? t('net.external') : t('net.internal');
-  const ls = document.getElementById('langSwitch');
+  // 确保语言切换按钮始终存在（pageActions 可能被页面覆盖/清空）
+  let ls = document.getElementById('langSwitch');
+  if (!ls) {
+    const pa = document.getElementById('pageActions');
+    if (pa) {
+      ls = document.createElement('button');
+      ls.id = 'langSwitch';
+      ls.className = 'btn btn-secondary btn-sm';
+      ls.style.marginRight = '4px';
+      ls.onclick = switchLang;
+      pa.insertBefore(ls, pa.firstChild);
+    }
+  }
   if (ls) ls.textContent = currentLang === 'zh' ? 'EN' : '中';
 }
 // 语言偏好初始化（默认中文）
@@ -843,7 +857,7 @@ async function showSubmissionDetail(id) {
         ${sub.reason ? `<div style="margin-top:8px;"><span class="key" data-i18n="submit.reason">外发事由：</span>${sub.reason}</div>` : ''}
       </div>
       <div class="detail-section">
-        <h4><span data-i18n="detail.files">文件清单</span> (${sub.files.length} 个)</h4>
+        <h4><span data-i18n="detail.files">文件清单</span> (${t('detail.fileCount', sub.files.length)})</h4>
         <table>
           <thead><tr><th data-i18n="file.name">文件名</th><th data-i18n="list.size">大小</th><th data-i18n="config.ruleType">类型</th><th>MD5</th><th data-i18n="config.pattern">特征码</th></tr></thead>
           <tbody>
