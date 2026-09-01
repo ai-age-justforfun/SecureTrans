@@ -35,6 +35,10 @@ EXTERNAL_DIR = NAS_ROOT / "external"   # 审核通过，可外网下载
 ARCHIVE_DIR = NAS_ROOT / "archive"     # 过期/驳回，永久归档
 STATIC_DIR = BASE_DIR / "static"
 
+# 统一时间格式（now_str 与解析共用，避免多处不一致）
+TS_FMT = "%Y-%m-%d %H:%M:%S"
+APP_VERSION = "v2.0.1"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
 MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(800 * 1024 * 1024)))  # 800MB 上传上限
@@ -420,7 +424,7 @@ def init_db():
 # 工具函数
 # ============================================================
 def now_str() -> str:
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.datetime.now().strftime(TS_FMT)
 
 def gen_submission_id() -> str:
     return f"{uuid.uuid4().hex[:8]}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -825,7 +829,7 @@ def cleanup_expired_files():
         if not row["approved_time"]:
             continue
         try:
-            approved_dt = datetime.datetime.strptime(row["approved_time"], "%Y-%m-%d %H:%M:%S")
+            approved_dt = datetime.datetime.strptime(row["approved_time"], TS_FMT)
             expiry_days = row["expiry_days"] if row["expiry_days"] is not None else EXTERNAL_EXPIRY_DAYS
             if (now - approved_dt).days >= expiry_days:
                 sub_id = row["id"]
@@ -1846,7 +1850,7 @@ def api_stats():
 
 @app.route("/api/health")
 def api_health():
-    return jsonify({"status": "ok", "time": now_str(), "version": "1.5.0", "deployMode": DEPLOY_MODE})
+    return jsonify({"status": "ok", "time": now_str(), "version": APP_VERSION, "deployMode": DEPLOY_MODE})
 
 # ============================================================
 # 手动触发过期清理（admin）

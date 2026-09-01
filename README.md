@@ -1,6 +1,6 @@
 # SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.0.0 | 阶段：PSF（问题-方案匹配验证）
+> 版本：v2.0.1 | 阶段：PSF（问题-方案匹配验证）
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main
 
@@ -229,4 +229,4 @@ main ────●────●────●────●────  �
 
 ---
 
-*SecureTrans v2.0.0 | 2026-09-01*
+*SecureTrans v2.0.1 | 2026-09-01*

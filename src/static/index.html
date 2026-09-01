@@ -153,7 +153,7 @@
   <div class="sidebar">
     <div class="sidebar-brand">
       <h1>SecureTrans</h1>
-      <p data-i18n="brand.subtitle">文件审批摆渡系统 v2.0.0</p>
+      <p data-i18n="brand.subtitle">文件审批摆渡系统</p>
     </div>
     <div class="sidebar-nav" id="sidebarNav">
       <div class="nav-item" data-page="submit"><span class="icon">📤</span><span data-i18n="nav.submit">文件提交</span></div>
@@ -201,13 +201,18 @@
 
 <script>
 // ============================================================
+// 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
+// ============================================================
+const APP_VERSION = 'v2.0.1';
+
+// ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
 // 架构：I18N 字典(zh/en) + t(key,...) 取文案 + data-i18n 属性 + applyI18n() 统一渲染
 // 语言记忆：localStorage('st_lang')；后端错误/成功消息由 API 返回 error_en/message_en
 // ============================================================
 const I18N = {
   zh: {
-    'brand.subtitle': '文件审批摆渡系统 v2.0.0',
+    'brand.subtitle': '文件审批摆渡系统',
     'nav.submit': '文件提交', 'nav.mySubmissions': '我的提交', 'nav.pending': '待我审批',
     'nav.external': '外网下载', 'nav.users': '用户管理', 'nav.partners': '合作方管理',
     'nav.config': '系统配置', 'nav.audit': '审计日志', 'nav.dashboard': '仪表盘',
@@ -311,7 +316,7 @@ const I18N = {
     'prompt.approveComment': '审批通过备注（可选）：', 'prompt.rejectReason': '驳回原因：'
   },
   en: {
-    'brand.subtitle': 'Cross-Network File Approval & Ferry System v2.0.0',
+    'brand.subtitle': 'Cross-Network File Approval & Ferry System',
     'nav.submit': 'Submit Files', 'nav.mySubmissions': 'My Submissions', 'nav.pending': 'Pending Approval',
     'nav.external': 'External Download', 'nav.users': 'User Management', 'nav.partners': 'Partner Management',
     'nav.config': 'System Config', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
@@ -433,7 +438,12 @@ function switchLang() {
   if (typeof currentPage === 'string' && currentPage) renderPage(currentPage);
 }
 function applyI18n() {
-  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    // 品牌副标题 = 文案 + 版本号（版本号唯一来源 APP_VERSION）
+    el.textContent = el.dataset.i18n === 'brand.subtitle'
+      ? t(el.dataset.i18n) + ' ' + APP_VERSION
+      : t(el.dataset.i18n);
+  });
   // 侧边栏用户信息随语言刷新
   if (currentUser) {
     const roleEl = document.getElementById('userRole');
