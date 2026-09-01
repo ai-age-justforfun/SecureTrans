@@ -46,8 +46,9 @@ try {
 }
 
 # 2. 上传资产（packages/ 下所有 tar.gz）
-$assets = Get-ChildItem "$pkgDir" -Filter "*.tar.gz" | Where-Object { $_.Name -like "securetrans-${tag}*" }
-if (-not $assets) { $assets = Get-ChildItem "$pkgDir" -Filter "*.tar.gz" }
+$matchTag = $tag.TrimStart('v')
+$assets = Get-ChildItem "$pkgDir" -Filter "*.tar.gz" | Where-Object { $_.Name -like "securetrans-${matchTag}*" -or $_.Name -eq "securetrans-offline-deps.tar.gz" }
+# 若无匹配资产，不自动上传（避免误传旧版本包）
 foreach ($a in $assets) {
     $name = $a.Name
     $existingAssets = Invoke-RestMethod -Uri "$base/repos/$repo/releases/$releaseId/assets" -Headers $headers -Method Get
