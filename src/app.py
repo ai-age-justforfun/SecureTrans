@@ -77,6 +77,114 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
+# ============================================================
+# 双语（i18n）——后端错误/成功消息自动附加英文
+# 设计：所有 jsonify 返回的 error/message 由 after_request 钩子自动补 error_en/message_en，
+#      前端按当前界面语言（zh/en）选择显示。前端静态界面文案由前端 I18N 字典管理。
+# ============================================================
+I18N_ERRORS = {
+    "admin 为系统内置管理员，永久使能，不可禁用": "admin is the built-in administrator, permanently enabled and cannot be disabled",
+    "AD用户请在域控制器修改密码": "AD users must change password on the domain controller",
+    "不能删除admin": "Cannot delete admin",
+    "参数不完整": "Incomplete parameters",
+    "当前状态不需要审批": "Current status does not require approval",
+    "该审批人已配置在此级别": "This approver is already configured at this level",
+    "规则不存在": "Rule not found",
+    "规则类型只能为 extension/filename/binary": "Rule type must be extension/filename/binary",
+    "规则名称和匹配模式不能为空": "Rule name and pattern cannot be empty",
+    "合作方不存在": "Partner not found",
+    "合作方名称不能为空": "Partner name cannot be empty",
+    "合作方已存在": "Partner already exists",
+    "角色仅支持 admin / internal-user（审批权限请在审批人配置中设置）": "Role only supports admin / internal-user (approval rights are set in approver config)",
+    "接口不存在": "API endpoint not found",
+    "没有有效文件": "No valid files",
+    "密码至少6位": "Password must be at least 6 characters",
+    "请输入用户名和密码": "Please enter username and password",
+    "请输入原密码和新密码": "Please enter current and new password",
+    "请填写接收方单位": "Please fill in recipient organization",
+    "请填写接收方姓名": "Please fill in recipient name",
+    "请先上传文件": "Please upload files first",
+    "请选择文件": "Please select a file",
+    "权限不足": "Insufficient permissions",
+    "日期格式错误，应为 YYYY-MM-DD": "Invalid date format, expected YYYY-MM-DD",
+    "审批级别只能为1或2": "Approval level must be 1 or 2",
+    "审批人用户名不能为空": "Approver username cannot be empty",
+    "提交单不存在": "Submission not found",
+    "外网面仅提供文件下载服务，管理操作请从内网访问": "External network only provides file download; management operations must be accessed from internal network",
+    "文件不存在": "File not found",
+    "文件不可下载": "File is not downloadable",
+    "文件名不能为空": "Filename cannot be empty",
+    "无效的操作": "Invalid action",
+    "新密码至少6位": "New password must be at least 6 characters",
+    "需要部门主管一级审批": "Department head (Level 1) approval required",
+    "需要公司高管二级审批": "Company executive (Level 2) approval required",
+    "用户不存在": "User not found",
+    "用户名和密码不能为空": "Username and password cannot be empty",
+    "用户名或密码错误": "Incorrect username or password",
+    "用户名已存在": "Username already exists",
+    "原密码错误": "Incorrect current password",
+    "请先登录": "Please log in first",
+}
+I18N_MESSAGES = {
+    "创建成功": "Created successfully",
+    "登录成功": "Logged in successfully",
+    "规则创建成功": "Rule created successfully",
+    "规则已更新": "Rule updated",
+    "规则已删除": "Rule deleted",
+    "合作方添加成功": "Partner added successfully",
+    "角色映射创建成功": "Role mapping created successfully",
+    "密码修改成功": "Password changed successfully",
+    "配置已保存": "Configuration saved",
+    "删除成功": "Deleted successfully",
+    "审批人配置成功": "Approver configured successfully",
+    "审批完成": "Approval completed",
+    "已退出登录": "Logged out",
+}
+I18N_ERROR_TEMPLATES = [
+    (re.compile(r"^文件过大，最大支持 (\d+)MB$"), lambda m: f"File too large, max {m.group(1)}MB"),
+]
+I18N_MESSAGE_TEMPLATES = [
+    (re.compile(r"^规则已(启用|禁用)$"), lambda m: f"Rule {'enabled' if m.group(1) == '启用' else 'disabled'}"),
+    (re.compile(r"^合作方已(启用|禁用)$"), lambda m: f"Partner {'enabled' if m.group(1) == '启用' else 'disabled'}"),
+    (re.compile(r"^用户已(启用|禁用)$"), lambda m: f"User {'enabled' if m.group(1) == '启用' else 'disabled'}"),
+    (re.compile(r"^密码已重置为 (\S+)，用户首次登录需修改$"), lambda m: f"Password reset to {m.group(1)}, user must change on first login"),
+    (re.compile(r"^清理完成，共处理 (\d+) 个过期文件$"), lambda m: f"Cleanup completed, {m.group(1)} expired files processed"),
+]
+
+def _i18n_translate(text, is_error=False):
+    """把中文消息翻译为英文；未命中字典/模板时保持原文（前端可回退显示中文）。"""
+    if not isinstance(text, str) or not text:
+        return text
+    d = I18N_ERRORS if is_error else I18N_MESSAGES
+    if text in d:
+        return d[text]
+    templates = I18N_ERROR_TEMPLATES if is_error else I18N_MESSAGE_TEMPLATES
+    for pat, fn in templates:
+        m = pat.match(text)
+        if m:
+            return fn(m)
+    return text
+
+@app.after_request
+def _i18n_attach_en(resp):
+    """自动为 JSON 响应附加英文消息（error_en / message_en），前端按语言显示。"""
+    if not resp.is_json:
+        return resp
+    data = resp.get_json(silent=True)
+    if not isinstance(data, dict):
+        return resp
+    changed = False
+    if "error" in data and "error_en" not in data:
+        data["error_en"] = _i18n_translate(data["error"], is_error=True)
+        changed = True
+    if "message" in data and "message_en" not in data:
+        data["message_en"] = _i18n_translate(data["message"], is_error=False)
+        changed = True
+    if changed:
+        resp.set_data(json.dumps(data, ensure_ascii=False))
+        resp.headers["Content-Type"] = "application/json; charset=utf-8"
+    return resp
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login_page"
@@ -1791,3 +1899,4 @@ if __name__ == "__main__":
     # 测试模式用 Flask 自带服务器；生产模式应用 gunicorn 启动
     debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     app.run(host=host, port=port, debug=debug)
+

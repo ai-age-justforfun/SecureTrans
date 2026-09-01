@@ -47,3 +47,4 @@ desktop.ini
 # 发布部署包（由 Gitea Release 管理，不提交 git；校验和提交以便追踪）
 packages/*.tar.gz
 packages/*.md5
+packages/*.sha256

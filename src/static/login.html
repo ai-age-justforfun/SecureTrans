@@ -10,7 +10,15 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 50%, #1e4d6b 100%);
     min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    position: relative;
   }
+  .lang-btn {
+    position: fixed; top: 20px; right: 24px; z-index: 10;
+    background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.4);
+    border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 13px;
+    transition: background 0.2s;
+  }
+  .lang-btn:hover { background: rgba(255,255,255,0.28); }
   .login-box {
     background: #fff; border-radius: 16px; padding: 48px 40px;
     width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
@@ -39,34 +47,77 @@
 </style>
 </head>
 <body>
+<button class="lang-btn" id="langSwitch" onclick="switchLang()">EN</button>
 <div class="login-box">
   <div class="logo">
     <h1>SecureTrans</h1>
-    <p>跨网文件审批摆渡系统</p>
+    <p data-i18n="login.subtitle">跨网文件审批摆渡系统</p>
   </div>
   <form id="loginForm">
     <div class="form-group">
-      <label for="username">用户名</label>
-      <input type="text" id="username" name="username" placeholder="请输入用户名" required autofocus>
+      <label for="username" data-i18n="login.username">用户名</label>
+      <input type="text" id="username" name="username" data-i18n-ph="login.usernamePh" placeholder="请输入用户名" required autofocus>
     </div>
     <div class="form-group">
-      <label for="password">密码</label>
-      <input type="password" id="password" name="password" placeholder="请输入密码" required>
+      <label for="password" data-i18n="login.password">密码</label>
+      <input type="password" id="password" name="password" data-i18n-ph="login.passwordPh" placeholder="请输入密码" required>
     </div>
-    <button type="submit" class="btn-login" id="btnLogin">登 录</button>
+    <button type="submit" class="btn-login" id="btnLogin" data-i18n="login.btn">登 录</button>
     <div class="error-msg" id="errorMsg"></div>
   </form>
   <div class="hint">
-    <p>初始管理员：<code>admin / Admin@123</code>（首次登录强制修改密码）</p>
-    <p>AD 用户请输入 <code>域\用户名</code> 格式</p>
+    <p><span data-i18n="login.adminHint">初始管理员：</span><code>admin / Admin@123</code><span data-i18n="login.adminHint2">（首次登录强制修改密码）</span></p>
+    <p><span data-i18n="login.adHint">AD 用户请输入</span> <code>域\用户名</code> <span data-i18n="login.adHint2">格式</span></p>
   </div>
 </div>
 <script>
+const I18N_LOGIN = {
+  zh: {
+    'login.subtitle': '跨网文件审批摆渡系统',
+    'login.username': '用户名', 'login.usernamePh': '请输入用户名',
+    'login.password': '密码', 'login.passwordPh': '请输入密码',
+    'login.btn': '登 录', 'login.btnLoading': '登录中...',
+    'login.adminHint': '初始管理员：', 'login.adminHint2': '（首次登录强制修改密码）',
+    'login.adHint': 'AD 用户请输入', 'login.adHint2': '格式',
+    'login.failDefault': '登录失败', 'login.netError': '网络错误，请重试'
+  },
+  en: {
+    'login.subtitle': 'Cross-Network File Approval & Ferry System',
+    'login.username': 'Username', 'login.usernamePh': 'Enter username',
+    'login.password': 'Password', 'login.passwordPh': 'Enter password',
+    'login.btn': 'Sign In', 'login.btnLoading': 'Signing in...',
+    'login.adminHint': 'Initial admin: ', 'login.adminHint2': ' (password change required on first login)',
+    'login.adHint': 'AD users use', 'login.adHint2': 'format',
+    'login.failDefault': 'Login failed', 'login.netError': 'Network error, please retry'
+  }
+};
+let currentLang = localStorage.getItem('st_lang') || 'zh';
+if (!['zh', 'en'].includes(currentLang)) currentLang = 'zh';
+
+function t(key) {
+  return (I18N_LOGIN[currentLang] && I18N_LOGIN[currentLang][key]) || (I18N_LOGIN.zh[key] || key);
+}
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+  document.getElementById('langSwitch').textContent = currentLang === 'zh' ? 'EN' : '中';
+}
+function switchLang() {
+  currentLang = currentLang === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('st_lang', currentLang);
+  document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+  document.title = currentLang === 'zh' ? 'SecureTrans - 登录' : 'SecureTrans - Sign In';
+  applyI18n();
+}
+document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+document.title = currentLang === 'zh' ? 'SecureTrans - 登录' : 'SecureTrans - Sign In';
+applyI18n();
+
 document.getElementById('loginForm').addEventListener('submit', async function(e) {
   e.preventDefault();
   const btn = document.getElementById('btnLogin');
   const errorMsg = document.getElementById('errorMsg');
-  btn.disabled = true; btn.textContent = '登录中...';
+  btn.disabled = true; btn.textContent = t('login.btnLoading');
   errorMsg.textContent = '';
 
   try {
@@ -82,12 +133,12 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     if (resp.ok) {
       window.location.href = '/';
     } else {
-      errorMsg.textContent = data.error || '登录失败';
+      errorMsg.textContent = currentLang === 'zh' ? (data.error || t('login.failDefault')) : (data.error_en || data.error || t('login.failDefault'));
     }
   } catch (err) {
-    errorMsg.textContent = '网络错误，请重试';
+    errorMsg.textContent = t('login.netError');
   } finally {
-    btn.disabled = false; btn.textContent = '登 录';
+    btn.disabled = false; btn.textContent = t('login.btn');
   }
 });
 </script>

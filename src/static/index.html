@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SecureTrans - 跨网文件审批摆渡系统</title>
+<title>SecureTrans - Cross-Network File Approval & Ferry System</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f4f8; color: #1f2937; }
@@ -152,32 +152,34 @@
   <div class="sidebar">
     <div class="sidebar-brand">
       <h1>SecureTrans</h1>
-      <p>文件审批摆渡系统 v1.4</p>
+      <p data-i18n="brand.subtitle">文件审批摆渡系统 v1.4</p>
     </div>
     <div class="sidebar-nav" id="sidebarNav">
-      <div class="nav-item" data-page="submit"><span class="icon">📤</span>文件提交</div>
-      <div class="nav-item" data-page="my-submissions"><span class="icon">📋</span>我的提交</div>
-      <div class="nav-item admin-only" data-page="pending"><span class="icon">✅</span>待我审批</div>
-      <div class="nav-item" data-page="external"><span class="icon">📥</span>外网下载</div>
-      <div class="nav-item admin-only" data-page="users"><span class="icon">👥</span>用户管理</div>
-      <div class="nav-item admin-only" data-page="partners"><span class="icon">🤝</span>合作方管理</div>
-      <div class="nav-item admin-only" data-page="config"><span class="icon">⚙️</span>系统配置</div>
-      <div class="nav-item admin-only" data-page="audit"><span class="icon">📝</span>审计日志</div>
-      <div class="nav-item admin-only" data-page="dashboard"><span class="icon">📊</span>仪表盘</div>
+      <div class="nav-item" data-page="submit"><span class="icon">📤</span><span data-i18n="nav.submit">文件提交</span></div>
+      <div class="nav-item" data-page="my-submissions"><span class="icon">📋</span><span data-i18n="nav.mySubmissions">我的提交</span></div>
+      <div class="nav-item admin-only" data-page="pending"><span class="icon">✅</span><span data-i18n="nav.pending">待我审批</span></div>
+      <div class="nav-item" data-page="external"><span class="icon">📥</span><span data-i18n="nav.external">外网下载</span></div>
+      <div class="nav-item admin-only" data-page="users"><span class="icon">👥</span><span data-i18n="nav.users">用户管理</span></div>
+      <div class="nav-item admin-only" data-page="partners"><span class="icon">🤝</span><span data-i18n="nav.partners">合作方管理</span></div>
+      <div class="nav-item admin-only" data-page="config"><span class="icon">⚙️</span><span data-i18n="nav.config">系统配置</span></div>
+      <div class="nav-item admin-only" data-page="audit"><span class="icon">📝</span><span data-i18n="nav.audit">审计日志</span></div>
+      <div class="nav-item admin-only" data-page="dashboard"><span class="icon">📊</span><span data-i18n="nav.dashboard">仪表盘</span></div>
     </div>
     <div class="sidebar-user">
       <div class="name" id="userName">--</div>
       <div class="role" id="userRole">--</div>
-      <div style="margin-top:6px;"><span class="network-badge internal" id="networkBadge">内网</span></div>
-      <button class="btn-logout" onclick="logout()">退出登录</button>
+      <div style="margin-top:6px;"><span class="network-badge internal" id="networkBadge" data-i18n="net.internal">内网</span></div>
+      <button class="btn-logout" onclick="logout()" data-i18n="sidebar.logout">退出登录</button>
     </div>
   </div>
 
   <!-- Main -->
   <div class="main">
     <div class="topbar">
-      <h2 id="pageTitle">仪表盘</h2>
-      <div class="actions" id="pageActions"></div>
+      <h2 id="pageTitle">SecureTrans</h2>
+      <div class="actions" id="pageActions">
+        <button class="btn btn-secondary btn-sm" id="langSwitch" onclick="switchLang()" style="margin-right:4px;">EN</button>
+      </div>
     </div>
     <div class="content" id="content"></div>
   </div>
@@ -187,7 +189,7 @@
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <div class="modal-header">
-      <h3 id="modalTitle">标题</h3>
+      <h3 id="modalTitle">SecureTrans</h3>
       <button class="modal-close" onclick="closeModal()">&times;</button>
     </div>
     <div class="modal-body" id="modalBody"></div>
@@ -197,6 +199,253 @@
 
 <script>
 // ============================================================
+// i18n（中英双语）——界面语言由用户选择，默认中文
+// 架构：I18N 字典(zh/en) + t(key,...) 取文案 + data-i18n 属性 + applyI18n() 统一渲染
+// 语言记忆：localStorage('st_lang')；后端错误/成功消息由 API 返回 error_en/message_en
+// ============================================================
+const I18N = {
+  zh: {
+    'brand.subtitle': '文件审批摆渡系统 v1.4',
+    'nav.submit': '文件提交', 'nav.mySubmissions': '我的提交', 'nav.pending': '待我审批',
+    'nav.external': '外网下载', 'nav.users': '用户管理', 'nav.partners': '合作方管理',
+    'nav.config': '系统配置', 'nav.audit': '审计日志', 'nav.dashboard': '仪表盘',
+    'net.internal': '内网', 'net.external': '外网',
+    'sidebar.logout': '退出登录',
+    'role.admin': '系统管理员', 'role.internalUser': '普通用户',
+    'status.pending': '待一级审批', 'status.pending2': '待二级审批', 'status.approved': '已摆渡',
+    'status.downloaded': '已下载', 'status.rejected': '已驳回', 'status.archived': '已归档', 'status.auto': '免审批',
+    'page.title.dashboard': '仪表盘', 'page.title.submit': '文件提交', 'page.title.mySubmissions': '我的提交',
+    'page.title.pending': '待我审批', 'page.title.external': '外网下载', 'page.title.users': '用户管理',
+    'page.title.partners': '合作方管理', 'page.title.config': '系统配置', 'page.title.audit': '审计日志',
+    'common.loading': '加载中...', 'common.close': '关闭', 'common.cancel': '取消', 'common.confirm': '确认',
+    'common.create': '创建', 'common.save': '保存', 'common.edit': '编辑', 'common.delete': '删除',
+    'common.detail': '详情', 'common.download': '下载', 'common.enable': '启用', 'common.disable': '禁用',
+    'common.enabled': '启用', 'common.disabled': '禁用', 'common.approve': '通过', 'common.reject': '驳回',
+    'common.actions': '操作', 'common.status': '状态', 'common.time': '时间', 'common.total': '合计',
+    'dash.todaySubmitted': '今日提交', 'dash.pendingApproval': '待审批', 'dash.ferried': '已摆渡',
+    'dash.autoRate': '免审批率', 'dash.totalFiles': '文件总数', 'dash.avgFerry': '平均摆渡耗时',
+    'dash.submissions': '个提交单', 'dash.pendingItems': '个待处理', 'dash.downloadable': '个可下载',
+    'dash.autoPass': '特征码自动通过', 'dash.totalUploaded': '累计上传', 'dash.zeroCopy': 'os.rename 0拷贝',
+    'dash.systemDesc': '系统说明',
+    'dash.desc1': '是轻量级跨网文件审批摆渡系统，核心流程：',
+    'dash.step1': '提交', 'dash.step1d': '：用户上传文件，系统自动计算 MD5 并匹配特征码规则',
+    'dash.step2': '免审批', 'dash.step2d': '：所有文件匹配特征码 → 自动通过，os.rename 0拷贝摆渡到 external',
+    'dash.step3': '人工审批', 'dash.step3d': '：不匹配特征码 → 部门主管一级审批 → 非合作方需高管二级审批',
+    'dash.step4': '下载', 'dash.step4d': '：摆渡完成的文件可从 external 目录流式下载',
+    'dash.step5': '归档', 'dash.step5d': '：超过有效期的文件每天凌晨 2 点自动 os.rename 到 archive',
+    'submit.uploadTitle': '上传文件', 'submit.uploadHint': '点击或拖拽文件到此处上传', 'submit.uploadLimit': '支持单文件最大 1GB，可多次上传',
+    'submit.infoTitle': '提交信息',
+    'submit.receiverName': '接收方姓名 *', 'submit.receiverNamePh': '如：张三',
+    'submit.receiverOrg': '接收方单位 *', 'submit.receiverOrgPh': '如：XX科技有限公司',
+    'submit.receiverEmail': '接收方邮箱', 'submit.receiverEmailPh': '如：zhangsan@partner.com',
+    'submit.receiverType': '接收方类型', 'submit.nonPartner': '非合作方（需二级审批）', 'submit.partner': '合作方（一级审批即可）',
+    'submit.securityLevel': '密级', 'submit.secInternal': '内部', 'submit.secSecret': '秘密', 'submit.secConfidential': '机密',
+    'submit.partnerSelectLabel': '选择已配置合作方（未配置时可自定义填写并自动加入清单）',
+    'submit.partnerSelectPh': '-- 选择已配置合作方 --', 'submit.partnerNone': '-- 暂无合作方，可自定义填写 --',
+    'submit.reason': '外发事由', 'submit.reasonPh': '请说明文件外发的原因和用途',
+    'submit.btnSubmit': '提交审批',
+    'submit.matched': '✓ 匹配特征码', 'submit.unmatched': '✗ 需人工审批',
+    'submit.allMatched': '所有文件匹配特征码，提交后将免审批自动通过',
+    'submit.partMatched': '部分文件不匹配特征码，提交后需人工审批',
+    'list.subNo': '提交单号', 'list.receiver': '接收方', 'list.files': '文件数', 'list.size': '大小',
+    'list.submitTime': '提交时间', 'list.submitter': '提交人', 'list.ferryTime': '摆渡时间',
+    'file.name': '文件名',
+    'list.empty': '暂无提交记录', 'list.emptyPending': '暂无待审批的提交单', 'list.emptyExternal': '暂无可下载的文件',
+    'list.ferriedFiles': '已摆渡文件列表',
+    'detail.title': '提交单详情 - ', 'detail.basic': '基本信息', 'detail.files': '文件清单', 'detail.approvals': '审批记录',
+    'detail.type': '接收方类型', 'detail.partner': '合作方', 'detail.nonPartner': '非合作方',
+    'detail.expiry': '天（系统配置）', 'detail.autoApproved': '免审批', 'detail.yes': '是', 'detail.no': '否',
+    'detail.matched': '匹配', 'detail.unmatched': '不匹配',
+    'detail.submitted': '提交申请', 'detail.approved': '审批通过', 'detail.rejected': '驳回',
+    'detail.systemAuto': '系统自动', 'detail.level': '第{0}级', 'detail.comment': '备注: ',
+    'detail.ferryInfo': '接收方: {0} | 摆渡时间: {1}',
+    'user.newBtn': '+ 新建用户', 'user.createTitle': '新建本地用户',
+    'user.username': '用户名', 'user.usernamePh': '登录用户名', 'user.password': '密码 *', 'user.passwordPh': '至少6位',
+    'user.displayName': '显示名', 'user.displayNamePh': '如：张三', 'user.email': '邮箱', 'user.emailPh': 'user@company.com',
+    'user.role': '角色', 'user.roleInternal': '普通用户（审批权限请在审批人配置中授予）',
+    'user.createdAt': '创建时间', 'user.resetPwd': '重置密码', 'user.permanent': '永久启用',
+    'user.confirmReset': '确定重置用户 "{0}" 的密码？', 'user.confirmDelete': '确定删除用户 "{0}"？此操作不可恢复。',
+    'user.confirmToggle': '确定{0}用户 "{1}"？',
+    'partner.newBtn': '+ 新增合作方', 'partner.title': '合作方管理（白名单）', 'partner.createTitle': '新增合作方',
+    'partner.hint': '合作方提交文件时一级审批即可（非合作方需二级审批）。禁用后不参与自动判定，也不会出现在提交表单的合作方下拉中。合作方需在系统管理→合作方管理中手工配置维护；提交时若选择合作方但名称不在清单，将自动加入清单（信任模式，PMF 后视需要收紧）。',
+    'partner.empty': '暂无合作方，请点击右上角"+ 新增合作方"进行配置',
+    'partner.name': '合作方名称 *', 'partner.namePh': '如：XX科技有限公司', 'partner.contact': '联系人', 'partner.contactPh': '如：张三',
+    'partner.email': '邮箱', 'partner.emailPh': '如：contact@partner.com', 'partner.initialState': '初始状态',
+    'partner.confirmToggle': '确定{0}该合作方？', 'partner.confirmDelete': '确定删除合作方 "{0}"？此操作不可恢复。',
+    'config.title': '系统配置', 'config.appName': '应用名称', 'config.autoApproval': '免审批开关',
+    'config.on': '开启', 'config.off': '关闭', 'config.defaultExpiry': '默认有效期（天）', 'config.maxSize': '最大文件大小（MB）',
+    'config.save': '保存配置', 'config.cleanup': '手动触发过期清理',
+    'config.rulesTitle': '特征码规则（匹配的文件可免审批）', 'config.newRule': '+ 新增规则',
+    'config.ruleName': '规则名称', 'config.ruleType': '类型', 'config.pattern': '匹配模式',
+    'config.typeExtension': '文件扩展名', 'config.typeFilename': '文件名正则', 'config.typeBinary': '二进制头', 'config.typeBinaryDetail': '二进制头（hex:前缀或字符串）',
+    'config.ruleHint': '总开关在上方"免审批总开关"控制；每个规则可单独启用/禁用。匹配逻辑：总开关开启 + 规则启用 + 文件匹配规则 → 可免审批。',
+    'config.ruleModalNew': '新增特征码规则', 'config.ruleModalEdit': '编辑特征码规则',
+    'config.ruleNameLbl': '规则名称', 'config.ruleNamePh': '如：PDF文档', 'config.ruleTypeLbl': '规则类型',
+    'config.rulePattern': '匹配模式', 'config.rulePatternPh': '如：.pdf 或 hex:504B0304', 'config.ruleEnabled': ' 启用',
+    'audit.titleDetail': '📋 明细', 'audit.titleStats': '📊 统计',
+    'audit.detailTitle': '审计日志明细 (最近 {0} 条)', 'audit.user': '用户', 'audit.action': '操作', 'audit.target': '目标', 'audit.detail': '详情',
+    'audit.statsTitle': '审计统计（人员 × 文件类型 × 每日）',
+    'audit.from': '起始日期', 'audit.to': '结束日期', 'audit.query': '查询',
+    'audit.byType': '按文件类型', 'audit.byDay': '按每日',
+    'audit.personType': '人员 / 文件类型', 'audit.personDay': '人员 / 日期', 'audit.range': '统计范围：{0} 至 {1}', 'audit.days': '（{0} 天）',
+    'toast.uploadSuccess': '文件 "{0}" 上传成功', 'toast.uploadFail': '上传失败: {0}',
+    'toast.submitSuccessAuto': '提交成功，免审批自动通过！提交单号: {0}',
+    'toast.submitSuccess': '提交成功，进入审批流程。提交单号: {0}', 'toast.submitFail': '提交失败: {0}',
+    'toast.approveDone': '审批完成，当前状态: {0}', 'toast.approveFail': '审批失败: {0}',
+    'toast.loadDetailFail': '加载详情失败: {0}', 'toast.loadFail': '加载失败: {0}',
+    'toast.loadFilesFail': '加载文件列表失败: {0}',
+    'toast.createSuccess': '用户创建成功', 'toast.createFail': '创建失败: {0}',
+    'toast.deleteSuccess': '用户已删除', 'toast.deleteFail': '删除失败: {0}',
+    'toast.toggleSuccess': '操作成功', 'toast.toggleFail': '操作失败: {0}',
+    'toast.resetSuccess': '密码已重置', 'toast.resetFail': '重置失败: {0}',
+    'toast.partnerCreate': '合作方创建成功',
+    'toast.ruleToggled': '规则状态已切换', 'toast.ruleDeleted': '规则已删除',
+    'toast.ruleSaved': '规则已保存', 'toast.configSaved': '配置已保存', 'toast.saveFail': '保存失败: {0}',
+    'toast.cleanupDone': '清理完成', 'toast.cleanupFail': '清理失败: {0}',
+    'err.externalOnly': '外网面仅提供文件下载',
+    'err.requireName': '请填写接收方姓名', 'err.requireOrg': '请填写接收方单位', 'err.requireFile': '请先上传文件',
+    'err.requireUserPwd': '用户名和密码不能为空', 'err.requirePartnerName': '合作方名称不能为空',
+    'confirm.deleteRule': '确定删除该特征码规则？',
+    'prompt.approveComment': '审批通过备注（可选）：', 'prompt.rejectReason': '驳回原因：'
+  },
+  en: {
+    'brand.subtitle': 'Cross-Network File Approval & Ferry System v1.4',
+    'nav.submit': 'Submit Files', 'nav.mySubmissions': 'My Submissions', 'nav.pending': 'Pending Approval',
+    'nav.external': 'External Download', 'nav.users': 'User Management', 'nav.partners': 'Partner Management',
+    'nav.config': 'System Config', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
+    'net.internal': 'Intranet', 'net.external': 'Extranet',
+    'sidebar.logout': 'Logout',
+    'role.admin': 'System Administrator', 'role.internalUser': 'Regular User',
+    'status.pending': 'Pending L1', 'status.pending2': 'Pending L2', 'status.approved': 'Ferried',
+    'status.downloaded': 'Downloaded', 'status.rejected': 'Rejected', 'status.archived': 'Archived', 'status.auto': 'Auto',
+    'page.title.dashboard': 'Dashboard', 'page.title.submit': 'Submit Files', 'page.title.mySubmissions': 'My Submissions',
+    'page.title.pending': 'Pending Approval', 'page.title.external': 'External Download', 'page.title.users': 'User Management',
+    'page.title.partners': 'Partner Management', 'page.title.config': 'System Config', 'page.title.audit': 'Audit Logs',
+    'common.loading': 'Loading...', 'common.close': 'Close', 'common.cancel': 'Cancel', 'common.confirm': 'Confirm',
+    'common.create': 'Create', 'common.save': 'Save', 'common.edit': 'Edit', 'common.delete': 'Delete',
+    'common.detail': 'Details', 'common.download': 'Download', 'common.enable': 'Enable', 'common.disable': 'Disable',
+    'common.enabled': 'Enabled', 'common.disabled': 'Disabled', 'common.approve': 'Approve', 'common.reject': 'Reject',
+    'common.actions': 'Actions', 'common.status': 'Status', 'common.time': 'Time', 'common.total': 'Total',
+    'dash.todaySubmitted': 'Submitted Today', 'dash.pendingApproval': 'Pending Approval', 'dash.ferried': 'Ferried',
+    'dash.autoRate': 'Auto-Approval Rate', 'dash.totalFiles': 'Total Files', 'dash.avgFerry': 'Avg Ferry Time',
+    'dash.submissions': 'submissions', 'dash.pendingItems': 'pending', 'dash.downloadable': 'downloadable',
+    'dash.autoPass': 'auto-approved by signature', 'dash.totalUploaded': 'total uploaded', 'dash.zeroCopy': 'os.rename 0-copy',
+    'dash.systemDesc': 'About System',
+    'dash.desc1': 'is a lightweight cross-network file approval & ferry system. Core workflow:',
+    'dash.step1': 'Submit', 'dash.step1d': ': User uploads files; system computes MD5 and matches signature rules',
+    'dash.step2': 'Auto-approve', 'dash.step2d': ': Files matching signature are auto-approved and 0-copy ferried to external via os.rename',
+    'dash.step3': 'Manual approval', 'dash.step3d': ': Non-matching files: L1 dept-head approval, then L2 executive approval for non-partners',
+    'dash.step4': 'Download', 'dash.step4d': ': Ferried files can be streamed from external directory',
+    'dash.step5': 'Archive', 'dash.step5d': ': Expired files are auto os.rename to archive at 2:00 AM daily',
+    'submit.uploadTitle': 'Upload Files', 'submit.uploadHint': 'Click or drag files here to upload', 'submit.uploadLimit': 'Max 1GB per file, multiple uploads allowed',
+    'submit.infoTitle': 'Submission Info',
+    'submit.receiverName': 'Recipient Name *', 'submit.receiverNamePh': 'e.g. Zhang San',
+    'submit.receiverOrg': 'Recipient Org *', 'submit.receiverOrgPh': 'e.g. XX Technology Co., Ltd.',
+    'submit.receiverEmail': 'Recipient Email', 'submit.receiverEmailPh': 'e.g. zhangsan@partner.com',
+    'submit.receiverType': 'Recipient Type', 'submit.nonPartner': 'Non-partner (requires L2 approval)', 'submit.partner': 'Partner (L1 approval only)',
+    'submit.securityLevel': 'Security Level', 'submit.secInternal': 'Internal', 'submit.secSecret': 'Secret', 'submit.secConfidential': 'Confidential',
+    'submit.partnerSelectLabel': 'Select a configured partner (or type custom; it will be added to the list)',
+    'submit.partnerSelectPh': '-- Select configured partner --', 'submit.partnerNone': '-- No partner yet, you may type custom --',
+    'submit.reason': 'Reason for Transfer', 'submit.reasonPh': 'Explain why and how the files are used',
+    'submit.btnSubmit': 'Submit for Approval',
+    'submit.matched': '✓ Matched signature', 'submit.unmatched': '✗ Needs manual approval',
+    'submit.allMatched': 'All files match signatures; they will be auto-approved after submission',
+    'submit.partMatched': 'Some files do not match signatures; manual approval will be required',
+    'list.subNo': 'Submission No.', 'list.receiver': 'Recipient', 'list.files': 'Files', 'list.size': 'Size',
+    'list.submitTime': 'Submitted At', 'list.submitter': 'Submitter', 'list.ferryTime': 'Ferried At',
+    'file.name': 'File Name',
+    'list.empty': 'No submissions yet', 'list.emptyPending': 'No pending approvals', 'list.emptyExternal': 'No downloadable files',
+    'list.ferriedFiles': 'Ferried Files',
+    'detail.title': 'Submission Detail - ', 'detail.basic': 'Basic Info', 'detail.files': 'File List', 'detail.approvals': 'Approval History',
+    'detail.type': 'Recipient Type', 'detail.partner': 'Partner', 'detail.nonPartner': 'Non-partner',
+    'detail.expiry': 'days (system config)', 'detail.autoApproved': 'Auto-Approved', 'detail.yes': 'Yes', 'detail.no': 'No',
+    'detail.matched': 'Matched', 'detail.unmatched': 'Not matched',
+    'detail.submitted': 'submitted', 'detail.approved': 'approved', 'detail.rejected': 'rejected',
+    'detail.systemAuto': 'System auto', 'detail.level': 'L{0}', 'detail.comment': 'Comment: ',
+    'detail.ferryInfo': 'Recipient: {0} | Ferried At: {1}',
+    'user.newBtn': '+ New User', 'user.createTitle': 'Create Local User',
+    'user.username': 'Username', 'user.usernamePh': 'Login username', 'user.password': 'Password *', 'user.passwordPh': 'At least 6 chars',
+    'user.displayName': 'Display Name', 'user.displayNamePh': 'e.g. Zhang San', 'user.email': 'Email', 'user.emailPh': 'user@company.com',
+    'user.role': 'Role', 'user.roleInternal': 'Regular user (approval rights granted in approver config)',
+    'user.createdAt': 'Created At', 'user.resetPwd': 'Reset Password', 'user.permanent': 'Permanent',
+    'user.confirmReset': 'Reset password for user "{0}"?', 'user.confirmDelete': 'Delete user "{0}"? This cannot be undone.',
+    'user.confirmToggle': '{0} user "{1}"?',
+    'partner.newBtn': '+ New Partner', 'partner.title': 'Partner Management (Whitelist)', 'partner.createTitle': 'New Partner',
+    'partner.hint': 'Partner submissions only need L1 approval (non-partners need L2). Disabled partners are excluded from auto-detection and the submit-form dropdown. Partners are maintained manually under System Config -> Partner Management; if a submitted partner name is not in the list, it is auto-added (trust mode; may be tightened after PMF).',
+    'partner.empty': 'No partners yet. Click "+ New Partner" at the top right to configure.',
+    'partner.name': 'Partner Name *', 'partner.namePh': 'e.g. XX Technology Co., Ltd.', 'partner.contact': 'Contact', 'partner.contactPh': 'e.g. Zhang San',
+    'partner.email': 'Email', 'partner.emailPh': 'e.g. contact@partner.com', 'partner.initialState': 'Initial State',
+    'partner.confirmToggle': '{0} this partner?', 'partner.confirmDelete': 'Delete partner "{0}"? This cannot be undone.',
+    'config.title': 'System Config', 'config.appName': 'App Name', 'config.autoApproval': 'Auto-Approval Switch',
+    'config.on': 'On', 'config.off': 'Off', 'config.defaultExpiry': 'Default Expiry (days)', 'config.maxSize': 'Max File Size (MB)',
+    'config.save': 'Save Config', 'config.cleanup': 'Trigger Expired Cleanup',
+    'config.rulesTitle': 'Signature Rules (matching files can skip approval)', 'config.newRule': '+ New Rule',
+    'config.ruleName': 'Rule Name', 'config.ruleType': 'Type', 'config.pattern': 'Pattern',
+    'config.typeExtension': 'File extension', 'config.typeFilename': 'Filename regex', 'config.typeBinary': 'Binary header', 'config.typeBinaryDetail': 'Binary header (hex: prefix or string)',
+    'config.ruleHint': 'Master switch above controls auto-approval; each rule can be toggled independently. Match logic: master ON + rule ON + file matches rule -> auto-approve.',
+    'config.ruleModalNew': 'New Signature Rule', 'config.ruleModalEdit': 'Edit Signature Rule',
+    'config.ruleNameLbl': 'Rule Name', 'config.ruleNamePh': 'e.g. PDF Documents', 'config.ruleTypeLbl': 'Rule Type',
+    'config.rulePattern': 'Pattern', 'config.rulePatternPh': 'e.g. .pdf or hex:504B0304', 'config.ruleEnabled': ' Enable',
+    'audit.titleDetail': '📋 Details', 'audit.titleStats': '📊 Statistics',
+    'audit.detailTitle': 'Audit Log Details (last {0})', 'audit.user': 'User', 'audit.action': 'Action', 'audit.target': 'Target', 'audit.detail': 'Detail',
+    'audit.statsTitle': 'Audit Statistics (User × File Type × Daily)',
+    'audit.from': 'Start Date', 'audit.to': 'End Date', 'audit.query': 'Query',
+    'audit.byType': 'By File Type', 'audit.byDay': 'By Day',
+    'audit.personType': 'User / File Type', 'audit.personDay': 'User / Date', 'audit.range': 'Range: {0} to {1}', 'audit.days': ' ({0} days)',
+    'toast.uploadSuccess': 'File "{0}" uploaded', 'toast.uploadFail': 'Upload failed: {0}',
+    'toast.submitSuccessAuto': 'Submitted and auto-approved! No: {0}',
+    'toast.submitSuccess': 'Submitted, entering approval flow. No: {0}', 'toast.submitFail': 'Submit failed: {0}',
+    'toast.approveDone': 'Approval done, current status: {0}', 'toast.approveFail': 'Approval failed: {0}',
+    'toast.loadDetailFail': 'Failed to load detail: {0}', 'toast.loadFail': 'Failed to load: {0}',
+    'toast.loadFilesFail': 'Failed to load file list: {0}',
+    'toast.createSuccess': 'User created', 'toast.createFail': 'Create failed: {0}',
+    'toast.deleteSuccess': 'User deleted', 'toast.deleteFail': 'Delete failed: {0}',
+    'toast.toggleSuccess': 'Operation successful', 'toast.toggleFail': 'Operation failed: {0}',
+    'toast.resetSuccess': 'Password reset', 'toast.resetFail': 'Reset failed: {0}',
+    'toast.partnerCreate': 'Partner created',
+    'toast.ruleToggled': 'Rule toggled', 'toast.ruleDeleted': 'Rule deleted',
+    'toast.ruleSaved': 'Rule saved', 'toast.configSaved': 'Config saved', 'toast.saveFail': 'Save failed: {0}',
+    'toast.cleanupDone': 'Cleanup done', 'toast.cleanupFail': 'Cleanup failed: {0}',
+    'err.externalOnly': 'External network provides file download only',
+    'err.requireName': 'Please fill in recipient name', 'err.requireOrg': 'Please fill in recipient org', 'err.requireFile': 'Please upload files first',
+    'err.requireUserPwd': 'Username and password are required', 'err.requirePartnerName': 'Partner name is required',
+    'confirm.deleteRule': 'Delete this signature rule?',
+    'prompt.approveComment': 'Approval comment (optional): ', 'prompt.rejectReason': 'Rejection reason: '
+  }
+};
+let currentLang = localStorage.getItem('st_lang') || 'zh';
+if (!['zh', 'en'].includes(currentLang)) currentLang = 'zh';
+
+function t(key, ...args) {
+  let s = (I18N[currentLang] && I18N[currentLang][key]) || (I18N.zh[key] || key);
+  args.forEach((a, i) => { s = s.split('{' + i + '}').join(a == null ? '' : a); });
+  return s;
+}
+function switchLang() {
+  currentLang = currentLang === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('st_lang', currentLang);
+  document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+  const btn = document.getElementById('langSwitch');
+  if (btn) btn.textContent = currentLang === 'zh' ? 'EN' : '中';
+  applyI18n();
+  if (typeof currentPage === 'string' && currentPage) renderPage(currentPage);
+}
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  // 侧边栏用户信息随语言刷新
+  if (currentUser) {
+    const roleEl = document.getElementById('userRole');
+    if (roleEl) roleEl.textContent = t(ROLE_LABELS[currentUser.role] || currentUser.role);
+  }
+  const nb = document.getElementById('networkBadge');
+  if (nb && window._networkZone) nb.textContent = window._networkZone === 'external' ? t('net.external') : t('net.internal');
+  const ls = document.getElementById('langSwitch');
+  if (ls) ls.textContent = currentLang === 'zh' ? 'EN' : '中';
+}
+// 语言偏好初始化（默认中文）
+document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+
+// ============================================================
 // Global state
 // ============================================================
 let currentUser = null;
@@ -204,17 +453,17 @@ let currentPage = 'dashboard';
 let uploadedFiles = []; // {tempId, name, size, type, md5, matched, matchedRules}
 
 const ROLE_LABELS = {
-  'admin': '系统管理员',
-  'internal-user': '普通用户'
+  'admin': 'role.admin',
+  'internal-user': 'role.internalUser'
 };
 
 const STATUS_LABELS = {
-  'pending': { text: '待一级审批', cls: 'badge-pending' },
-  'pending_approval_2': { text: '待二级审批', cls: 'badge-pending2' },
-  'approved': { text: '已摆渡', cls: 'badge-approved' },
-  'downloaded': { text: '已下载', cls: 'badge-downloaded' },
-  'rejected': { text: '已驳回', cls: 'badge-rejected' },
-  'archived': { text: '已归档', cls: 'badge-archived' }
+  'pending': { key: 'status.pending', cls: 'badge-pending' },
+  'pending_approval_2': { key: 'status.pending2', cls: 'badge-pending2' },
+  'approved': { key: 'status.approved', cls: 'badge-approved' },
+  'downloaded': { key: 'status.downloaded', cls: 'badge-downloaded' },
+  'rejected': { key: 'status.rejected', cls: 'badge-rejected' },
+  'archived': { key: 'status.archived', cls: 'badge-archived' }
 };
 
 // ============================================================
@@ -229,7 +478,11 @@ async function api(path, options = {}) {
   const resp = await fetch(path, opts);
   if (resp.status === 401) { window.location.href = '/login'; return; }
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  if (!resp.ok) {
+    // 按当前语言选择后端返回的错误消息（error=中文 / error_en=英文）
+    const msg = currentLang === 'zh' ? (data.error || `HTTP ${resp.status}`) : (data.error_en || data.error || `HTTP ${resp.status}`);
+    throw new Error(msg);
+  }
   return data;
 }
 
@@ -255,15 +508,15 @@ async function loadUser() {
   try {
     currentUser = await api('/api/auth/me');
     document.getElementById('userName').textContent = currentUser.displayName || currentUser.username;
-    document.getElementById('userRole').textContent = ROLE_LABELS[currentUser.role] || currentUser.role;
+    document.getElementById('userRole').textContent = t(ROLE_LABELS[currentUser.role] || currentUser.role);
     // 网络面标识（内网管理面 / 外网下载面）
     const networkZone = currentUser.networkZone || 'internal';
     const badge = document.getElementById('networkBadge');
     if (networkZone === 'external') {
-      badge.textContent = '外网';
+      badge.textContent = t('net.external');
       badge.className = 'network-badge external';
     } else {
-      badge.textContent = '内网';
+      badge.textContent = t('net.internal');
       badge.className = 'network-badge internal';
     }
     window._networkZone = networkZone;
@@ -304,24 +557,24 @@ document.querySelectorAll('.nav-item').forEach(item => {
 function navigate(page) {
   // 外网面仅允许下载页
   if (window._networkZone === 'external' && page !== 'external') {
-    toast('外网面仅提供文件下载', 'error');
+    toast(t('err.externalOnly'), 'error');
     return;
   }
   currentPage = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   const titles = {
-    dashboard: '仪表盘', submit: '文件提交', 'my-submissions': '我的提交',
-    pending: '待我审批', external: '外网下载', users: '用户管理',
-    partners: '合作方管理', config: '系统配置', audit: '审计日志'
+    dashboard: 'page.title.dashboard', submit: 'page.title.submit', 'my-submissions': 'page.title.mySubmissions',
+    pending: 'page.title.pending', external: 'page.title.external', users: 'page.title.users',
+    partners: 'page.title.partners', config: 'page.title.config', audit: 'page.title.audit'
   };
-  document.getElementById('pageTitle').textContent = titles[page] || page;
+  document.getElementById('pageTitle').textContent = t(titles[page] || page);
   document.getElementById('pageActions').innerHTML = '';
   renderPage(page);
 }
 
 function renderPage(page) {
   const content = document.getElementById('content');
-  content.innerHTML = '<div class="loading">加载中...</div>';
+  content.innerHTML = `<div class="loading" data-i18n="common.loading">加载中...</div>`;
   switch (page) {
     case 'dashboard': renderDashboard(); break;
     case 'submit': renderSubmit(); break;
@@ -333,6 +586,7 @@ function renderPage(page) {
     case 'config': renderConfig(); break;
     case 'audit': renderAudit(); break;
   }
+  applyI18n();
 }
 
 // ============================================================
@@ -343,27 +597,28 @@ async function renderDashboard() {
     const stats = await api('/api/stats');
     document.getElementById('content').innerHTML = `
       <div class="stats-grid">
-        <div class="stat-card"><div class="label">今日提交</div><div class="value">${stats.todaySubmitted}</div><div class="sub">个提交单</div></div>
-        <div class="stat-card"><div class="label">待审批</div><div class="value">${stats.pendingApproval}</div><div class="sub">个待处理</div></div>
-        <div class="stat-card"><div class="label">已摆渡</div><div class="value">${stats.ready}</div><div class="sub">个可下载</div></div>
-        <div class="stat-card"><div class="label">免审批率</div><div class="value">${stats.autoApprovalRate}%</div><div class="sub">特征码自动通过</div></div>
-        <div class="stat-card"><div class="label">文件总数</div><div class="value">${stats.archivedFiles}</div><div class="sub">累计上传</div></div>
-        <div class="stat-card"><div class="label">平均摆渡耗时</div><div class="value">${stats.avgFerryTime}</div><div class="sub">os.rename 0拷贝</div></div>
+        <div class="stat-card"><div class="label" data-i18n="dash.todaySubmitted">今日提交</div><div class="value">${stats.todaySubmitted}</div><div class="sub" data-i18n="dash.submissions">个提交单</div></div>
+        <div class="stat-card"><div class="label" data-i18n="dash.pendingApproval">待审批</div><div class="value">${stats.pendingApproval}</div><div class="sub" data-i18n="dash.pendingItems">个待处理</div></div>
+        <div class="stat-card"><div class="label" data-i18n="dash.ferried">已摆渡</div><div class="value">${stats.ready}</div><div class="sub" data-i18n="dash.downloadable">个可下载</div></div>
+        <div class="stat-card"><div class="label" data-i18n="dash.autoRate">免审批率</div><div class="value">${stats.autoApprovalRate}%</div><div class="sub" data-i18n="dash.autoPass">特征码自动通过</div></div>
+        <div class="stat-card"><div class="label" data-i18n="dash.totalFiles">文件总数</div><div class="value">${stats.archivedFiles}</div><div class="sub" data-i18n="dash.totalUploaded">累计上传</div></div>
+        <div class="stat-card"><div class="label" data-i18n="dash.avgFerry">平均摆渡耗时</div><div class="value">${stats.avgFerryTime}</div><div class="sub" data-i18n="dash.zeroCopy">os.rename 0拷贝</div></div>
       </div>
       <div class="card">
-        <div class="card-title">系统说明</div>
+        <div class="card-title" data-i18n="dash.systemDesc">系统说明</div>
         <div style="font-size:13px;line-height:1.8;color:#4b5563;">
-          <p><strong>SecureTrans</strong> 是轻量级跨网文件审批摆渡系统，核心流程：</p>
-          <p>1. <strong>提交</strong>：用户上传文件，系统自动计算 MD5 并匹配特征码规则</p>
-          <p>2. <strong>免审批</strong>：所有文件匹配特征码 → 自动通过，os.rename 0拷贝摆渡到 external</p>
-          <p>3. <strong>人工审批</strong>：不匹配特征码 → 部门主管一级审批 → 非合作方需高管二级审批</p>
-          <p>4. <strong>下载</strong>：摆渡完成的文件可从 external 目录流式下载</p>
-          <p>5. <strong>归档</strong>：超过有效期的文件每天凌晨 2 点自动 os.rename 到 archive</p>
+          <p><strong>SecureTrans</strong> <span data-i18n="dash.desc1">是轻量级跨网文件审批摆渡系统，核心流程：</span></p>
+          <p>1. <strong data-i18n="dash.step1">提交</strong><span data-i18n="dash.step1d">：用户上传文件，系统自动计算 MD5 并匹配特征码规则</span></p>
+          <p>2. <strong data-i18n="dash.step2">免审批</strong><span data-i18n="dash.step2d">：所有文件匹配特征码 → 自动通过，os.rename 0拷贝摆渡到 external</span></p>
+          <p>3. <strong data-i18n="dash.step3">人工审批</strong><span data-i18n="dash.step3d">：不匹配特征码 → 部门主管一级审批 → 非合作方需高管二级审批</span></p>
+          <p>4. <strong data-i18n="dash.step4">下载</strong><span data-i18n="dash.step4d">：摆渡完成的文件可从 external 目录流式下载</span></p>
+          <p>5. <strong data-i18n="dash.step5">归档</strong><span data-i18n="dash.step5d">：超过有效期的文件每天凌晨 2 点自动 os.rename 到 archive</span></p>
         </div>
       </div>
     `;
+    applyI18n();
   } catch (e) {
-    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+    document.getElementById('content').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
   }
 }
 
@@ -374,52 +629,53 @@ function renderSubmit() {
   uploadedFiles = [];
   document.getElementById('content').innerHTML = `
     <div class="card">
-      <div class="card-title">上传文件</div>
+      <div class="card-title" data-i18n="submit.uploadTitle">上传文件</div>
       <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
         <div class="icon">📁</div>
-        <p>点击或拖拽文件到此处上传</p>
-        <div class="hint">支持单文件最大 1GB，可多次上传</div>
+        <p data-i18n="submit.uploadHint">点击或拖拽文件到此处上传</p>
+        <div class="hint" data-i18n="submit.uploadLimit">支持单文件最大 1GB，可多次上传</div>
       </div>
       <input type="file" id="fileInput" multiple style="display:none">
       <div class="file-list" id="fileList"></div>
     </div>
     <div class="card" id="submitFormCard" style="display:none;">
-      <div class="card-title">提交信息</div>
+      <div class="card-title" data-i18n="submit.infoTitle">提交信息</div>
       <div class="form-row">
-        <div class="form-group"><label>接收方姓名 *</label><input type="text" id="receiverName" placeholder="如：张三"></div>
-        <div class="form-group"><label>接收方单位 *</label><input type="text" id="receiverOrg" placeholder="如：XX科技有限公司"></div>
+        <div class="form-group"><label data-i18n="submit.receiverName">接收方姓名 *</label><input type="text" id="receiverName" placeholder="${t('submit.receiverNamePh')}"></div>
+        <div class="form-group"><label data-i18n="submit.receiverOrg">接收方单位 *</label><input type="text" id="receiverOrg" placeholder="${t('submit.receiverOrgPh')}"></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>接收方邮箱</label><input type="email" id="receiverEmail" placeholder="如：zhangsan@partner.com"></div>
-        <div class="form-group"><label>接收方类型</label>
+        <div class="form-group"><label data-i18n="submit.receiverEmail">接收方邮箱</label><input type="email" id="receiverEmail" placeholder="${t('submit.receiverEmailPh')}"></div>
+        <div class="form-group"><label data-i18n="submit.receiverType">接收方类型</label>
           <select id="receiverType" onchange="togglePartnerSelect()">
-            <option value="non-partner">非合作方（需二级审批）</option>
-            <option value="partner">合作方（一级审批即可）</option>
+            <option value="non-partner" data-i18n="submit.nonPartner">非合作方（需二级审批）</option>
+            <option value="partner" data-i18n="submit.partner">合作方（一级审批即可）</option>
           </select>
         </div>
-        <div class="form-group"><label>密级</label>
+        <div class="form-group"><label data-i18n="submit.securityLevel">密级</label>
           <select id="securityLevel">
-            <option value="internal">内部</option>
-            <option value="secret">秘密</option>
-            <option value="confidential">机密</option>
+            <option value="internal" data-i18n="submit.secInternal">内部</option>
+            <option value="secret" data-i18n="submit.secSecret">秘密</option>
+            <option value="confidential" data-i18n="submit.secConfidential">机密</option>
           </select>
         </div>
       </div>
       <div class="form-row" id="partnerSelectRow" style="display:none;">
         <div class="form-group" style="flex:1;">
-          <label>选择已配置合作方（未配置时可自定义填写并自动加入清单）</label>
+          <label data-i18n="submit.partnerSelectLabel">选择已配置合作方（未配置时可自定义填写并自动加入清单）</label>
           <select id="partnerSelect" onchange="onPartnerSelected()">
-            <option value="">-- 选择已配置合作方 --</option>
+            <option value="" data-i18n="submit.partnerSelectPh">-- 选择已配置合作方 --</option>
           </select>
         </div>
       </div>
-      <div class="form-group"><label>外发事由</label><textarea id="reason" rows="3" placeholder="请说明文件外发的原因和用途"></textarea></div>
+      <div class="form-group"><label data-i18n="submit.reason">外发事由</label><textarea id="reason" rows="3" placeholder="${t('submit.reasonPh')}"></textarea></div>
       <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
-        <button class="btn btn-primary" onclick="submitFiles()">提交审批</button>
+        <button class="btn btn-primary" onclick="submitFiles()" data-i18n="submit.btnSubmit">提交审批</button>
         <span id="autoApproveHint" class="text-sm text-muted"></span>
       </div>
     </div>
   `;
+  applyI18n();
 
   const zone = document.getElementById('uploadZone');
   const input = document.getElementById('fileInput');
@@ -436,9 +692,9 @@ async function handleFiles(files) {
       formData.append('file', file);
       const data = await api('/api/submissions/upload', { method: 'POST', body: formData });
       uploadedFiles.push(data);
-      toast(`文件 "${file.name}" 上传成功`, 'success');
+      toast(t('toast.uploadSuccess', file.name), 'success');
     } catch (e) {
-      toast(`上传失败: ${e.message}`, 'error');
+      toast(t('toast.uploadFail', e.message), 'error');
     }
   }
   renderFileList();
@@ -455,14 +711,14 @@ function renderFileList() {
     <div class="file-item">
       <span class="name">${f.name}</span>
       <span class="size">${formatSize(f.size)}</span>
-      <span class="${f.matched ? 'matched' : 'unmatched'}">${f.matched ? '✓ 匹配特征码' : '✗ 需人工审批'}</span>
+      <span class="${f.matched ? 'matched' : 'unmatched'}">${f.matched ? t('submit.matched') : t('submit.unmatched')}</span>
       <span class="remove" onclick="removeFile(${i})">✕</span>
     </div>
   `).join('');
   document.getElementById('submitFormCard').style.display = 'block';
   // Auto-approve hint
   const allMatched = uploadedFiles.every(f => f.matched);
-  document.getElementById('autoApproveHint').textContent = allMatched ? '所有文件匹配特征码，提交后将免审批自动通过' : '部分文件不匹配特征码，提交后需人工审批';
+  document.getElementById('autoApproveHint').textContent = allMatched ? t('submit.allMatched') : t('submit.partMatched');
 }
 
 function removeFile(index) {
@@ -478,10 +734,10 @@ async function togglePartnerSelect() {
     try {
       const partners = await api('/api/partners');
       const sel = document.getElementById('partnerSelect');
-      sel.innerHTML = '<option value="">-- 选择已配置合作方 --</option>' +
+      sel.innerHTML = `<option value="">${t('submit.partnerSelectPh')}</option>` +
         partners.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
     } catch (e) {
-      document.getElementById('partnerSelect').innerHTML = '<option value="">-- 暂无合作方，可自定义填写 --</option>';
+      document.getElementById('partnerSelect').innerHTML = `<option value="">${t('submit.partnerNone')}</option>`;
     }
   }
 }
@@ -499,9 +755,9 @@ function onPartnerSelected() {
 async function submitFiles() {
   const receiverName = document.getElementById('receiverName').value.trim();
   const receiverOrg = document.getElementById('receiverOrg').value.trim();
-  if (!receiverName) { toast('请填写接收方姓名', 'error'); return; }
-  if (!receiverOrg) { toast('请填写接收方单位', 'error'); return; }
-  if (uploadedFiles.length === 0) { toast('请先上传文件', 'error'); return; }
+  if (!receiverName) { toast(t('err.requireName'), 'error'); return; }
+  if (!receiverOrg) { toast(t('err.requireOrg'), 'error'); return; }
+  if (uploadedFiles.length === 0) { toast(t('err.requireFile'), 'error'); return; }
 
   try {
     const data = await api('/api/submissions', {
@@ -517,14 +773,14 @@ async function submitFiles() {
       }
     });
     if (data.autoApproved) {
-      toast(`提交成功，免审批自动通过！提交单号: ${data.id}`, 'success');
+      toast(t('toast.submitSuccessAuto', data.id), 'success');
     } else {
-      toast(`提交成功，进入审批流程。提交单号: ${data.id}`, 'success');
+      toast(t('toast.submitSuccess', data.id), 'success');
     }
     uploadedFiles = [];
     navigate('my-submissions');
   } catch (e) {
-    toast(`提交失败: ${e.message}`, 'error');
+    toast(t('toast.submitFail', e.message), 'error');
   }
 }
 
@@ -535,86 +791,89 @@ async function renderMySubmissions() {
   try {
     const list = await api('/api/submissions');
     if (list.length === 0) {
-      document.getElementById('content').innerHTML = '<div class="card"><div class="empty">暂无提交记录</div></div>';
+      document.getElementById('content').innerHTML = `<div class="card"><div class="empty" data-i18n="list.empty">暂无提交记录</div></div>`;
+      applyI18n();
       return;
     }
     document.getElementById('content').innerHTML = `
       <div class="card">
         <table>
-          <thead><tr><th>提交单号</th><th>接收方</th><th>文件数</th><th>大小</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead>
+          <thead><tr><th data-i18n="list.subNo">提交单号</th><th data-i18n="list.receiver">接收方</th><th data-i18n="list.files">文件数</th><th data-i18n="list.size">大小</th><th data-i18n="common.status">状态</th><th data-i18n="list.submitTime">提交时间</th><th data-i18n="common.actions">操作</th></tr></thead>
           <tbody>
             ${list.map(s => {
-              const st = STATUS_LABELS[s.status] || { text: s.status, cls: '' };
+              const st = STATUS_LABELS[s.status] || { key: s.status, cls: '' };
               return `<tr>
                 <td class="text-sm">${s.id}</td>
                 <td>${s.receiver_name || '-'}</td>
                 <td>${s.file_count}</td>
                 <td>${formatSize(s.total_size || 0)}</td>
-                <td><span class="badge ${st.cls}">${st.text}</span>${s.auto_approved ? ' <span class="badge badge-auto">免审批</span>' : ''}</td>
+                <td><span class="badge ${st.cls}">${t(st.key)}</span>${s.auto_approved ? ` <span class="badge badge-auto" data-i18n="status.auto">免审批</span>` : ''}</td>
                 <td class="text-sm text-muted">${s.submit_time || '-'}</td>
-                <td><button class="btn btn-sm btn-secondary" onclick="showSubmissionDetail('${s.id}')">详情</button></td>
+                <td><button class="btn btn-sm btn-secondary" onclick="showSubmissionDetail('${s.id}')" data-i18n="common.detail">详情</button></td>
               </tr>`;
             }).join('')}
           </tbody>
         </table>
       </div>
     `;
+    applyI18n();
   } catch (e) {
-    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+    document.getElementById('content').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
   }
 }
 
 async function showSubmissionDetail(id) {
   try {
     const sub = await api(`/api/submissions/${id}`);
-    const st = STATUS_LABELS[sub.status] || { text: sub.status, cls: '' };
-    document.getElementById('modalTitle').textContent = `提交单详情 - ${sub.id}`;
+    const st = STATUS_LABELS[sub.status] || { key: sub.status, cls: '' };
+    document.getElementById('modalTitle').textContent = t('detail.title') + sub.id;
     document.getElementById('modalBody').innerHTML = `
       <div class="detail-section">
-        <h4>基本信息</h4>
+        <h4 data-i18n="detail.basic">基本信息</h4>
         <div class="detail-grid">
-          <div class="key">状态</div><div class="val"><span class="badge ${st.cls}">${st.text}</span></div>
-          <div class="key">接收方</div><div class="val">${sub.receiver_name || '-'}（${sub.receiver_org || '-'}）${sub.receiver_email ? `(${sub.receiver_email})` : ''}</div>
-          <div class="key">接收方类型</div><div class="val">${sub.receiver_type === 'partner' ? '合作方' : '非合作方'}</div>
-          <div class="key">密级</div><div class="val">${sub.security_level || '-'}</div>
-          <div class="key">有效期</div><div class="val">${sub.expiry_days != null ? sub.expiry_days : 7} 天（系统配置）</div>
-          <div class="key">提交时间</div><div class="val">${sub.submit_time || '-'}</div>
-          <div class="key">审批通过时间</div><div class="val">${sub.approved_time || '-'}</div>
-          <div class="key">免审批</div><div class="val">${sub.auto_approved ? '是' : '否'}</div>
+          <div class="key" data-i18n="common.status">状态</div><div class="val"><span class="badge ${st.cls}">${t(st.key)}</span></div>
+          <div class="key" data-i18n="list.receiver">接收方</div><div class="val">${sub.receiver_name || '-'}（${sub.receiver_org || '-'}）${sub.receiver_email ? `(${sub.receiver_email})` : ''}</div>
+          <div class="key" data-i18n="detail.type">接收方类型</div><div class="val">${sub.receiver_type === 'partner' ? t('detail.partner') : t('detail.nonPartner')}</div>
+          <div class="key" data-i18n="submit.securityLevel">密级</div><div class="val">${sub.security_level || '-'}</div>
+          <div class="key" data-i18n="config.defaultExpiry">默认有效期（天）</div><div class="val">${sub.expiry_days != null ? sub.expiry_days : 7} <span data-i18n="detail.expiry">天（系统配置）</span></div>
+          <div class="key" data-i18n="list.submitTime">提交时间</div><div class="val">${sub.submit_time || '-'}</div>
+          <div class="key" data-i18n="list.ferryTime">摆渡时间</div><div class="val">${sub.approved_time || '-'}</div>
+          <div class="key" data-i18n="detail.autoApproved">免审批</div><div class="val">${sub.auto_approved ? t('detail.yes') : t('detail.no')}</div>
         </div>
-        ${sub.reason ? `<div style="margin-top:8px;"><span class="key">外发事由：</span>${sub.reason}</div>` : ''}
+        ${sub.reason ? `<div style="margin-top:8px;"><span class="key" data-i18n="submit.reason">外发事由：</span>${sub.reason}</div>` : ''}
       </div>
       <div class="detail-section">
-        <h4>文件清单 (${sub.files.length} 个)</h4>
+        <h4><span data-i18n="detail.files">文件清单</span> (${sub.files.length} 个)</h4>
         <table>
-          <thead><tr><th>文件名</th><th>大小</th><th>类型</th><th>MD5</th><th>特征码</th></tr></thead>
+          <thead><tr><th data-i18n="file.name">文件名</th><th data-i18n="list.size">大小</th><th data-i18n="config.ruleType">类型</th><th>MD5</th><th data-i18n="config.pattern">特征码</th></tr></thead>
           <tbody>
             ${sub.files.map(f => `<tr>
               <td class="text-sm">${f.name}</td>
               <td>${formatSize(f.size)}</td>
               <td>${f.type || '-'}</td>
               <td class="text-sm text-muted">${(f.md5 || '').substring(0, 16)}...</td>
-              <td>${f.matched ? '<span class="badge badge-approved">匹配</span>' : '<span class="badge badge-rejected">不匹配</span>'}</td>
+              <td>${f.matched ? `<span class="badge badge-approved" data-i18n="detail.matched">匹配</span>` : `<span class="badge badge-rejected" data-i18n="detail.unmatched">不匹配</span>`}</td>
             </tr>`).join('')}
           </tbody>
         </table>
       </div>
       <div class="detail-section">
-        <h4>审批记录</h4>
+        <h4 data-i18n="detail.approvals">审批记录</h4>
         <div class="timeline">
-          <div class="timeline-item"><div class="time">${sub.submit_time}</div><div class="action">${sub.submitter_name || sub.submitter} 提交申请</div></div>
+          <div class="timeline-item"><div class="time">${sub.submit_time}</div><div class="action">${sub.submitter_name || sub.submitter} <span data-i18n="detail.submitted">提交申请</span></div></div>
           ${sub.approvals.map(a => `<div class="timeline-item">
             <div class="time">${a.time}</div>
-            <div class="action">${a.approver_name || a.approver} ${a.action === 'approve' ? '审批通过' : '驳回'} (${a.level === 0 ? '系统自动' : '第' + a.level + '级'})</div>
-            ${a.comment ? `<div class="text-sm text-muted">备注: ${a.comment}</div>` : ''}
+            <div class="action">${a.approver_name || a.approver} ${a.action === 'approve' ? t('detail.approved') : t('detail.rejected')} (${a.level === 0 ? t('detail.systemAuto') : t('detail.level', a.level)})</div>
+            ${a.comment ? `<div class="text-sm text-muted"><span data-i18n="detail.comment">备注: </span>${a.comment}</div>` : ''}
           </div>`).join('')}
         </div>
       </div>
     `;
-    document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">关闭</button>';
+    document.getElementById('modalFooter').innerHTML = `<button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.close">关闭</button>`;
+    applyI18n();
     openModal();
   } catch (e) {
-    toast(`加载详情失败: ${e.message}`, 'error');
+    toast(t('toast.loadDetailFail', e.message), 'error');
   }
 }
 
@@ -625,28 +884,29 @@ async function renderPending() {
   try {
     const list = await api('/api/submissions/pending/my');
     if (list.length === 0) {
-      document.getElementById('content').innerHTML = '<div class="card"><div class="empty">暂无待审批的提交单</div></div>';
+      document.getElementById('content').innerHTML = `<div class="card"><div class="empty" data-i18n="list.emptyPending">暂无待审批的提交单</div></div>`;
+      applyI18n();
       return;
     }
     document.getElementById('content').innerHTML = `
       <div class="card">
         <table>
-          <thead><tr><th>提交单号</th><th>提交人</th><th>接收方</th><th>文件数</th><th>大小</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead>
+          <thead><tr><th data-i18n="list.subNo">提交单号</th><th data-i18n="list.submitter">提交人</th><th data-i18n="list.receiver">接收方</th><th data-i18n="list.files">文件数</th><th data-i18n="list.size">大小</th><th data-i18n="common.status">状态</th><th data-i18n="list.submitTime">提交时间</th><th data-i18n="common.actions">操作</th></tr></thead>
           <tbody>
             ${list.map(s => {
-              const st = STATUS_LABELS[s.status] || { text: s.status, cls: '' };
+              const st = STATUS_LABELS[s.status] || { key: s.status, cls: '' };
               return `<tr>
                 <td class="text-sm">${s.id}</td>
                 <td>${s.submitter_name || s.submitter}</td>
                 <td>${s.receiver_name || '-'}</td>
                 <td>${s.file_count}</td>
                 <td>${formatSize(s.total_size || 0)}</td>
-                <td><span class="badge ${st.cls}">${st.text}</span></td>
+                <td><span class="badge ${st.cls}">${t(st.key)}</span></td>
                 <td class="text-sm text-muted">${s.submit_time || '-'}</td>
                 <td class="flex gap-8">
-                  <button class="btn btn-sm btn-success" onclick="approveSubmission('${s.id}', 'approve')">通过</button>
-                  <button class="btn btn-sm btn-danger" onclick="approveSubmission('${s.id}', 'reject')">驳回</button>
-                  <button class="btn btn-sm btn-secondary" onclick="showSubmissionDetail('${s.id}')">详情</button>
+                  <button class="btn btn-sm btn-success" onclick="approveSubmission('${s.id}', 'approve')" data-i18n="common.approve">通过</button>
+                  <button class="btn btn-sm btn-danger" onclick="approveSubmission('${s.id}', 'reject')" data-i18n="common.reject">驳回</button>
+                  <button class="btn btn-sm btn-secondary" onclick="showSubmissionDetail('${s.id}')" data-i18n="common.detail">详情</button>
                 </td>
               </tr>`;
             }).join('')}
@@ -654,19 +914,21 @@ async function renderPending() {
         </table>
       </div>
     `;
+    applyI18n();
   } catch (e) {
-    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+    document.getElementById('content').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
   }
 }
 
 async function approveSubmission(id, action) {
-  const comment = prompt(action === 'approve' ? '审批通过备注（可选）：' : '驳回原因：') || '';
+  const comment = prompt(action === 'approve' ? t('prompt.approveComment') : t('prompt.rejectReason')) || '';
   try {
     const data = await api(`/api/submissions/${id}/approve`, { method: 'POST', body: { action, comment } });
-    toast(`审批完成，当前状态: ${STATUS_LABELS[data.status]?.text || data.status}`, 'success');
+    const st = STATUS_LABELS[data.status] || { key: data.status, cls: '' };
+    toast(t('toast.approveDone', t(st.key)), 'success');
     renderPending();
   } catch (e) {
-    toast(`审批失败: ${e.message}`, 'error');
+    toast(t('toast.approveFail', e.message), 'error');
   }
 }
 
@@ -677,14 +939,15 @@ async function renderExternal() {
   try {
     const list = await api('/api/external/files');
     if (list.length === 0) {
-      document.getElementById('content').innerHTML = '<div class="card"><div class="empty">暂无可下载的文件</div></div>';
+      document.getElementById('content').innerHTML = `<div class="card"><div class="empty" data-i18n="list.emptyExternal">暂无可下载的文件</div></div>`;
+      applyI18n();
       return;
     }
     document.getElementById('content').innerHTML = `
       <div class="card">
-        <div class="card-title">已摆渡文件列表</div>
+        <div class="card-title" data-i18n="list.ferriedFiles">已摆渡文件列表</div>
         <table>
-          <thead><tr><th>提交单号</th><th>提交人</th><th>接收方</th><th>文件数</th><th>大小</th><th>摆渡时间</th><th>操作</th></tr></thead>
+          <thead><tr><th data-i18n="list.subNo">提交单号</th><th data-i18n="list.submitter">提交人</th><th data-i18n="list.receiver">接收方</th><th data-i18n="list.files">文件数</th><th data-i18n="list.size">大小</th><th data-i18n="list.ferryTime">摆渡时间</th><th data-i18n="common.actions">操作</th></tr></thead>
           <tbody>
             ${list.map(s => `<tr>
               <td class="text-sm">${s.id}</td>
@@ -693,39 +956,41 @@ async function renderExternal() {
               <td>${s.file_count}</td>
               <td>${formatSize(s.total_size || 0)}</td>
               <td class="text-sm text-muted">${s.approved_time || '-'}</td>
-              <td><button class="btn btn-sm btn-primary" onclick="showDownloadFiles('${s.id}')">下载</button></td>
+              <td><button class="btn btn-sm btn-primary" onclick="showDownloadFiles('${s.id}')" data-i18n="common.download">下载</button></td>
             </tr>`).join('')}
           </tbody>
         </table>
       </div>
     `;
+    applyI18n();
   } catch (e) {
-    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+    document.getElementById('content').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
   }
 }
 
 async function showDownloadFiles(id) {
   try {
     const sub = await api(`/api/submissions/${id}`);
-    document.getElementById('modalTitle').textContent = `下载文件 - ${id}`;
+    document.getElementById('modalTitle').textContent = t('common.download') + ' - ' + id;
     document.getElementById('modalBody').innerHTML = `
-      <p class="text-sm text-muted mb-8">接收方: ${sub.receiver_name || '-'} | 摆渡时间: ${sub.approved_time || '-'}</p>
+      <p class="text-sm text-muted mb-8">${t('detail.ferryInfo', sub.receiver_name || '-', sub.approved_time || '-')}</p>
       <table>
-        <thead><tr><th>文件名</th><th>大小</th><th>类型</th><th>操作</th></tr></thead>
+        <thead><tr><th data-i18n="file.name">文件名</th><th data-i18n="list.size">大小</th><th data-i18n="config.ruleType">类型</th><th data-i18n="common.actions">操作</th></tr></thead>
         <tbody>
           ${sub.files.map(f => `<tr>
             <td class="text-sm">${f.name}</td>
             <td>${formatSize(f.size)}</td>
             <td>${f.type || '-'}</td>
-            <td><a class="btn btn-sm btn-primary" href="/api/external/${id}/download/${encodeURIComponent(f.name)}">下载</a></td>
+            <td><a class="btn btn-sm btn-primary" href="/api/external/${id}/download/${encodeURIComponent(f.name)}" data-i18n="common.download">下载</a></td>
           </tr>`).join('')}
         </tbody>
       </table>
     `;
-    document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">关闭</button>';
+    document.getElementById('modalFooter').innerHTML = `<button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.close">关闭</button>`;
+    applyI18n();
     openModal();
   } catch (e) {
-    toast(`加载文件列表失败: ${e.message}`, 'error');
+    toast(t('toast.loadFilesFail', e.message), 'error');
   }
 }
 
@@ -735,60 +1000,62 @@ async function showDownloadFiles(id) {
 async function renderUsers() {
   try {
     const users = await api('/api/admin/local-users');
-    document.getElementById('pageActions').innerHTML = '<button class="btn btn-primary" onclick="showCreateUser()">+ 新建用户</button>';
+    document.getElementById('pageActions').innerHTML = '<button class="btn btn-primary" onclick="showCreateUser()" data-i18n="user.newBtn">+ 新建用户</button>';
     document.getElementById('content').innerHTML = `
       <div class="card">
         <table>
-          <thead><tr><th>用户名</th><th>显示名</th><th>邮箱</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+          <thead><tr><th data-i18n="user.username">用户名</th><th data-i18n="user.displayName">显示名</th><th data-i18n="user.email">邮箱</th><th data-i18n="user.role">角色</th><th data-i18n="common.status">状态</th><th data-i18n="user.createdAt">创建时间</th><th data-i18n="common.actions">操作</th></tr></thead>
           <tbody>
             ${users.map(u => `<tr>
               <td>${u.username}</td>
               <td>${u.display_name || '-'}</td>
               <td class="text-sm text-muted">${u.email || '-'}</td>
-              <td><span class="badge badge-approved">${ROLE_LABELS[u.role] || u.role}</span></td>
-              <td>${u.enabled == 1 ? '<span class="badge badge-approved">启用</span>' : '<span class="badge badge-rejected">禁用</span>'}</td>
+              <td><span class="badge badge-approved">${t(ROLE_LABELS[u.role] || u.role)}</span></td>
+              <td>${u.enabled == 1 ? `<span class="badge badge-approved" data-i18n="common.enabled">启用</span>` : `<span class="badge badge-rejected" data-i18n="common.disabled">禁用</span>`}</td>
               <td class="text-sm text-muted">${u.created_at || '-'}</td>
               <td class="flex gap-8">
-                <button class="btn btn-sm btn-secondary" onclick="resetPassword('${u.username}')">重置密码</button>
+                <button class="btn btn-sm btn-secondary" onclick="resetPassword('${u.username}')" data-i18n="user.resetPwd">重置密码</button>
                 ${u.username === 'admin'
-                  ? '<span class="badge badge-auto" title="系统内置管理员，永久使能不可禁用">永久启用</span>'
-                  : `<button class="btn btn-sm ${u.enabled == 1 ? 'btn-secondary' : 'btn-primary'}" onclick="toggleUserEnabled('${u.username}', ${u.enabled == 1 ? 'false' : 'true'})">${u.enabled == 1 ? '禁用' : '启用'}</button>
-                     <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.username}')">删除</button>`}
+                  ? '<span class="badge badge-auto" data-i18n="user.permanent">永久启用</span>'
+                  : `<button class="btn btn-sm ${u.enabled == 1 ? 'btn-secondary' : 'btn-primary'}" onclick="toggleUserEnabled('${u.username}', ${u.enabled == 1 ? 'false' : 'true'})">${u.enabled == 1 ? t('common.disable') : t('common.enable')}</button>
+                     <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.username}')" data-i18n="common.delete">删除</button>`}
               </td>
             </tr>`).join('')}
           </tbody>
         </table>
       </div>
     `;
+    applyI18n();
   } catch (e) {
-    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+    document.getElementById('content').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
   }
 }
 
 function showCreateUser() {
-  document.getElementById('modalTitle').textContent = '新建本地用户';
+  document.getElementById('modalTitle').textContent = t('user.createTitle');
   document.getElementById('modalBody').innerHTML = `
-    <div class="form-group mb-8"><label>用户名 *</label><input type="text" id="newUsername" placeholder="登录用户名"></div>
-    <div class="form-group mb-8"><label>密码 *</label><input type="password" id="newPassword" placeholder="至少6位"></div>
-    <div class="form-group mb-8"><label>显示名</label><input type="text" id="newDisplayName" placeholder="如：张三"></div>
-    <div class="form-group mb-8"><label>邮箱</label><input type="email" id="newEmail" placeholder="user@company.com"></div>
-    <div class="form-group"><label>角色</label>
+    <div class="form-group mb-8"><label data-i18n="user.username">用户名 *</label><input type="text" id="newUsername" placeholder="${t('user.usernamePh')}"></div>
+    <div class="form-group mb-8"><label data-i18n="user.password">密码 *</label><input type="password" id="newPassword" placeholder="${t('user.passwordPh')}"></div>
+    <div class="form-group mb-8"><label data-i18n="user.displayName">显示名</label><input type="text" id="newDisplayName" placeholder="${t('user.displayNamePh')}"></div>
+    <div class="form-group mb-8"><label data-i18n="user.email">邮箱</label><input type="email" id="newEmail" placeholder="${t('user.emailPh')}"></div>
+    <div class="form-group"><label data-i18n="user.role">角色</label>
       <select id="newRole">
-        <option value="internal-user">普通用户（审批权限请在审批人配置中授予）</option>
+        <option value="internal-user" data-i18n="user.roleInternal">普通用户（审批权限请在审批人配置中授予）</option>
       </select>
     </div>
   `;
   document.getElementById('modalFooter').innerHTML = `
-    <button class="btn btn-secondary" onclick="closeModal()">取消</button>
-    <button class="btn btn-primary" onclick="createUser()">创建</button>
+    <button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.cancel">取消</button>
+    <button class="btn btn-primary" onclick="createUser()" data-i18n="common.create">创建</button>
   `;
+  applyI18n();
   openModal();
 }
 
 async function createUser() {
   const username = document.getElementById('newUsername').value.trim();
   const password = document.getElementById('newPassword').value;
-  if (!username || !password) { toast('用户名和密码不能为空', 'error'); return; }
+  if (!username || !password) { toast(t('err.requireUserPwd'), 'error'); return; }
   try {
     await api('/api/admin/local-users', {
       method: 'POST',
@@ -799,44 +1066,44 @@ async function createUser() {
         role: document.getElementById('newRole').value
       }
     });
-    toast('用户创建成功', 'success');
+    toast(t('toast.createSuccess'), 'success');
     closeModal();
     renderUsers();
   } catch (e) {
-    toast(`创建失败: ${e.message}`, 'error');
+    toast(t('toast.createFail', e.message), 'error');
   }
 }
 
 async function resetPassword(username) {
-  if (!confirm(`确定重置用户 "${username}" 的密码？`)) return;
+  if (!confirm(t('user.confirmReset', username))) return;
   try {
     const data = await api(`/api/admin/local-users/${username}/reset-password`, { method: 'POST' });
-    toast(data.message || '密码已重置', 'success');
+    toast(data.message || t('toast.resetSuccess'), 'success');
   } catch (e) {
-    toast(`重置失败: ${e.message}`, 'error');
+    toast(t('toast.resetFail', e.message), 'error');
   }
 }
 
 async function deleteUser(username) {
-  if (!confirm(`确定删除用户 "${username}"？此操作不可恢复。`)) return;
+  if (!confirm(t('user.confirmDelete', username))) return;
   try {
     await api(`/api/admin/local-users/${username}`, { method: 'DELETE' });
-    toast('用户已删除', 'success');
+    toast(t('toast.deleteSuccess'), 'success');
     renderUsers();
   } catch (e) {
-    toast(`删除失败: ${e.message}`, 'error');
+    toast(t('toast.deleteFail', e.message), 'error');
   }
 }
 
 async function toggleUserEnabled(username, enabled) {
-  const action = enabled ? '启用' : '禁用';
-  if (!confirm(`确定${action}用户 "${username}"？`)) return;
+  const action = enabled ? t('common.enable') : t('common.disable');
+  if (!confirm(t('user.confirmToggle', action, username))) return;
   try {
     const data = await api(`/api/admin/local-users/${username}/enabled`, { method: 'PUT', body: { enabled } });
-    toast(data.message || '操作成功', 'success');
+    toast(data.message || t('toast.toggleSuccess'), 'success');
     renderUsers();
   } catch (e) {
-    toast(`操作失败: ${e.message}`, 'error');
+    toast(t('toast.toggleFail', e.message), 'error');
   }
 }
 
@@ -846,62 +1113,64 @@ async function toggleUserEnabled(username, enabled) {
 async function renderPartners() {
   try {
     const partners = await api('/api/admin/partners');
-    document.getElementById('pageActions').innerHTML = '<button class="btn btn-primary" onclick="showCreatePartner()">+ 新增合作方</button>';
+    document.getElementById('pageActions').innerHTML = '<button class="btn btn-primary" onclick="showCreatePartner()" data-i18n="partner.newBtn">+ 新增合作方</button>';
     document.getElementById('content').innerHTML = `
       <div class="card">
-        <div class="card-title">合作方管理（白名单）</div>
-        <div class="text-sm text-muted" style="margin-bottom:12px;">
+        <div class="card-title" data-i18n="partner.title">合作方管理（白名单）</div>
+        <div class="text-sm text-muted" style="margin-bottom:12px;" data-i18n="partner.hint">
           合作方提交文件时一级审批即可（非合作方需二级审批）。禁用后不参与自动判定，也不会出现在提交表单的合作方下拉中。<br>
           合作方需在系统管理→合作方管理中手工配置维护；提交时若选择合作方但名称不在清单，将自动加入清单（信任模式，PMF 后视需要收紧）。
         </div>
         <table>
-          <thead><tr><th>名称</th><th>联系人</th><th>邮箱</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+          <thead><tr><th data-i18n="partner.name">名称</th><th data-i18n="partner.contact">联系人</th><th data-i18n="partner.email">邮箱</th><th data-i18n="common.status">状态</th><th data-i18n="user.createdAt">创建时间</th><th data-i18n="common.actions">操作</th></tr></thead>
           <tbody>
             ${partners.length === 0
-              ? '<tr><td colspan="6" class="empty">暂无合作方，请点击右上角"+ 新增合作方"进行配置</td></tr>'
+              ? `<tr><td colspan="6" class="empty" data-i18n="partner.empty">暂无合作方，请点击右上角"+ 新增合作方"进行配置</td></tr>`
               : partners.map(p => `<tr>
                   <td>${p.name}</td>
                   <td>${p.contact || '-'}</td>
                   <td class="text-sm text-muted">${p.email || '-'}</td>
-                  <td>${p.enabled == 1 ? '<span class="badge badge-approved">启用</span>' : '<span class="badge badge-rejected">禁用</span>'}</td>
+                  <td>${p.enabled == 1 ? `<span class="badge badge-approved" data-i18n="common.enabled">启用</span>` : `<span class="badge badge-rejected" data-i18n="common.disabled">禁用</span>`}</td>
                   <td class="text-sm text-muted">${p.created_at || '-'}</td>
                   <td class="flex gap-8">
-                    <button class="btn btn-sm ${p.enabled == 1 ? 'btn-secondary' : 'btn-primary'}" onclick="togglePartnerEnabled('${p.id}', ${p.enabled == 1 ? 'false' : 'true'})">${p.enabled == 1 ? '禁用' : '启用'}</button>
-                    <button class="btn btn-sm btn-danger" onclick="deletePartner('${p.id}', '${p.name}')">删除</button>
+                    <button class="btn btn-sm ${p.enabled == 1 ? 'btn-secondary' : 'btn-primary'}" onclick="togglePartnerEnabled('${p.id}', ${p.enabled == 1 ? 'false' : 'true'})">${p.enabled == 1 ? t('common.disable') : t('common.enable')}</button>
+                    <button class="btn btn-sm btn-danger" onclick="deletePartner('${p.id}', '${p.name}')" data-i18n="common.delete">删除</button>
                   </td>
                 </tr>`).join('')}
           </tbody>
         </table>
       </div>
     `;
+    applyI18n();
   } catch (e) {
-    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+    document.getElementById('content').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
   }
 }
 
 function showCreatePartner() {
-  document.getElementById('modalTitle').textContent = '新增合作方';
+  document.getElementById('modalTitle').textContent = t('partner.createTitle');
   document.getElementById('modalBody').innerHTML = `
-    <div class="form-group mb-8"><label>合作方名称 *</label><input type="text" id="partnerName" placeholder="如：XX科技有限公司"></div>
-    <div class="form-group mb-8"><label>联系人</label><input type="text" id="partnerContact" placeholder="如：张三"></div>
-    <div class="form-group mb-8"><label>邮箱</label><input type="email" id="partnerEmail" placeholder="如：contact@partner.com"></div>
-    <div class="form-group"><label>初始状态</label>
+    <div class="form-group mb-8"><label data-i18n="partner.name">合作方名称 *</label><input type="text" id="partnerName" placeholder="${t('partner.namePh')}"></div>
+    <div class="form-group mb-8"><label data-i18n="partner.contact">联系人</label><input type="text" id="partnerContact" placeholder="${t('partner.contactPh')}"></div>
+    <div class="form-group mb-8"><label data-i18n="partner.email">邮箱</label><input type="email" id="partnerEmail" placeholder="${t('partner.emailPh')}"></div>
+    <div class="form-group"><label data-i18n="partner.initialState">初始状态</label>
       <select id="partnerEnabled">
-        <option value="1">启用</option>
-        <option value="0">禁用</option>
+        <option value="1" data-i18n="common.enabled">启用</option>
+        <option value="0" data-i18n="common.disabled">禁用</option>
       </select>
     </div>
   `;
   document.getElementById('modalFooter').innerHTML = `
-    <button class="btn btn-secondary" onclick="closeModal()">取消</button>
-    <button class="btn btn-primary" onclick="createPartner()">创建</button>
+    <button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.cancel">取消</button>
+    <button class="btn btn-primary" onclick="createPartner()" data-i18n="common.create">创建</button>
   `;
+  applyI18n();
   openModal();
 }
 
 async function createPartner() {
   const name = document.getElementById('partnerName').value.trim();
-  if (!name) { toast('合作方名称不能为空', 'error'); return; }
+  if (!name) { toast(t('err.requirePartnerName'), 'error'); return; }
   try {
     await api('/api/admin/partners', {
       method: 'POST',
@@ -912,34 +1181,34 @@ async function createPartner() {
         enabled: document.getElementById('partnerEnabled').value === '1'
       }
     });
-    toast('合作方创建成功', 'success');
+    toast(t('toast.partnerCreate'), 'success');
     closeModal();
     renderPartners();
   } catch (e) {
-    toast(`创建失败: ${e.message}`, 'error');
+    toast(t('toast.createFail', e.message), 'error');
   }
 }
 
 async function togglePartnerEnabled(id, enabled) {
-  const action = enabled ? '启用' : '禁用';
-  if (!confirm(`确定${action}该合作方？`)) return;
+  const action = enabled ? t('common.enable') : t('common.disable');
+  if (!confirm(t('partner.confirmToggle', action))) return;
   try {
     const data = await api(`/api/admin/partners/${id}/enabled`, { method: 'PUT', body: { enabled } });
-    toast(data.message || '操作成功', 'success');
+    toast(data.message || t('toast.toggleSuccess'), 'success');
     renderPartners();
   } catch (e) {
-    toast(`操作失败: ${e.message}`, 'error');
+    toast(t('toast.toggleFail', e.message), 'error');
   }
 }
 
 async function deletePartner(id, name) {
-  if (!confirm(`确定删除合作方 "${name}"？此操作不可恢复。`)) return;
+  if (!confirm(t('partner.confirmDelete', name))) return;
   try {
     await api(`/api/admin/partners/${id}`, { method: 'DELETE' });
-    toast('合作方已删除', 'success');
+    toast(t('toast.deleteSuccess'), 'success');
     renderPartners();
   } catch (e) {
-    toast(`删除失败: ${e.message}`, 'error');
+    toast(t('toast.deleteFail', e.message), 'error');
   }
 }
 
@@ -955,68 +1224,69 @@ async function renderConfig() {
     window._featureRules = rules;  // 供编辑弹窗使用
     document.getElementById('content').innerHTML = `
       <div class="card">
-        <div class="card-title">系统配置</div>
+        <div class="card-title" data-i18n="config.title">系统配置</div>
         <div class="form-row">
-          <div class="form-group"><label>应用名称</label><input type="text" id="cfg_app_name" value="${config.app_name || 'SecureTrans'}"></div>
-          <div class="form-group"><label>免审批开关</label>
+          <div class="form-group"><label data-i18n="config.appName">应用名称</label><input type="text" id="cfg_app_name" value="${config.app_name || 'SecureTrans'}"></div>
+          <div class="form-group"><label data-i18n="config.autoApproval">免审批开关</label>
             <select id="cfg_auto_approval">
-              <option value="true" ${config.auto_approval_enabled === 'true' ? 'selected' : ''}>开启</option>
-              <option value="false" ${config.auto_approval_enabled === 'false' ? 'selected' : ''}>关闭</option>
+              <option value="true" ${config.auto_approval_enabled === 'true' ? 'selected' : ''} data-i18n="config.on">开启</option>
+              <option value="false" ${config.auto_approval_enabled === 'false' ? 'selected' : ''} data-i18n="config.off">关闭</option>
             </select>
           </div>
-          <div class="form-group"><label>默认有效期（天）</label><input type="number" id="cfg_default_expiry" value="${config.default_expiry_days || 7}"></div>
-          <div class="form-group"><label>最大文件大小（MB）</label><input type="number" id="cfg_max_size" value="${config.max_file_size_mb || 800}"></div>
+          <div class="form-group"><label data-i18n="config.defaultExpiry">默认有效期（天）</label><input type="number" id="cfg_default_expiry" value="${config.default_expiry_days || 7}"></div>
+          <div class="form-group"><label data-i18n="config.maxSize">最大文件大小（MB）</label><input type="number" id="cfg_max_size" value="${config.max_file_size_mb || 800}"></div>
         </div>
-        <button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
-        <button class="btn btn-secondary" style="margin-left:8px;" onclick="triggerCleanup()">手动触发过期清理</button>
+        <button class="btn btn-primary" onclick="saveConfig()" data-i18n="config.save">保存配置</button>
+        <button class="btn btn-secondary" style="margin-left:8px;" onclick="triggerCleanup()" data-i18n="config.cleanup">手动触发过期清理</button>
       </div>
       <div class="card">
-        <div class="card-title">特征码规则（匹配的文件可免审批）
-          <button class="btn btn-primary btn-sm" style="float:right;" onclick="openRuleModal()">+ 新增规则</button>
+        <div class="card-title"><span data-i18n="config.rulesTitle">特征码规则（匹配的文件可免审批）</span>
+          <button class="btn btn-primary btn-sm" style="float:right;" onclick="openRuleModal()" data-i18n="config.newRule">+ 新增规则</button>
         </div>
         <table>
-          <thead><tr><th>规则名称</th><th>类型</th><th>匹配模式</th><th>状态</th><th>操作</th></tr></thead>
+          <thead><tr><th data-i18n="config.ruleName">规则名称</th><th data-i18n="config.ruleType">类型</th><th data-i18n="config.pattern">匹配模式</th><th data-i18n="common.status">状态</th><th data-i18n="common.actions">操作</th></tr></thead>
           <tbody>
             ${rules.map(r => `<tr>
               <td>${r.name}</td>
-              <td>${r.rule_type === 'extension' ? '文件扩展名' : r.rule_type === 'filename' ? '文件名正则' : '二进制头'}</td>
+              <td>${r.rule_type === 'extension' ? t('config.typeExtension') : r.rule_type === 'filename' ? t('config.typeFilename') : t('config.typeBinary')}</td>
               <td class="text-sm">${r.pattern}</td>
-              <td>${r.enabled ? '<span class="badge badge-approved">启用</span>' : '<span class="badge badge-archived">禁用</span>'}</td>
+              <td>${r.enabled ? `<span class="badge badge-approved" data-i18n="common.enabled">启用</span>` : `<span class="badge badge-archived" data-i18n="common.disabled">禁用</span>`}</td>
               <td>
-                <button class="btn btn-sm ${r.enabled ? 'btn-secondary' : 'btn-primary'}" onclick="toggleRule('${r.id}')">${r.enabled ? '禁用' : '启用'}</button>
-                <button class="btn btn-sm btn-secondary" onclick="openRuleModal('${r.id}')" style="margin-left:4px;">编辑</button>
-                <button class="btn btn-sm btn-danger" onclick="deleteRule('${r.id}')" style="margin-left:4px;">删除</button>
+                <button class="btn btn-sm ${r.enabled ? 'btn-secondary' : 'btn-primary'}" onclick="toggleRule('${r.id}')">${r.enabled ? t('common.disable') : t('common.enable')}</button>
+                <button class="btn btn-sm btn-secondary" onclick="openRuleModal('${r.id}')" style="margin-left:4px;" data-i18n="common.edit">编辑</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteRule('${r.id}')" style="margin-left:4px;" data-i18n="common.delete">删除</button>
               </td>
             </tr>`).join('')}
           </tbody>
         </table>
-        <p class="text-sm text-muted mt-8">总开关在上方"免审批总开关"控制；每个规则可单独启用/禁用。匹配逻辑：总开关开启 + 规则启用 + 文件匹配规则 → 可免审批。</p>
+        <p class="text-sm text-muted mt-8" data-i18n="config.ruleHint">总开关在上方"免审批总开关"控制；每个规则可单独启用/禁用。匹配逻辑：总开关开启 + 规则启用 + 文件匹配规则 → 可免审批。</p>
       </div>
 
       <!-- 特征码规则编辑弹窗 -->
       <div id="ruleModal" class="modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
         <div class="modal-content" style="background:#fff;padding:24px;border-radius:12px;width:480px;max-width:90%;">
-          <h3 id="ruleModalTitle">新增特征码规则</h3>
+          <h3 id="ruleModalTitle" data-i18n="config.ruleModalNew">新增特征码规则</h3>
           <input type="hidden" id="rule_id">
-          <div class="form-group"><label>规则名称</label><input type="text" id="rule_name" placeholder="如：PDF文档"></div>
-          <div class="form-group"><label>规则类型</label>
+          <div class="form-group"><label data-i18n="config.ruleNameLbl">规则名称</label><input type="text" id="rule_name" placeholder="${t('config.ruleNamePh')}"></div>
+          <div class="form-group"><label data-i18n="config.ruleTypeLbl">规则类型</label>
             <select id="rule_type">
-              <option value="extension">文件扩展名</option>
-              <option value="filename">文件名正则</option>
-              <option value="binary">二进制头（hex:前缀或字符串）</option>
+              <option value="extension" data-i18n="config.typeExtension">文件扩展名</option>
+              <option value="filename" data-i18n="config.typeFilename">文件名正则</option>
+              <option value="binary" data-i18n="config.typeBinaryDetail">二进制头（hex:前缀或字符串）</option>
             </select>
           </div>
-          <div class="form-group"><label>匹配模式</label><input type="text" id="rule_pattern" placeholder="如：.pdf 或 hex:504B0304"></div>
-          <div class="form-group"><label><input type="checkbox" id="rule_enabled" checked> 启用</label></div>
+          <div class="form-group"><label data-i18n="config.rulePattern">匹配模式</label><input type="text" id="rule_pattern" placeholder="${t('config.rulePatternPh')}"></div>
+          <div class="form-group"><label><input type="checkbox" id="rule_enabled" checked><span data-i18n="config.ruleEnabled"> 启用</span></label></div>
           <div style="text-align:right;margin-top:16px;">
-            <button class="btn btn-secondary" onclick="closeRuleModal()">取消</button>
-            <button class="btn btn-primary" onclick="saveRule()" style="margin-left:8px;">保存</button>
+            <button class="btn btn-secondary" onclick="closeRuleModal()" data-i18n="common.cancel">取消</button>
+            <button class="btn btn-primary" onclick="saveRule()" style="margin-left:8px;" data-i18n="common.save">保存</button>
           </div>
         </div>
       </div>
     `;
+    applyI18n();
   } catch (e) {
-    document.getElementById('content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+    document.getElementById('content').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
   }
 }
 
@@ -1031,17 +1301,18 @@ async function saveConfig() {
         max_file_size_mb: document.getElementById('cfg_max_size').value
       }
     });
-    toast('配置已保存', 'success');
+    toast(t('toast.configSaved'), 'success');
   } catch (e) {
-    toast(`保存失败: ${e.message}`, 'error');
+    toast(t('toast.saveFail', e.message), 'error');
   }
 }
 
 async function triggerCleanup() {
   try {
-    const data = await api('/api/admin/cleanup-expired', { method: 'POST' });    toast(data.message || '清理完成', 'success');
+    const data = await api('/api/admin/cleanup-expired', { method: 'POST' });
+    toast(data.message || t('toast.cleanupDone'), 'success');
   } catch (e) {
-    toast(`清理失败: ${e.message}`, 'error');
+    toast(t('toast.cleanupFail', e.message), 'error');
   }
 }
 
@@ -1049,25 +1320,25 @@ async function triggerCleanup() {
 async function toggleRule(ruleId) {
   try {
     await api(`/api/admin/feature-rules/${ruleId}/toggle`, { method: 'POST' });
-    toast('规则状态已切换', 'success');
+    toast(t('toast.ruleToggled'), 'success');
     loadConfig();
-  } catch (e) { toast(`操作失败: ${e.message}`, 'error'); }
+  } catch (e) { toast(t('toast.toggleFail', e.message), 'error'); }
 }
 
 async function deleteRule(ruleId) {
-  if (!confirm('确定删除该特征码规则？')) return;
+  if (!confirm(t('confirm.deleteRule'))) return;
   try {
     await api(`/api/admin/feature-rules/${ruleId}`, { method: 'DELETE' });
-    toast('规则已删除', 'success');
+    toast(t('toast.ruleDeleted'), 'success');
     loadConfig();
-  } catch (e) { toast(`删除失败: ${e.message}`, 'error'); }
+  } catch (e) { toast(t('toast.deleteFail', e.message), 'error'); }
 }
 
 function openRuleModal(ruleId = null) {
   document.getElementById('ruleModal').style.display = 'flex';
   document.getElementById('rule_id').value = ruleId || '';
   if (ruleId) {
-    document.getElementById('ruleModalTitle').textContent = '编辑特征码规则';
+    document.getElementById('ruleModalTitle').textContent = t('config.ruleModalEdit');
     // 从当前页面表格数据中查找（简化：通过全局变量）
     const rule = (window._featureRules || []).find(r => r.id === ruleId);
     if (rule) {
@@ -1077,7 +1348,7 @@ function openRuleModal(ruleId = null) {
       document.getElementById('rule_enabled').checked = !!rule.enabled;
     }
   } else {
-    document.getElementById('ruleModalTitle').textContent = '新增特征码规则';
+    document.getElementById('ruleModalTitle').textContent = t('config.ruleModalNew');
     document.getElementById('rule_name').value = '';
     document.getElementById('rule_type').value = 'extension';
     document.getElementById('rule_pattern').value = '';
@@ -1103,10 +1374,10 @@ async function saveRule() {
     } else {
       await api('/api/admin/feature-rules', { method: 'POST', body });
     }
-    toast('规则已保存', 'success');
+    toast(t('toast.ruleSaved'), 'success');
     closeRuleModal();
     loadConfig();
-  } catch (e) { toast(`保存失败: ${e.message}`, 'error'); }
+  } catch (e) { toast(t('toast.saveFail', e.message), 'error'); }
 }
 
 // ============================================================
@@ -1115,11 +1386,12 @@ async function saveRule() {
 async function renderAudit() {
   document.getElementById('content').innerHTML = `
     <div class="tabs">
-      <button class="tab-btn active" id="auditTabDetail" onclick="switchAuditTab('detail')">📋 明细</button>
-      <button class="tab-btn" id="auditTabStats" onclick="switchAuditTab('stats')">📊 统计</button>
+      <button class="tab-btn active" id="auditTabDetail" onclick="switchAuditTab('detail')" data-i18n="audit.titleDetail">📋 明细</button>
+      <button class="tab-btn" id="auditTabStats" onclick="switchAuditTab('stats')" data-i18n="audit.titleStats">📊 统计</button>
     </div>
     <div id="auditTabContent"></div>
   `;
+  applyI18n();
   renderAuditDetail();
 }
 
@@ -1135,9 +1407,9 @@ async function renderAuditDetail() {
     const logs = await api('/api/audit-logs?limit=200');
     document.getElementById('auditTabContent').innerHTML = `
       <div class="card">
-        <div class="card-title">审计日志明细 (最近 ${logs.length} 条)</div>
+        <div class="card-title">${t('audit.detailTitle', logs.length)}</div>
         <table>
-          <thead><tr><th>时间</th><th>用户</th><th>操作</th><th>目标</th><th>详情</th><th>IP</th></tr></thead>
+          <thead><tr><th data-i18n="common.time">时间</th><th data-i18n="audit.user">用户</th><th data-i18n="audit.action">操作</th><th data-i18n="audit.target">目标</th><th data-i18n="audit.detail">详情</th><th>IP</th></tr></thead>
           <tbody>
             ${logs.map(l => `<tr>
               <td class="text-sm text-muted">${l.time}</td>
@@ -1151,8 +1423,9 @@ async function renderAuditDetail() {
         </table>
       </div>
     `;
+    applyI18n();
   } catch (e) {
-    document.getElementById('auditTabContent').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+    document.getElementById('auditTabContent').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
   }
 }
 
@@ -1162,19 +1435,20 @@ async function renderAuditStats() {
   const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   document.getElementById('auditTabContent').innerHTML = `
     <div class="card">
-      <div class="card-title">审计统计（人员 × 文件类型 × 每日）</div>
+      <div class="card-title" data-i18n="audit.statsTitle">审计统计（人员 × 文件类型 × 每日）</div>
       <div class="form-row" style="align-items:end;">
-        <div class="form-group"><label>起始日期</label><input type="date" id="statFrom" value="${fmt(from)}"></div>
-        <div class="form-group"><label>结束日期</label><input type="date" id="statTo" value="${fmt(today)}"></div>
-        <div class="form-group"><button class="btn btn-primary" onclick="loadAuditStats()">查询</button></div>
+        <div class="form-group"><label data-i18n="audit.from">起始日期</label><input type="date" id="statFrom" value="${fmt(from)}"></div>
+        <div class="form-group"><label data-i18n="audit.to">结束日期</label><input type="date" id="statTo" value="${fmt(today)}"></div>
+        <div class="form-group"><button class="btn btn-primary" onclick="loadAuditStats()" data-i18n="audit.query">查询</button></div>
       </div>
       <div class="tabs" style="margin:12px 0 8px;">
-        <button class="tab-btn active" id="statViewType" onclick="switchStatView('type')">按文件类型</button>
-        <button class="tab-btn" id="statViewDay" onclick="switchStatView('day')">按每日</button>
+        <button class="tab-btn active" id="statViewType" onclick="switchStatView('type')" data-i18n="audit.byType">按文件类型</button>
+        <button class="tab-btn" id="statViewDay" onclick="switchStatView('day')" data-i18n="audit.byDay">按每日</button>
       </div>
       <div id="statMatrix"></div>
     </div>
   `;
+  applyI18n();
   loadAuditStats();
 }
 
@@ -1186,7 +1460,7 @@ async function loadAuditStats() {
     _auditStats = await api(`/api/audit-logs/stats?from=${from}&to=${to}`);
     renderStatMatrix();
   } catch (e) {
-    document.getElementById('statMatrix').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+    document.getElementById('statMatrix').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
   }
 }
 
@@ -1202,27 +1476,27 @@ function renderStatMatrix(view) {
   const activeView = document.getElementById('statViewType').classList.contains('active') ? 'type' : 'day';
   if (activeView === 'type') {
     // 人员 × 文件类型 矩阵
-    const head = `<tr><th>人员 / 文件类型</th>${s.types.map(t => `<th>${t}</th>`).join('')}<th>合计</th></tr>`;
+    const head = `<tr><th data-i18n="audit.personType">人员 / 文件类型</th>${s.types.map(t => `<th>${t}</th>`).join('')}<th data-i18n="common.total">合计</th></tr>`;
     const rows = s.users.map(u => {
       const row = s.byType[u] || {};
       const total = s.types.reduce((a, t) => a + (row[t] || 0), 0);
       return `<tr><td>${u}</td>${s.types.map(t => `<td>${row[t] || 0}</td>`).join('')}<td><strong>${total}</strong></td></tr>`;
     }).join('');
     document.getElementById('statMatrix').innerHTML = `
-      <div class="text-sm text-muted" style="margin-bottom:8px;">统计范围：${s.from} 至 ${s.to}</div>
+      <div class="text-sm text-muted" style="margin-bottom:8px;">${t('audit.range', s.from, s.to)}</div>
       <table>
         <thead>${head}</thead><tbody>${rows}</tbody>
       </table>`;
   } else {
     // 人员 × 每日 矩阵（横向滚动）
-    const head = `<tr><th>人员 / 日期</th>${s.days.map(d => `<th class="text-sm">${d.slice(5)}</th>`).join('')}<th>合计</th></tr>`;
+    const head = `<tr><th data-i18n="audit.personDay">人员 / 日期</th>${s.days.map(d => `<th class="text-sm">${d.slice(5)}</th>`).join('')}<th data-i18n="common.total">合计</th></tr>`;
     const rows = s.users.map(u => {
       const row = s.byDay[u] || {};
       const total = s.days.reduce((a, d) => a + (row[d] || 0), 0);
       return `<tr><td>${u}</td>${s.days.map(d => `<td>${row[d] || 0}</td>`).join('')}<td><strong>${total}</strong></td></tr>`;
     }).join('');
     document.getElementById('statMatrix').innerHTML = `
-      <div class="text-sm text-muted" style="margin-bottom:8px;">统计范围：${s.from} 至 ${s.to}（${s.days.length} 天）</div>
+      <div class="text-sm text-muted" style="margin-bottom:8px;">${t('audit.range', s.from, s.to)}${t('audit.days', s.days.length)}</div>
       <div style="overflow-x:auto;"><table>
         <thead>${head}</thead><tbody>${rows}</tbody>
       </table></div>`;

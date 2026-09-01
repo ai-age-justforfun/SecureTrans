@@ -36,6 +36,7 @@
 - **API调用**：使用 `fetch()`，`credentials: 'same-origin'`，JSON格式请求体
 - **样式**：简洁商务风格，蓝色主色调（#2563eb / #1e3a5f），不使用框架
 - **角色权限**：前端根据 `currentUser.role` 显示/隐藏菜单，但后端必须做权限校验（前端只做体验优化）
+- **i18n 双语**：全部界面中英双语（`I18N` 字典 zh/en + `t()` 取文案 + `data-i18n` 属性 + `applyI18n()` 统一渲染），右上角语言切换（localStorage 记忆，默认中文）；后端经 `after_request` 自动附加 `error_en`/`message_en`
 
 ### Git 提交规范
 
@@ -114,7 +115,7 @@ main ────●────●────●────●────  �
 1. **需求**：Sprint Planning，拆分Story，确认验收标准
 2. **设计**：复杂功能技术方案，API定义，ADR记录
 3. **开发**：编码 + 单元测试 + 每日站会
-4. **测试**：全量回归（`tests/test_api.py` 102项）+ Bug修复
+4. **测试**：全量回归（`tests/test_api.py` 163项）+ Bug修复
 5. **验证**：Sprint Review，PO验收，收集反馈
 6. **复盘**：Retrospective，输出迭代小结文档（`docs/07-psf-sprintN-retrospective.md`）
 
@@ -133,9 +134,10 @@ main ────●────●────●────●────  �
 ### 自动化测试
 
 - **测试脚本**：`tests/test_api.py`，使用Python标准库urllib，无额外依赖
-- **测试范围**：19大类102项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置）
+- **测试范围**：全量163项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置、i18n双语）
 - **运行方式**：先启动服务（`cd src && python app.py`），再 `cd tests && python test_api.py`，预期通过率100%
 - **新增功能**：必须在 test_api.py 中添加对应测试用例
+- **i18n 测试**：双语回归组覆盖后端 error_en/message_en、动态模板翻译、前端 I18N 字典资源检查
 
 ### 测试通过标准
 
@@ -160,7 +162,7 @@ main ────●────●────●────●────  �
 ### 部署脚本（infra/）
 
 - `infra/deploy.sh`：一键部署（9步自动化），必须在Linux服务器以root运行
-- `infra/verify.sh`：部署验证（102项全量测试），确认部署正确
+- `infra/verify.sh`：部署验证（163项全量测试），确认部署正确
 - `infra/nginx-securetrans.conf`：Nginx反向代理配置
 - `infra/securetrans.service`：systemd服务配置
 - 脚本必须使用LF换行，不能有CRLF
@@ -201,4 +203,4 @@ main ────●────●────●────●────  �
 
 ---
 
-*AGENTS.md v1.1 | 2026-08-27*
+*AGENTS.md v1.2 | 2026-09-01*

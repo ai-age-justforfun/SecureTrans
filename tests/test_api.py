@@ -1039,6 +1039,57 @@ except urllib.error.HTTPError as e:
 test("退出后访问受保护接口被重定向到登录页", code == 302, f"code={code}")
 
 # ============================================================
+# 14. i18n 双语（中英文界面支持，后端错误/成功消息附加 error_en/message_en）
+# ============================================================
+print("\n--- 14. i18n 双语 ---")
+
+# 重新登录 admin（前面已登出）
+code, data = request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+test("i18n: admin 重新登录", code == 200, f"code={code}")
+
+# 错误密码 -> error(中文) + error_en(英文)
+code, data = request('POST', '/api/auth/login', json_data={"username": "admin", "password": "wrong_i18n_pwd"})
+test("i18n: 错误密码返回中文 error", code == 401 and isinstance(data.get("error"), str) and data.get("error") != "", f"code={code}")
+test("i18n: 错误密码返回英文 error_en", code == 401 and isinstance(data.get("error_en"), str) and len(data.get("error_en", "")) > 0, f"error_en={data.get('error_en')}")
+test("i18n: error_en 为英文（不含中文）", code == 401 and not any('\u4e00' <= ch <= '\u9fff' for ch in data.get("error_en", "")), f"error_en={data.get('error_en')}")
+
+# 静态成功消息 -> message_en
+import random, string
+_i18n_suf = ''.join(random.choices(string.ascii_lowercase, k=6))
+code, data = request('POST', '/api/admin/local-users', json_data={
+    "username": f"i18n_{_i18n_suf}", "password": "Passw0rd!",
+    "displayName": "i18nTest", "email": "", "role": "internal-user"
+})
+test("i18n: 创建用户返回 message_en", code == 200 and len(data.get("message_en", "")) > 0, f"message_en={data.get('message_en')}")
+test("i18n: message_en 为英文（不含中文）", code == 200 and not any('\u4e00' <= ch <= '\u9fff' for ch in data.get("message_en", "")), f"message_en={data.get('message_en')}")
+
+# 动态模板消息 -> 重置密码 message_en 含英文
+code, data = request('POST', f'/api/admin/local-users/i18n_{_i18n_suf}/reset-password')
+test("i18n: 动态模板 message_en 翻译", code == 200 and "Password" in data.get("message_en", ""), f"message_en={data.get('message_en')}")
+
+# 清理测试用户
+code, data = request('DELETE', f'/api/admin/local-users/i18n_{_i18n_suf}')
+test("i18n: 清理测试用户", code == 200, f"code={code}")
+
+# 登录页静态资源可访问（双语界面资源存在性）
+import urllib.request as _ur
+try:
+    _resp = _ur.urlopen(BASE_URL + '/login')
+    _html = _resp.read().decode('utf-8')
+    test("i18n: 登录页包含语言切换按钮", 'langSwitch' in _html and 'switchLang' in _html)
+    test("i18n: 登录页包含双语字典", 'I18N_LOGIN' in _html and "'zh'" in _html and "'en'" in _html)
+except Exception as e:
+    test("i18n: 登录页资源检查", False, str(e))
+try:
+    _resp = _ur.urlopen(BASE_URL + '/static/index.html')
+    _html = _resp.read().decode('utf-8')
+    test("i18n: 主界面包含 I18N 字典", 'const I18N' in _html and "'zh'" in _html and "'en'" in _html)
+    test("i18n: 主界面包含语言切换函数", 'function switchLang' in _html and 'function applyI18n' in _html)
+    test("i18n: 主界面使用 data-i18n 属性", 'data-i18n=' in _html)
+except Exception as e:
+    test("i18n: 主界面资源检查", False, str(e))
+
+# ============================================================
 # 测试报告
 # ============================================================
 print("\n" + "=" * 70)
