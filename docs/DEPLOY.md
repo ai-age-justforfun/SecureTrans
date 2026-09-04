@@ -1,19 +1,20 @@
 # SecureTrans 部署指南
 
 > 版本：v2.1.0 | 日期：2026-09-04
-> 双模式部署：测试环境（本地/WSL）↔ 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
+> 唯一部署文档：测试环境（本地/WSL）↔ 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
+> 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
 ---
 
-## 一、双模式部署总览
+## 一、部署模式总览
 
 | 维度 | 测试环境 | 生产环境 |
 |------|---------|---------|
 | `DEPLOY_MODE` | `testing`（默认） | `production` |
 | 文件存储 | 本地磁盘 `./nas` | NAS 挂载 `/mnt/nas/securetrans` |
-| WSGI 服务器 | Flask 自带 `python app.py` | gunicorn `gunicorn app:app` |
+| WSGI 服务器 | Flask 自带 `python app.py` | Linux: gunicorn / Windows: waitress |
 | 反向代理 | 无，直接访问 8000 端口 | nginx 反向代理 + HTTPS |
-| 进程管理 | 前台 / nohup | systemd 服务 |
+| 进程管理 | 前台 / nohup | Linux: systemd / Windows: NSSM 或计划任务 |
 | AD 认证 | 默认关闭，用本地 admin | 按需开启 |
 | 适用场景 | 开发 / 功能验证 / PSF 原型 | PMF 试点 / 正式部署 |
 
@@ -63,7 +64,26 @@ python test_api.py    # 171项全通过
 
 ### 2.3 方式 B：WSL Rocky Linux（模拟生产环境）
 
-详见下方「三、WSL Rocky Linux 测试环境构建」。
+```powershell
+# 导入 Rocky WSL 镜像（微软无官方 Rocky 镜像，用 D:\iso 下的 Rocky-10-WSL 镜像）
+wsl --import rocky10-st D:\wsl\rocky10-securetrans D:\iso\Rocky-10-WSL-Base-10.1-20251116.0.x86_64.wsl
+wsl -d rocky10-st
+```
+
+```bash
+# 进入 WSL 后
+dnf install -y python3 python3-pip python3-devel gcc
+cp -r /mnt/c/Users/jinta/.doubao/lark-chats/2026-08-25/new-chat ~/securetrans
+cd ~/securetrans/src
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+python app.py    # 部署模式: testing
+```
+
+Windows 浏览器访问 http://localhost:8000（WSL2 自动端口转发）。运行测试：
+```bash
+cd ~/securetrans/tests && python3 test_api.py   # 171项全通过
+```
 
 ### 2.4 测试验证清单
 
@@ -81,230 +101,251 @@ python test_api.py    # 171项全通过
 
 ---
 
-## 三、WSL Rocky Linux 测试环境构建
+## 三、生产环境部署（封闭数据中心）—— Rocky 8.10 分阶段执行手册
 
-### 3.1 前置要求
+> 适用：新建 Rocky Linux 8.10 虚拟机服务器（可配置 mirrors 在线源，但**默认走离线包**）
+> 执行方式：**用户手工逐条执行**，每阶段有明确"通过标准"，测试不过不进下一阶段
+> 总览：阶段0 基础准备 → 阶段1 上传+离线依赖 → 阶段2 测试环境验证 → 阶段3 生产环境验证 → 阶段4 NAS → 阶段5 网络隔离 → 阶段6 手工验收+内部试用
 
-- Windows 10/11，已启用 WSL2
-- Rocky Linux WSL 镜像：`D:\iso\Rocky-10-WSL-Base-10.1-20251116.0.x86_64.wsl`
-- 项目代码在 Windows 本地（WSL 可通过 `/mnt/c/` 或 `/mnt/d/` 访问）
-
-### 3.2 导入 Rocky Linux WSL 镜像
-
-```powershell
-# 在 PowerShell 中执行
-# 创建 WSL 安装目录
-mkdir D:\wsl\rocky10-securetrans
-
-# 导入镜像（名称: rocky10-st，安装目录: D:\wsl\rocky10-securetrans，镜像: D:\iso\Rocky-10...wsl）
-wsl --import rocky10-st D:\wsl\rocky10-securetrans D:\iso\Rocky-10-WSL-Base-10.1-20251116.0.x86_64.wsl
-
-# 验证导入
-wsl -l -v
-# 应看到 rocky10-st 状态 Stopped
-
-# 启动并进入
-wsl -d rocky10-st
-```
-
-### 3.3 初始化 Rocky Linux 环境
+### 阶段0：服务器基础准备
 
 ```bash
-# 进入 WSL 后执行
+cat /etc/rocky-release                 # 确认 Rocky Linux release 8.10
+hostnamectl                            # 确认主机名、系统
+ip a                                   # 确认 IP（阶段5 会加第二块网卡）
+dnf repolist                           # 确认 mirrors 源 repo 可用
 
-# 1. 检查系统版本
-cat /etc/rocky-release
-# 预期: Rocky Linux release 10.1
+# 安装 Python 3.12（关键：Rocky 8 默认 python3=3.6，不满足 3.10+）
+dnf module enable -y python3.12
+dnf install -y python3.12 python3.12-pip python3.12-devel
+alternatives --set python3 /usr/bin/python3.12 2>/dev/null || true
+python3 --version          # 预期 Python 3.12.x
+python3 -m venv --help >/dev/null && echo "venv OK"
 
-# 2. 安装 Python 3.10+ 和基础工具（Rocky 10 默认 Python 3.12）
-dnf install -y python3 python3-pip python3-devel gcc
+# 基础工具
+dnf install -y tar gzip curl nginx git
+systemctl enable --now nginx 2>/dev/null || true
+
+# 防火墙（如启用）：内网联调先放行 8000，阶段5 后改由 Nginx 80/443 代理
+systemctl status firewalld --no-pager | head -3
+firewall-cmd --permanent --add-port=8000/tcp && firewall-cmd --reload
+```
+
+> 备选：若 module 里没有 3.12，可用 `dnf install -y python3.11`（离线 wheel 按 cp312 打包，若用 3.11 需另取对应 wheel，建议统一 3.12）。
+
+### 阶段1：上传部署包 + 离线安装依赖
+
+把 `securetrans-<当前版本>.tar.gz`（如 v2.1.0）从本地传到服务器（scp / U盘 / 堡垒机）：
+
+```bash
+scp securetrans-2.1.0.tar.gz root@<服务器IP>:/root/
+
+# 解压到安装目录
+mkdir -p /opt/securetrans
+cd /root
+tar xzf securetrans-2.1.0.tar.gz -C /opt/securetrans --strip-components=1
+ls /opt/securetrans        # 应看到 src/ tests/ infra/ docs/ offline-deps/ offline-deps-win/ README
+
+# 创建虚拟环境 + 离线安装依赖（离线 wheel 已内置 offline-deps/）
+cd /opt/securetrans/src
+python3 -m venv venv
+./venv/bin/pip install --no-index --find-links=/opt/securetrans/offline-deps -r requirements.txt
+./venv/bin/pip install --no-index --find-links=/opt/securetrans/offline-deps gunicorn==21.2.0
+
+# 验证（必须都成功）
+./venv/bin/python -c "import flask, flask_login, bcrypt, apscheduler, ldap3, gunicorn; print('依赖 OK:', flask.__version__)"
+```
+
+> **在线备选**（若服务器临时可上网）：`./venv/bin/pip install -r requirements.txt && ./venv/bin/pip install gunicorn`。离线包始终保留，数据中心部署首选离线。
+
+### 阶段2：测试环境部署 + 自动化测试（DEPLOY_MODE=testing）
+
+> 目的：先用最简模式（本地文件系统 + Flask 自带服务器）确认程序在服务器上能跑、171 项全过。
+
+```bash
+cd /opt/securetrans/src
+cp .env.testing .env
+grep -E '^(DEPLOY_MODE|NAS_ROOT)=' .env   # 应为 DEPLOY_MODE=testing, NAS_ROOT=./nas
+
+nohup ./venv/bin/python app.py > /tmp/st-testing.log 2>&1 &
+sleep 4
+curl -s http://127.0.0.1:8000/api/health
+# 预期: {"deployMode":"testing","status":"ok",...}
+
+cd /opt/securetrans/tests
+python3 test_api.py
+# 预期: 总计171 | 通过171 | 通过率100.0%
+```
+
+**通过标准**
+- [ ] 健康检查返回 `deployMode":"testing"`
+- [ ] 171 项测试 100% 通过
+- [ ] 浏览器访问 `http://<内网IP>:8000`，admin/Admin@123 登录（首次强制改密）
+
+### 阶段3：生产环境部署 + 自动化测试（DEPLOY_MODE=production）
+
+> 目的：切到生产模式（gunicorn + systemd），本地磁盘先当存储，验证生产形态全链路。
+> 也可直接用 `bash infra/deploy.sh` 一键部署（9 步自动化，等价于阶段0-3，root 执行）。
+
+```bash
+pkill -f 'app.py' || true
+sleep 1
+cd /opt/securetrans/src
+cp .env.production .env
+
+# 先用本地磁盘当存储（阶段4 再切 NAS）
+sed -i 's|^NAS_ROOT=.*|NAS_ROOT=/opt/securetrans/nas|' .env
+# 生成随机 SECRET_KEY
+SECRET=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+sed -i "s|^SECRET_KEY=.*|SECRET_KEY=${SECRET}|" .env
+grep -E '^(DEPLOY_MODE|NAS_ROOT|HOST|PORT|FLASK_DEBUG|SECRET_KEY)=' .env
+
+# 安装 systemd 服务（gunicorn 2 worker）
+cd /opt/securetrans
+cp infra/securetrans.service /etc/systemd/system/securetrans.service
+# 关键：本阶段 NAS_ROOT 是本地目录，systemd 的 ReadWritePaths 需放开（阶段4 再指向 /mnt/nas）
+sed -i 's|/mnt/nas/securetrans|/opt/securetrans/nas|' /etc/systemd/system/securetrans.service
+systemctl daemon-reload
+systemctl enable --now securetrans
+systemctl status securetrans --no-pager -l | head -15
+
+# 生产模式验证 + 全量自动化测试
+curl -s http://127.0.0.1:8000/api/health
+# 预期: {"deployMode":"production",...}
+systemctl is-active securetrans       # 预期 active
+cd /opt/securetrans/tests
+NAS_ROOT=/opt/securetrans/nas python3 test_api.py
+# 预期: 总计171 | 通过171 | 通过率100.0%
+```
+
+**通过标准**
+- [ ] systemd 服务 active，`deployMode":"production"`
+- [ ] 171 项测试 100% 通过（生产模式）
+- [ ] 确认 gunicorn 多 worker 无并发初始化报错
+- [ ] 首次访问初始化正常：`/opt/securetrans/data/securetrans.db`、`/opt/securetrans/nas/{staging,external,archive}` 自动创建
+
+### 阶段4：NAS 切换（本地磁盘 OK 后）
+
+> 前置：阶段3 全部通过。staging/external/archive 三个目录**必须在同一个文件系统**，os.rename 才能 0拷贝。
+
+```bash
+# 在 NAS 存储管理端（如 TrueNAS）创建 dataset，例如 securetrans，记录导出路径如 /mnt/tank/securetrans
+# 服务器上创建挂载点并挂载（NFS 示例）
+mkdir -p /mnt/nas/securetrans
+mount -t nfs <NAS_IP>:/mnt/tank/securetrans /mnt/nas/securetrans
+echo '<NAS_IP>:/mnt/tank/securetrans /mnt/nas/securetrans nfs defaults,_netdev 0 0' >> /etc/fstab
+
+# 迁移本地 nas 中已有数据（若需保留；全新环境可跳过）
+cp -a /opt/securetrans/nas/. /mnt/nas/securetrans/ 2>/dev/null || true
+
+# 切 NAS_ROOT + systemd ReadWritePaths 指回 NAS
+cd /opt/securetrans/src
+sed -i 's|^NAS_ROOT=.*|NAS_ROOT=/mnt/nas/securetrans|' .env
+sed -i 's|/opt/securetrans/nas|/mnt/nas/securetrans|' /etc/systemd/system/securetrans.service
+systemctl daemon-reload && systemctl restart securetrans
 
 # 验证
-python3 --version    # 需要 >= 3.10
-python3 -m venv --help
-
-# 3. 创建非 root 用户（可选，模拟生产环境）
-useradd -m -s /bin/bash devuser
-passwd devuser
-# 后续可以 su - devuser 切换
-
-# 4. 设置 WSL 默认用户（在 /etc/wsl.conf 中）
-cat > /etc/wsl.conf << 'EOF'
-[user]
-default=devuser
-
-[boot]
-systemd=true
-EOF
+curl -s http://127.0.0.1:8000/api/health   # production + ok
+df -h /mnt/nas/securetrans/staging /mnt/nas/securetrans/external /mnt/nas/securetrans/archive | awk '{print $1,$NF}'
+# 三行 Filesystem 必须相同
 ```
 
-退出 WSL 并重启使配置生效：
-```powershell
-wsl --terminate rocky10-st
-wsl -d rocky10-st
-```
+**通过标准**
+- [ ] NAS 三个目录同一文件系统
+- [ ] 生产模式在 NAS 上再跑 171 项自动化测试 100%
+- [ ] os.rename 0拷贝：上传→审批→摆渡 毫秒级
 
-### 3.4 在 WSL 中部署项目
+### 阶段5：网络隔离（双网卡 / 单网卡 geo 二选一）
+
+> 应用层网络面隔离（读 X-Network-Zone 头）已被 test_api.py 在本地 100% 覆盖；本阶段验证**真实网络隔离 + Nginx 头注入**。
+
+**5.1 双网卡模式**（物理隔离内外网两张网卡时）：
 
 ```bash
-# 方式1：从 Windows 磁盘复制项目（推荐，代码在 Windows 编辑，WSL 运行）
-cp -r /mnt/c/Users/jinta/.doubao/lark-chats/2026-08-25/new-chat ~/securetrans
-cd ~/securetrans
-
-# 方式2：从 Gitea 克隆（如果 WSL 能访问 Gitea）
-# git clone http://<gitea-ip>:3000/openwrtadmin/SecureTrans.git ~/securetrans
-# cd ~/securetrans
-
-# 部署到 src/
-cd src
-cp .env.testing .env
-
-# 创建虚拟环境并安装依赖
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# 启动服务
-python app.py
-# 预期看到: 部署模式: testing, 存储目录: ./nas
+# 虚拟机配置双网卡（VM 层手工完成）：添加第二块虚拟网卡（外网面），配置两块网卡 IP，确认路由
+cd /opt/securetrans
+cp infra/nginx-securetrans.conf /etc/nginx/conf.d/securetrans.conf
+vi /etc/nginx/conf.d/securetrans.conf
+# 修改：内网 server_name → securetrans.internal.<域名>；外网 server_name → securetrans.external.<域名>
+#       确认两个 server 分别绑定各自网卡 IP、proxy_set_header X-Network-Zone internal / external
+nginx -t && systemctl reload nginx
 ```
 
-在 Windows 浏览器访问 http://localhost:8000（WSL2 自动端口转发）。
-
-### 3.5 在 WSL 中运行全量测试
+**5.2 单网卡模式**（只有一张网卡、防火墙放行内外网访问同一地址时）：
 
 ```bash
-# 另一个 WSL 终端
-cd ~/securetrans/tests
-python3 test_api.py
-# 预期: 171项全部通过，通过率100%
+cd /opt/securetrans
+cp infra/nginx-securetrans-single.conf /etc/nginx/conf.d/securetrans.conf
+vi /etc/nginx/conf.d/securetrans.conf
+# 修改：server_name → 实际域名/IP；geo $network_zone 中的网段 → 实际内网网段（与 INTERNAL_CIDRS 一致）
+nginx -t && systemctl reload nginx
 ```
 
-### 3.6 WSL 中验证生产模式（可选）
+应用层 .env 同步：`NETWORK_MODE=single` + `INTERNAL_CIDRS=<内网网段>`。无 Nginx 直连（Windows 本地 / 单网卡直连）时应用层按网段兜底，行为一致。
+
+**5.3 验收**：按 `09-preprod-verification.md` 执行——内网面完整功能、外网面仅下载、外网管理接口 403、Nginx 头注入确认、防火墙两网卡规则。
+
+**通过标准**
+- [ ] 内网地址访问管理面正常
+- [ ] 外网地址仅能下载，管理接口 403
+- [ ] `nginx -T` 确认头注入（双网卡：两个 server；单网卡：geo 网段）
+
+### 阶段6：手工验收 + 内部试用发布
+
+**6.1 清理初始测试数据（重要）**：自动化测试会在数据库写入测试数据，内部试用前恢复干净初始状态：
 
 ```bash
-cd ~/securetrans/src
-cp .env.production .env
-# 修改 NAS_ROOT 为本地路径（WSL 中没有 NAS，用本地磁盘模拟）
-# sed -i 's|NAS_ROOT=/mnt/nas/securetrans|NAS_ROOT=/home/devuser/securetrans/nas|' .env
-sed -i 's|^NAS_ROOT=.*|NAS_ROOT=/home/devuser/securetrans/nas|' .env
-
-# 安装 gunicorn
-pip install gunicorn
-
-# 用 gunicorn 启动（模拟生产）
-gunicorn -w 2 -b 0.0.0.0:8000 -t 300 app:app
-
-# 验证健康检查（应返回 deployMode=production）
-curl http://localhost:8000/api/health
+# 方式A：重置数据库（推荐，全新开始）
+systemctl stop securetrans
+rm -f /opt/securetrans/data/securetrans.db /opt/securetrans/data/securetrans.log
+rm -rf /opt/securetrans/nas/staging/* /opt/securetrans/nas/external/* /opt/securetrans/nas/archive/*
+systemctl start securetrans
+# 首次启动自动重建 admin/Admin@123、默认系统配置、特征码模板(默认禁用)
+# 方式B：仅清理业务数据（保留配置，用 Web 界面删测试用户/合作方/特征码）
 ```
 
-### 3.7 WSL 常用命令
+**6.2 配置正式数据**（Web 界面，admin 登录）：
+- [ ] 修改 admin 初始密码
+- [ ] 创建正式用户（普通用户）+ 设置是否使能（生产默认关闭，admin 永久使能）
+- [ ] 配置一级/二级审批人
+- [ ] 配置合作方白名单（是否使能）
+- [ ] 按需启用特征码规则（默认模板全禁用，按需打开）
+- [ ] 确认系统配置：免审批总开关、默认有效期 7 天、最大文件 800MB
 
-```powershell
-# 查看已安装的发行版
-wsl -l -v
+**6.3 手工验收清单**：
 
-# 启动指定发行版
-wsl -d rocky10-st
+| # | 验收项 | 结果 |
+|---|--------|------|
+| 1 | admin 登录 + 强制改密 | ☐ |
+| 2 | 普通用户内网面菜单（文件提交/我的提交/外网下载） | ☐ |
+| 3 | 外网面仅下载、管理菜单不可见 | ☐ |
+| 4 | 提交文件→特征码匹配免审批直通 / 不匹配进审批 | ☐ |
+| 5 | 一级审批→合作方直通；二级审批→非合作方摆渡 | ☐ |
+| 6 | 一级审批人=二级审批人时自动跳过二级（语义B） | ☐ |
+| 7 | 外网下载文件成功，内容完整 | ☐ |
+| 8 | 过期文件自动归档（audit 日志确认） | ☐ |
+| 9 | 审计日志 + 统计 Tab（人员/文件类型/每日） | ☐ |
+| 10 | os.rename 0拷贝：摆渡毫秒级 | ☐ |
+| 11 | 大文件（>100MB）上传/下载正常 | ☐ |
 
-# 停止指定发行版
-wsl --terminate rocky10-st
+**6.4 内部试用发布**：
+- [ ] 通知试用用户（内网地址）
+- [ ] 设定试用期与反馈收集方式（见 `03-psf-process.md`）
+- [ ] 试用期结束按 PMF 流程评估（`04-pmf-process.md`）
 
-# 删除发行版（谨慎！会丢失所有数据）
-wsl --unregister rocky10-st
+### 附录：常见问题
 
-# 从 Windows 访问 WSL 文件
-# 资源管理器输入: \\wsl$\rocky10-st
-```
+| 问题 | 处理 |
+|------|------|
+| 服务启动失败 | `journalctl -u securetrans -n 100` → 检查端口占用 `ss -tlnp \| grep 8000` |
+| 页面无法访问 | 检查 nginx → 防火墙 → 直接测后端 `curl http://127.0.0.1:8000/api/health` |
+| 摆渡失败 | 确认 staging/external/archive 同文件系统 `df -h` → 检查目录权限 |
+| 大文件上传失败 | 检查 `MAX_CONTENT_LENGTH` → nginx `client_max_body_size` → 磁盘空间 |
+| 外网下载 403 | 确认 Nginx 是否注入 `X-Network-Zone: external` / geo 网段是否含该来源 |
 
 ---
 
-## 四、生产环境部署（封闭数据中心）
-
-### 4.1 服务器环境要求
-
-| 项目 | 最低配置 | 推荐配置 |
-|------|---------|---------|
-| CPU | 2 核 | 4 核 |
-| 内存 | 2 GB | 4 GB |
-| 系统盘 | 20 GB | 50 GB |
-| 数据盘/NAS | 100GB+ | NAS 挂载 |
-
-**操作系统**：Rocky 8/9/10、RHEL 8/9、Ubuntu 20.04+、Debian 11+
-
-**必须预装的软件**（封闭数据中心手工安装）：
-- Python 3.10+（含 venv 和 pip）
-- Nginx（反向代理）
-- NAS 挂载（staging/external/archive 同文件系统）
-
-```bash
-# Rocky/RHEL 安装 Python 和 Nginx
-sudo dnf install -y python3 python3-pip nginx
-
-# Ubuntu/Debian
-sudo apt install -y python3 python3-venv python3-pip nginx
-```
-
-### 4.2 NAS 挂载（关键）
-
-staging/external/archive 三个目录**必须在同一个文件系统**，os.rename 才能 0拷贝。
-
-```bash
-# NFS 挂载示例
-sudo mkdir -p /mnt/nas/securetrans
-sudo mount -t nfs nas-server:/export/securetrans /mnt/nas/securetrans
-
-# 验证同文件系统
-df -h /mnt/nas/securetrans/staging /mnt/nas/securetrans/external /mnt/nas/securetrans/archive
-# 三个目录的 Filesystem 列必须相同
-```
-
-> 没有 NAS 时可用本地磁盘替代，`NAS_ROOT` 指向本地路径即可。
-
-### 4.3 一键部署
-
-```bash
-# 1. 上传项目到服务器 /tmp/securetrans（scp / U盘 / 堡垒机）
-
-# 2. 执行一键部署
-cd /tmp/securetrans
-sudo bash infra/deploy.sh
-```
-
-`deploy.sh` 自动完成 9 步：前置检查 → 创建服务用户 → 备份旧版本 → 复制程序 → 配置 .env → 创建虚拟环境 → NAS 目录准备 → 设置权限 → 安装 systemd 服务 → 启动验证。
-
-### 4.4 部署后手工配置
-
-```bash
-# 修改 .env（NAS_ROOT、SECRET_KEY 等）
-sudo vi /opt/securetrans/.env
-sudo systemctl restart securetrans
-
-# 配置 Nginx 反向代理（单/双网卡二选一）
-# 双网卡：内网卡+外网卡两个 server，绑定各自网卡 IP
-#   sudo cp /tmp/securetrans/infra/nginx-securetrans.conf /etc/nginx/conf.d/securetrans.conf
-# 单网卡：一个 server，geo 按来源网段自动分内外网（推荐简化方案）
-sudo cp /tmp/securetrans/infra/nginx-securetrans-single.conf /etc/nginx/conf.d/securetrans.conf
-sudo vi /etc/nginx/conf.d/securetrans.conf   # 修改 server_name 与 geo 网段
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-### 4.5 部署验证
-
-```bash
-cd /tmp/securetrans
-bash infra/verify.sh
-# 预期: 健康检查通过 + 171项API测试全通过
-```
-
-### 4.6 初始账号
-
-| 用户名 | 密码 | 角色 |
-|--------|------|------|
-| `admin` | `Admin@123` | 系统管理员（首次登录强制改密） |
-
-### 4.7 Windows 服务器部署（可选）
+## 四、Windows 服务器部署（可选）
 
 客户端/服务器是 Windows 时同样支持，无需 Nginx（应用层网段识别直接生效）：
 
@@ -314,10 +355,8 @@ bash infra/verify.sh
 # 1. 上传/解压发布包到服务器，进入项目根目录
 # 2. 一键部署（离线优先，自动建 venv + 装依赖 + 生成 .env）
 powershell -ExecutionPolicy Bypass -File infra/deploy.ps1 -InstallDir C:\SecureTrans
-
 # 3. 编辑 .env：NAS_ROOT、INTERNAL_CIDRS、SECRET_KEY
 notepad C:\SecureTrans\.env
-
 # 4. 生产启动（waitress，Windows 生产推荐，替代 Linux 的 gunicorn）
 cd C:\SecureTrans
 .\venv\Scripts\waitress-serve.exe --host=0.0.0.0 --port=8000 app:app
@@ -329,80 +368,43 @@ Windows 服务化（开机自启）可用 NSSM：`nssm install SecureTrans` 指�
 
 ## 五、日常运维
 
-### 5.1 服务管理
-
 ```bash
 sudo systemctl status securetrans       # 查看状态
 sudo systemctl restart securetrans      # 重启
 sudo journalctl -u securetrans -f       # 实时日志
 tail -f /opt/securetrans/data/securetrans.log  # 应用日志
-```
-
-### 5.2 数据备份
-
-```bash
-# SQLite 热备份
-sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$(date +%Y%m%d).db"
-```
-
-### 5.3 故障排查
-
-| 问题 | 排查 |
-|------|------|
-| 服务启动失败 | `journalctl -u securetrans -n 100` → 检查端口占用 `ss -tlnp \| grep 8000` |
-| 页面无法访问 | 检查 nginx → 防火墙 → 直接测试后端 `curl http://127.0.0.1:8000/api/health` |
-| 摆渡失败 | 确认 staging/external/archive 同文件系统 `df -h` → 检查目录权限 |
-| 大文件上传失败 | 检查 `MAX_CONTENT_LENGTH` → nginx `client_max_body_size` → 磁盘空间 |
-
----
-
-## 六、从测试环境切到生产环境
-
-测试验证通过后，3 步切换，代码不变：
-
-```bash
-# 1. 换配置
-cp .env.production .env
-# 修改 NAS_ROOT 为实际 NAS 挂载路径
-# 修改 SECRET_KEY 为随机字符串
-
-# 2. 挂载 NAS（staging/external/archive 同文件系统）
-sudo mount -t nfs nas-server:/export/securetrans /mnt/nas/securetrans
-
-# 3. 换启动方式
-# 测试: python app.py（Flask自带）
-# 生产: gunicorn app:app（或 systemd 服务）
-sudo systemctl start securetrans
+sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$(date +%Y%m%d).db"  # SQLite 热备份
 ```
 
 ---
 
-## 七、文件清单
+## 六、文件清单
 
 ```
 项目根目录/
 ├── src/                      # 源代码
 │   ├── app.py                # Flask主程序
-│   ├── requirements.txt      # Python依赖
-│   ├── start.sh              # 测试环境启动（Flask）
-│   ├── start-production.sh   # 生产环境启动（gunicorn）
-│   ├── .env.testing          # 测试环境配置
-│   ├── .env.production       # 生产环境配置
-│   └── static/               # 前端SPA
+│   ├── requirements.txt      # Python依赖（含 waitress，Windows WSGI）
+│   ├── .env.testing          # 测试环境配置模板
+│   ├── .env.production       # 生产环境配置模板
+│   └── static/               # 前端SPA（index.html，单页应用）
 ├── tests/
 │   └── test_api.py           # 171项全量测试
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署 (Linux)
 │   ├── deploy.ps1            # 一键部署 (Windows)
-│   ├── verify.sh             # 部署验证
+│   ├── verify.sh             # 部署验证（171项全量测试）
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式
 │   ├── nginx-securetrans-single.conf # Nginx 单网卡模式
-│   ├── securetrans.service
+│   ├── securetrans.service   # systemd 服务
 │   └── package.sh / release.ps1     # 打包与 Gitea 发布
-└── docs/
-    └── DEPLOY.md             # 本部署指南
+├── docs/                     # 文档
+│   ├── DEPLOY.md             # 本部署指南（唯一部署文档）
+│   ├── 09-preprod-verification.md   # 生产预验收清单
+│   └── ...（PRD/PSF/PMF/测试/复盘等）
+└── README.md
 ```
 
 ---
 
-*部署指南 v1.5.0 | 2026-08-27*
+*部署指南 v2.1.0 | 2026-09-04*

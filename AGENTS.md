@@ -77,8 +77,7 @@ refactor: 目录结构重构为主干开发模式(src/tests/infra)
 | 测试用例 | `docs/05-test-cases.md` | 新增功能时 |
 | 测试报告 | `docs/06-test-report.md` | 每次全量测试后 |
 | 迭代小结 | `docs/07-psf-sprintN-retrospective.md` | 每个Sprint结束 |
-| 测试环境部署指南 | `docs/TESTING-DEPLOY.md` | 部署流程变更时 |
-| 生产环境部署指南 | `infra/DEPLOY.md` | 部署流程变更时 |
+| 部署指南（测试/生产/双OS/网络隔离，唯一） | `docs/DEPLOY.md` | 部署流程变更时 |
 | README | `README.md` | 项目概况变更时 |
 
 ### 文档原则

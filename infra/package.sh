@@ -124,7 +124,7 @@ echo "    offline-deps/ 离线 wheel 依赖 (${WHEEL_COUNT}个, Linux x86_64 / p
 echo "    offline-deps-win/ Windows 离线 wheel 依赖 (cp312 win_amd64)"
 echo "    README/LICENSE/AGENTS.md"
 echo ""
-echo "  部署方法（Rocky 8.10, 见 docs/11-deploy-rocky810-runbook.md）:"
+echo "  部署方法（Rocky 8.10, 见 docs/DEPLOY.md 分阶段执行手册）:"
 echo "    1. 上传 ${PACKAGE_NAME}.tar.gz 到服务器"
 echo "    2. tar xzf ${PACKAGE_NAME}.tar.gz -C /opt/securetrans --strip-components=1"
 echo "    3. 离线装依赖: pip install --no-index --find-links=offline-deps -r requirements.txt"

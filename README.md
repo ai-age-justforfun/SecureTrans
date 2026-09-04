@@ -90,7 +90,7 @@ SecureTrans/
 │       ├── index.html        # 主应用SPA
 │       └── login.html        # 登录页
 ├── tests/                    # 自动化测试
-│   └── test_api.py           # 全量API测试脚本（14大类166项）
+│   └── test_api.py           # 全量API测试脚本（14大类171项）
 ├── docs/                     # 统一文档（数字前缀排序，持续刷新）
 │   ├── 00-lean-startup-phase-map.md   # Lean Startup三阶段映射与决策门
 │   ├── 01-scrum-io-definition.md      # Scrum各阶段输入输出定义
@@ -98,15 +98,20 @@ SecureTrans/
 │   ├── 03-psf-process.md              # PSF阶段标准流程
 │   ├── 04-pmf-process.md              # PMF阶段标准流程（下一阶段准备）
 │   ├── 05-test-cases.md               # 测试用例
-│   ├── 06-test-report.md              # 测试报告（166项全通过）
+│   ├── 06-test-report.md              # 测试报告（171项全通过）
 │   ├── 07-psf-sprint4-retrospective.md # PSF阶段迭代小结
-│   └── TESTING-DEPLOY.md              # 测试环境部署指南
+│   ├── 08-cicd-gitops-architecture.md # CICD/GitOps架构规划
+│   ├── 09-preprod-verification.md     # 生产预验收清单
+│   ├── 10-prod-sim-verification.md    # 生产模拟验证
+│   └── DEPLOY.md                      # 部署指南（唯一，含测试/生产/双OS/网络隔离）
 └── infra/                    # 基础设施配置
-    ├── deploy.sh             # 一键部署脚本（9步自动化）
+    ├── deploy.sh             # 一键部署脚本（9步自动化, Linux）
+    ├── deploy.ps1            # 一键部署脚本（Windows）
     ├── verify.sh             # 部署验证脚本（171项全量测试）
-    ├── DEPLOY.md             # 生产环境详细部署指南
-    ├── nginx-securetrans.conf # Nginx反向代理配置
-    └── securetrans.service   # systemd服务配置
+    ├── nginx-securetrans.conf # Nginx双网卡配置
+    ├── nginx-securetrans-single.conf # Nginx单网卡配置
+    ├── securetrans.service   # systemd服务配置
+    └── package.sh / release.ps1 # 打包与Gitea发布
 ```
 
 ---
@@ -198,9 +203,9 @@ main ────●────●────●────●────  �
 - [产品需求文档 PRD v1.4](docs/02-prd-v1.4.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（166项全通过）](docs/06-test-report.md)
+- [测试报告（171项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
-- [测试环境部署指南](docs/TESTING-DEPLOY.md)
+- [部署指南（唯一部署文档）](docs/DEPLOY.md)
 
 ### 下一阶段
 **PMF（产品-市场匹配验证）**— 流程文档已就绪，核心是AD/LDAP集成和真实部署试点。
