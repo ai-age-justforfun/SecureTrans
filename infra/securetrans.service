@@ -25,7 +25,8 @@ TimeoutStopSec=30
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/opt/securetrans /mnt/nas/securetrans
+# __NAS_ROOT__ 由 deploy.sh 按 .env 的 NAS_ROOT 渲染
+ReadWritePaths=/opt/securetrans __NAS_ROOT__
 
 [Install]
 WantedBy=multi-user.target

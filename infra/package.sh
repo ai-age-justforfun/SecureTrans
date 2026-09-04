@@ -56,6 +56,18 @@ cp "$PROJECT_ROOT/README.md" "$BUILD_DIR/$PACKAGE_NAME/"
 cp "$PROJECT_ROOT/LICENSE" "$BUILD_DIR/$PACKAGE_NAME/"
 cp "$PROJECT_ROOT/AGENTS.md" "$BUILD_DIR/$PACKAGE_NAME/" 2>/dev/null || true
 
+# 5.5 内置离线 Python（可选，get-offline-python.sh 生成；服务器一键部署自动安装）
+if [ -d "$PROJECT_ROOT/offline-python" ] && ls "$PROJECT_ROOT"/offline-python/*.rpm &>/dev/null 2>&1; then
+    cp -r "$PROJECT_ROOT/offline-python" "$BUILD_DIR/$PACKAGE_NAME/offline-python"
+    echo "  已内置离线 Python RPM ($(ls "$PROJECT_ROOT"/offline-python/*.rpm | wc -l) 个)"
+else
+    echo "  [提示] 未找到 offline-python/（联网 Rocky8 运行 infra/get-offline-python.sh 生成，随包离线携带）"
+fi
+if [ -d "$PROJECT_ROOT/offline-python-win" ] && ls "$PROJECT_ROOT"/offline-python-win/*.exe &>/dev/null 2>&1; then
+    cp -r "$PROJECT_ROOT/offline-python-win" "$BUILD_DIR/$PACKAGE_NAME/offline-python-win"
+    echo "  已内置 Windows 离线 Python 安装器"
+fi
+
 # 6. 内置离线依赖 wheel
 echo "[6/7] 内置离线依赖 (offline-deps)..."
 mkdir -p "$BUILD_DIR/$PACKAGE_NAME/offline-deps"
@@ -117,11 +129,12 @@ echo "  位置:   ${PROJECT_ROOT}/packages/"
 echo ""
 echo "  部署包内容:"
 echo "    src/          源代码 (Flask + 前端)"
-echo "    tests/        自动化测试 (171项)"
+echo "    tests/        自动化测试 (172项)"
 echo "    infra/        部署脚本 (deploy.sh/verify.sh/nginx/systemd)"
 echo "    docs/         全部文档（含 Rocky 8.10 部署 runbook）"
 echo "    offline-deps/ 离线 wheel 依赖 (${WHEEL_COUNT}个, Linux x86_64 / py3.12)"
 echo "    offline-deps-win/ Windows 离线 wheel 依赖 (cp312 win_amd64)"
+echo "    offline-python/ 离线 Python 3.12 RPM (可选, get-offline-python.sh 生成)"
 echo "    README/LICENSE/AGENTS.md"
 echo ""
 echo "  部署方法（Rocky 8.10, 见 docs/DEPLOY.md 分阶段执行手册）:"

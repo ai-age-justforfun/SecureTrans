@@ -1,9 +1,15 @@
 #!/bin/bash
 # ============================================================
-# SecureTrans 一键部署脚本 (Linux)
-# 适用：Ubuntu 20.04+ / Debian 11+ / CentOS 7+ / RHEL 8+ / Rocky 8+
-# 用法：sudo bash deploy.sh
-# 目录结构：infra/deploy.sh, src/ (源码), tests/ (测试)
+# SecureTrans 一键部署脚本 (Linux) — v2.2.0
+# 适用：Rocky 8/9/10、RHEL 8+、CentOS 7+、Ubuntu 20.04+、Debian 11+
+# 用法：sudo bash infra/deploy.sh
+# 一键完成：Python 3.12 自动获取 → venv → 依赖(离线/在线) → .env → systemd → 启动验证
+#
+# Python 3.12 获取优先级：
+#   1. 系统已有 Python 3.10+（python3 / python3.12 / ...）→ 直接使用
+#   2. 部署包根目录 offline-python/*.rpm（get-offline-python.sh 生成）→ dnf 离线安装
+#   3. 在线 dnf module 安装（需网络，防火墙临时放行 80/443 访问镜像源）
+# 离线依赖：部署包内置 offline-deps/（cp312 wheel），自动离线优先安装
 # ============================================================
 set -euo pipefail
 
@@ -16,9 +22,11 @@ NC='\033[0m'
 INSTALL_DIR="/opt/securetrans"
 SERVICE_USER="securetrans"
 BACKUP_DIR="/opt/securetrans_backup_$(date +%Y%m%d_%H%M%S)"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC_DIR="$SCRIPT_DIR/../src"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SRC_DIR="$PROJECT_ROOT/src"
+OFFLINE_PYTHON_DIR="$PROJECT_ROOT/offline-python"   # 离线 Python RPM（可选，get-offline-python.sh 生成）
+OFFLINE_DEPS_DIR="$PROJECT_ROOT/offline-deps"       # 离线 wheel（部署包内置）
 
 echo -e "${GREEN}============================================================${NC}"
 echo -e "${GREEN}  SecureTrans 一键部署脚本${NC}"
@@ -27,9 +35,9 @@ echo -e "${GREEN}============================================================${N
 echo ""
 
 # ============================================================
-# 0. 前置检查
+# 0. 前置检查 + Python 3.10+ 自动获取
 # ============================================================
-echo -e "${YELLOW}[0/9] 前置环境检查...${NC}"
+echo -e "${YELLOW}[0/9] 前置环境检查 + Python 自动获取...${NC}"
 
 # 检查 root
 if [ "$EUID" -ne 0 ]; then
@@ -37,37 +45,62 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# 检查 Python 3.10+
-if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}错误: 未找到 python3，请先安装 Python 3.10+${NC}"
-    echo "  Ubuntu/Debian: apt install python3 python3-venv python3-pip"
-    echo "  CentOS/RHEL:   yum install python3"
-    exit 1
+# 找 >=3.10 的系统 Python
+find_python() {
+    local cmd ver maj min
+    for cmd in python3 python3.12 python3.11 python3.10; do
+        if command -v "$cmd" &>/dev/null; then
+            ver=$("$cmd" -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "0.0")
+            maj=${ver%%.*}
+            min=${ver#*.}; min=${min%%.*}
+            if [ "$maj" -gt 3 ] || { [ "$maj" -eq 3 ] && [ "$min" -ge 10 ]; }; then
+                echo "$cmd"; return 0
+            fi
+        fi
+    done
+    return 1
+}
+PY_CMD="$(find_python || true)"
+
+if [ -z "$PY_CMD" ]; then
+    echo -e "${YELLOW}  系统无 Python 3.10+，尝试获取 Python 3.12...${NC}"
+    if ls "$OFFLINE_PYTHON_DIR"/*.rpm &>/dev/null 2>&1; then
+        echo -e "${YELLOW}  [离线] 使用 offline-python/ 本地 RPM 安装 Python 3.12...${NC}"
+        dnf localinstall -y "$OFFLINE_PYTHON_DIR"/*.rpm
+    else
+        echo -e "${YELLOW}  [在线] dnf 安装 Python 3.12（需网络；如未放行镜像请先在防火墙临时放行 80/443）...${NC}"
+        echo -e "${YELLOW}        镜像参考: repo.huaweicloud.com / mirrors.aliyun.com / mirrors.rockylinux.org${NC}"
+        dnf module enable -y python3.12
+        dnf install -y python3.12 python3.12-pip python3.12-devel
+    fi
+    if command -v python3.12 &>/dev/null; then
+        alternatives --set python3 /usr/bin/python3.12 2>/dev/null || true
+        PY_CMD="python3.12"
+    fi
+fi
+PY_CMD="${PY_CMD:-python3}"
+PY_VERSION=$("$PY_CMD" -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+echo -e "  Python: ${PY_CMD} (${PY_VERSION}) ${GREEN}OK${NC}"
+
+# 兼容性提示：内置离线 wheel 按 cp312 打包，若 Python 非 3.12 且离线安装失败请改用 3.12
+if [ -d "$OFFLINE_DEPS_DIR" ] && [ "$PY_VERSION" != "3.12" ]; then
+    echo -e "${YELLOW}  提示: 内置离线 wheel 按 Python 3.12 (cp312) 打包，当前为 ${PY_VERSION}${NC}"
+    echo -e "${YELLOW}        如离线安装失败，请将 offline-python/ 的 Python 3.12 RPM 放入部署包或联网安装${NC}"
 fi
 
-PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-PY_MAJOR=$(echo "$PY_VERSION" | cut -d. -f1)
-PY_MINOR=$(echo "$PY_VERSION" | cut -d. -f2)
-if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 10 ]; }; then
-    echo -e "${RED}错误: Python 版本过低 (${PY_VERSION})，需要 3.10+${NC}"
-    exit 1
-fi
-echo -e "  Python 版本: ${PY_VERSION} ${GREEN}OK${NC}"
-
-# 检查 python3-venv
-if ! python3 -m venv --help &> /dev/null; then
-    echo -e "${YELLOW}  警告: python3-venv 模块不可用，尝试安装...${NC}"
-    if command -v apt &> /dev/null; then
+# 检查 venv 模块
+if ! "$PY_CMD" -m venv --help &>/dev/null 2>&1; then
+    echo -e "${YELLOW}  venv 模块不可用，尝试安装...${NC}"
+    if command -v dnf &>/dev/null; then
+        dnf install -y python3.12-pip 2>/dev/null || true
+    elif command -v apt &>/dev/null; then
         apt update -qq && apt install -y python3-venv
-    elif command -v yum &> /dev/null; then
-        yum install -y python3-virtualenv
     fi
 fi
 
 # 检查源码目录
 if [ ! -d "$SRC_DIR" ]; then
-    echo -e "${RED}错误: 未找到源码目录 ${SRC_DIR}${NC}"
-    echo "  请确保在项目根目录下运行: bash infra/deploy.sh"
+    echo -e "${RED}错误: 未找到源码目录 ${SRC_DIR}（请在项目根目录运行: sudo bash infra/deploy.sh）${NC}"
     exit 1
 fi
 
@@ -100,11 +133,7 @@ fi
 echo -e "${YELLOW}[3/9] 复制程序文件到 ${INSTALL_DIR}...${NC}"
 mkdir -p "$INSTALL_DIR"
 cp -a "$SRC_DIR/." "$INSTALL_DIR/"
-
-# 创建必要目录
 mkdir -p "$INSTALL_DIR/data"
-mkdir -p "$INSTALL_DIR/static"
-
 echo -e "  程序文件已复制 ${GREEN}OK${NC}"
 
 # ============================================================
@@ -113,32 +142,47 @@ echo -e "  程序文件已复制 ${GREEN}OK${NC}"
 echo -e "${YELLOW}[4/9] 配置环境变量...${NC}"
 if [ ! -f "$INSTALL_DIR/.env" ]; then
     cp "$SRC_DIR/.env.production" "$INSTALL_DIR/.env"
-    # 生成随机 SECRET_KEY
-    RANDOM_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+    RANDOM_KEY=$("$PY_CMD" -c "import secrets; print(secrets.token_hex(32))")
     sed -i "s/^SECRET_KEY=.*/SECRET_KEY=${RANDOM_KEY}/" "$INSTALL_DIR/.env"
     echo -e "  .env 已创建，SECRET_KEY 已随机生成 ${GREEN}OK${NC}"
-    echo -e "  ${YELLOW}请编辑 ${INSTALL_DIR}/.env 修改 NAS_ROOT 等配置${NC}"
+    echo -e "  ${YELLOW}请编辑 ${INSTALL_DIR}/.env 修改 NAS_ROOT、INTERNAL_CIDRS 等配置${NC}"
 else
     echo -e "  .env 已存在，保留原有配置 ${GREEN}OK${NC}"
 fi
 
 # ============================================================
-# 5. 创建 Python 虚拟环境并安装依赖
+# 4.5 解析 NAS_ROOT（环境变量可覆盖，并写回 .env 保持 app/service 一致）
+# ============================================================
+if [ -n "${NAS_ROOT:-}" ]; then
+    echo -e "${YELLOW}[4.5/9] NAS_ROOT 环境变量覆盖: ${NAS_ROOT}（写回 .env）...${NC}"
+    sed -i "s|^NAS_ROOT=.*|NAS_ROOT=${NAS_ROOT}|" "$INSTALL_DIR/.env"
+fi
+NAS_ROOT=$(grep -E '^NAS_ROOT=' "$INSTALL_DIR/.env" | cut -d= -f2)
+NAS_ROOT="${NAS_ROOT:-/mnt/nas/securetrans}"
+
+# ============================================================
+# 5. 创建 Python 虚拟环境并安装依赖（离线优先）
 # ============================================================
 echo -e "${YELLOW}[5/9] 创建虚拟环境并安装依赖...${NC}"
 cd "$INSTALL_DIR"
-
 if [ ! -d "venv" ]; then
-    python3 -m venv venv
+    "$PY_CMD" -m venv venv
     echo -e "  虚拟环境已创建 ${GREEN}OK${NC}"
 else
     echo -e "  虚拟环境已存在，跳过创建 ${GREEN}OK${NC}"
 fi
 
 source venv/bin/activate
-pip install --upgrade pip -q
-pip install -r requirements.txt -q
-pip install gunicorn -q
+if [ -d "$OFFLINE_DEPS_DIR" ]; then
+    echo -e "  [离线] 使用内置离线 wheel (offline-deps/) 安装..."
+    pip install --no-index --find-links="$OFFLINE_DEPS_DIR" -r requirements.txt -q
+    pip install --no-index --find-links="$OFFLINE_DEPS_DIR" gunicorn==21.2.0 -q
+else
+    echo -e "  [在线] 联网安装依赖（需网络）..."
+    pip install --upgrade pip -q
+    pip install -r requirements.txt -q
+    pip install gunicorn -q
+fi
 deactivate
 echo -e "  依赖安装完成（含 gunicorn） ${GREEN}OK${NC}"
 
@@ -146,23 +190,16 @@ echo -e "  依赖安装完成（含 gunicorn） ${GREEN}OK${NC}"
 # 6. NAS 存储目录准备
 # ============================================================
 echo -e "${YELLOW}[6/9] 存储目录准备...${NC}"
-# 从 .env 读取 NAS_ROOT
-NAS_ROOT=$(grep -E '^NAS_ROOT=' "$INSTALL_DIR/.env" | cut -d= -f2)
-NAS_ROOT="${NAS_ROOT:-/mnt/nas/securetrans}"
-
 mkdir -p "$NAS_ROOT/staging" "$NAS_ROOT/external" "$NAS_ROOT/archive"
 echo -e "  存储目录: ${NAS_ROOT}"
-echo -e "  staging/external/archive 已创建 ${GREEN}OK${NC}"
 
-# 验证同文件系统（os.rename 0拷贝前提）
 STAGING_FS=$(df -P "$NAS_ROOT/staging" | tail -1 | awk '{print $1}')
 EXTERNAL_FS=$(df -P "$NAS_ROOT/external" | tail -1 | awk '{print $1}')
 ARCHIVE_FS=$(df -P "$NAS_ROOT/archive" | tail -1 | awk '{print $1}')
 if [ "$STAGING_FS" = "$EXTERNAL_FS" ] && [ "$EXTERNAL_FS" = "$ARCHIVE_FS" ]; then
-    echo -e "  三个目录在同一文件系统 (${STAGING_FS})，os.rename 0拷贝可用 ${GREEN}OK${NC}"
+    echo -e "  同文件系统 (${STAGING_FS})，os.rename 0拷贝可用 ${GREEN}OK${NC}"
 else
-    echo -e "  ${RED}警告: 三个目录不在同一文件系统！os.rename 将退化为复制+删除${NC}"
-    echo -e "  staging: ${STAGING_FS}, external: ${EXTERNAL_FS}, archive: ${ARCHIVE_FS}"
+    echo -e "  ${RED}警告: 三目录不在同一文件系统！os.rename 将退化为复制+删除${NC}"
 fi
 
 # ============================================================
@@ -170,10 +207,9 @@ fi
 # ============================================================
 echo -e "${YELLOW}[7/9] 设置文件权限...${NC}"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
-chown -R "$SERVICE_USER:$SERVICE_USER" "$NAS_ROOT"
+chown -R "$SERVICE_USER:$SERVICE_USER" "$NAS_ROOT" 2>/dev/null || true
 chmod 750 "$INSTALL_DIR"
 chmod 640 "$INSTALL_DIR/.env"
-chmod 600 "$INSTALL_DIR/data/"*.db 2>/dev/null || true
 echo -e "  权限设置完成 ${GREEN}OK${NC}"
 
 # ============================================================
@@ -181,9 +217,10 @@ echo -e "  权限设置完成 ${GREEN}OK${NC}"
 # ============================================================
 echo -e "${YELLOW}[8/9] 安装 systemd 服务...${NC}"
 cp "$SCRIPT_DIR/securetrans.service" /etc/systemd/system/securetrans.service
+sed -i "s|__NAS_ROOT__|${NAS_ROOT}|" /etc/systemd/system/securetrans.service
 systemctl daemon-reload
 systemctl enable securetrans
-echo -e "  systemd 服务已安装并设为开机自启 ${GREEN}OK${NC}"
+echo -e "  systemd 服务已安装并设为开机自启（ReadWritePaths=${NAS_ROOT}） ${GREEN}OK${NC}"
 
 # ============================================================
 # 9. 启动服务并验证
@@ -192,7 +229,6 @@ echo -e "${YELLOW}[9/9] 启动服务并验证...${NC}"
 systemctl restart securetrans
 sleep 3
 
-# 检查服务状态
 if systemctl is-active --quiet securetrans; then
     echo -e "  服务运行中 ${GREEN}OK${NC}"
 else
@@ -201,14 +237,12 @@ else
     exit 1
 fi
 
-# 健康检查
 sleep 2
 HEALTH=$(curl -s http://127.0.0.1:8000/api/health 2>/dev/null || echo "FAILED")
 if echo "$HEALTH" | grep -q '"status":"ok"'; then
     echo -e "  健康检查通过: ${HEALTH} ${GREEN}OK${NC}"
 else
-    echo -e "  ${YELLOW}健康检查未通过（可能启动较慢），返回: ${HEALTH}${NC}"
-    echo -e "  ${YELLOW}请稍后手动检查: curl http://127.0.0.1:8000/api/health${NC}"
+    echo -e "  ${YELLOW}健康检查未通过（可能启动较慢）: ${HEALTH}${NC}"
 fi
 
 echo ""
@@ -218,16 +252,13 @@ echo -e "${GREEN}============================================================${N
 echo ""
 echo "  安装目录:   ${INSTALL_DIR}"
 echo "  配置文件:   ${INSTALL_DIR}/.env"
-echo "  数据目录:   ${INSTALL_DIR}/data"
 echo "  存储目录:   ${NAS_ROOT}"
-echo "  服务状态:   systemctl status securetrans"
-echo "  服务日志:   journalctl -u securetrans -f"
 echo "  访问地址:   http://<服务器IP>:8000  (或通过 nginx 代理)"
 echo "  初始账号:   admin / Admin@123  (首次登录强制修改密码)"
 echo ""
 echo -e "${YELLOW}  后续步骤:${NC}"
-echo "  1. 编辑 .env 确认 NAS_ROOT 指向真实 NAS 挂载"
-echo "  2. 配置 nginx 反向代理 (参考 infra/nginx-securetrans.conf)"
-echo "  3. 运行全量测试: bash infra/verify.sh"
+echo "  1. 编辑 .env 确认 NAS_ROOT / INTERNAL_CIDRS（单网卡按网段隔离时）"
+echo "  2. 配置 nginx 反向代理（单/双网卡模板见 infra/nginx-securetrans-*.conf）"
+echo "  3. 全量验证: sudo bash infra/verify.sh  (172项)"
 echo "  4. 登录系统修改 admin 初始密码"
 echo ""
