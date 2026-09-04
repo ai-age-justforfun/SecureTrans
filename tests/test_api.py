@@ -1100,6 +1100,29 @@ except Exception as e:
     test("i18n: 主界面资源检查", False, str(e))
 
 # ============================================================
+# 网络面识别 + 版本号单一来源（资源/源码检查，部署后与 src/ 相邻）
+# ============================================================
+# 版本号单一来源（主界面仅 APP_VERSION 一处，字典/HTML 不含硬编码版本号）
+test("版本: 主界面版本号单一来源(APP_VERSION)", 'const APP_VERSION' in _html)
+test("版本: 品牌副标题不含硬编码版本号", "'文件审批摆渡系统'" in _html and "文件审批摆渡系统 v" not in _html)
+
+# health 返回版本号（v 开头，与前端 APP_VERSION 一致由常量驱动）
+code, data = request('GET', '/api/health')
+test("版本: health 返回版本号", code == 200 and isinstance(data.get('version'), str) and data['version'].startswith('v'),
+     f"code={code}, version={data.get('version')}")
+
+# 网络面识别（app.py 源码检查：INTERNAL_CIDRS + ipaddress 网段兜底）
+import os as _os
+_src_app = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'src', 'app.py')
+try:
+    with open(_src_app, encoding='utf-8') as _f:
+        _app_src = _f.read()
+    test("网络: app.py 含网段识别配置(INTERNAL_CIDRS+ipaddress)", 'INTERNAL_CIDRS' in _app_src and 'import ipaddress' in _app_src)
+    test("网络: app.py 含 CIDR 兜底识别(_ip_in_cidrs)", '_ip_in_cidrs' in _app_src and 'X-Network-Zone' in _app_src)
+except Exception as e:
+    test("网络: app.py 源码检查", False, str(e))
+
+# ============================================================
 # 测试报告
 # ============================================================
 print("\n" + "=" * 70)
