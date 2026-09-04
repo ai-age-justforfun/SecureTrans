@@ -1,6 +1,6 @@
 # SecureTrans 测试报告
 
-> 版本：v2.2.0 | 日期：2026-09-04 | 阶段：PSF
+> 版本：v2.2.1 | 日期：2026-09-04 | 阶段：PSF
 > 测试环境：Windows 11 (本地dev) + Rocky Linux 10.1 (WSL2 test)，Python 3.13/3.12 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
 > 测试工具：tests/test_api.py（Python urllib，无额外依赖）
@@ -246,6 +246,12 @@
   - ⏸ 数字千分位（P2）：按用户决策忽略
 - **变更**：新增 3 项 i18n 测试（清理消息英文模板 + 单复数一致 + 语言按钮跨页面重建逻辑），全量 166 项 100% 通过
 
+
+
+### 12.1 v2.2.1 部署加固验证（2026-09-04）
+- venv 用 Python 3.12 --copies 创建，与系统 Python 完全隔离（venv/bin/python3 为复制文件非 symlink，系统 Python 升级/移动不影响 venv）。
+- Python 版本与离线 wheel (cp312) 匹配加固：deploy.sh 探测 3.12 优先；非 3.12 且有离线包自动切换 3.12；venv 创建后校验版本。
+- 验证：WSL Rocky 部署，venv Python 3.12 匹配 cp312，健康检查 OK，全量 172/172 通过。
 *文档结束 | SecureTrans 测试报告 v1.11.0 | 2026-09-01*
 
 ## 十二、v2.2.0 部署能力升级验证（2026-09-04）
