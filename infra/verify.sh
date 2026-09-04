@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # SecureTrans 部署后验证脚本
-# 运行全量 166 项 API 测试，确认服务器部署正确
+# 运行全量 172 项 API 测试，确认服务器部署正确
 # 用法：bash verify.sh [BASE_URL]
 # 目录结构：infra/verify.sh, tests/test_api.py
 # ============================================================
@@ -67,7 +67,7 @@ fi
 
 # 3. 运行全量 API 测试
 echo ""
-echo "[3/4] 运行全量 API 测试 (166项)..."
+echo "[3/4] 运行全量 API 测试 (172项)..."
 echo "  (测试脚本会创建测试用户和测试文件，完成后自动清理)"
 echo ""
 
@@ -78,14 +78,17 @@ if [ ! -f "$TEST_SCRIPT_PATH" ]; then
     exit 1
 fi
 
-# 修改 test_api.py 的 BASE_URL 并运行
-TEST_SCRIPT=$(mktemp /tmp/securetrans_test_XXXXXX.py)
-sed "s|BASE_URL = \"http://localhost:8000\"|BASE_URL = \"${BASE_URL}\"|" \
-    "$TEST_SCRIPT_PATH" > "$TEST_SCRIPT"
-
-python3 "$TEST_SCRIPT"
+# 优先用部署环境的 venv python，其次系统 python3
+if [ -x "/opt/securetrans/venv/bin/python" ]; then
+    PY="/opt/securetrans/venv/bin/python"
+elif command -v python3.12 &>/dev/null; then
+    PY="python3.12"
+else
+    PY="python3"
+fi
+# 原地运行 test_api.py（保留 tests/ 相对路径依赖），BASE_URL / NAS_ROOT 用环境变量传入
+BASE_URL="$BASE_URL" NAS_ROOT="$NAS_ROOT" "$PY" "$TEST_SCRIPT_PATH"
 TEST_EXIT=$?
-rm -f "$TEST_SCRIPT"
 
 if [ $TEST_EXIT -ne 0 ]; then
     echo ""

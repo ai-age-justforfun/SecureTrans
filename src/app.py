@@ -38,7 +38,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.1.0"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.0"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
@@ -543,6 +543,12 @@ def get_network_zone() -> str:
         return zone
     if INTERNAL_CIDRS:
         client_ip = request.remote_addr or ""
+        # loopback(127.0.0.0/8, ::1) 恒为本机管理面，视同内网（本机健康检查/本地直连）
+        try:
+            if ipaddress.ip_address(client_ip).is_loopback:
+                return "internal"
+        except ValueError:
+            pass
         return "internal" if _ip_in_cidrs(client_ip, INTERNAL_CIDRS) else "external"
     return "internal"
 

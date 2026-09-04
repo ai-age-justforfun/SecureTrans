@@ -11,7 +11,7 @@ import os
 import time
 import tempfile
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 results = []
 
 # 创建带 cookie 的 opener（模拟浏览器 session）
@@ -1119,6 +1119,7 @@ try:
         _app_src = _f.read()
     test("网络: app.py 含网段识别配置(INTERNAL_CIDRS+ipaddress)", 'INTERNAL_CIDRS' in _app_src and 'import ipaddress' in _app_src)
     test("网络: app.py 含 CIDR 兜底识别(_ip_in_cidrs)", '_ip_in_cidrs' in _app_src and 'X-Network-Zone' in _app_src)
+    test("网络: loopback(127.0.0.1/::1)恒为内网管理面", 'is_loopback' in _app_src)
 except Exception as e:
     test("网络: app.py 源码检查", False, str(e))
 

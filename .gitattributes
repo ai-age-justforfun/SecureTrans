@@ -1,0 +1,8 @@
+# Git 换行规范：Linux shell 脚本必须 LF（CRLF 会导致 "command not found"）
+*.sh text eol=lf
+# PowerShell 脚本用 LF（PowerShell 兼容 LF，避免 autocrlf 造成 BOM/换行混乱）
+*.ps1 text eol=lf
+# 文档/配置保持仓库原样
+*.conf text eol=lf
+*.service text eol=lf
+*.service text
