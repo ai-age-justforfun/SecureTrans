@@ -91,8 +91,8 @@ Write-Host "[1/5] 程序文件已复制 -> $InstallDir"
 
 # 2. 创建虚拟环境 + 安装依赖（离线优先）
 if (-not (Test-Path (Join-Path $InstallDir "venv\Scripts\python.exe"))) {
-    Write-Host "[2/5] 创建虚拟环境..."
-    & python -m venv (Join-Path $InstallDir "venv")
+    Write-Host "[2/5] 创建虚拟环境（--copies 与系统完全隔离）..."
+    & python -m venv --copies (Join-Path $InstallDir "venv")
 }
 $pip = Join-Path $InstallDir "venv\Scripts\pip.exe"
 if (Test-Path $offlineDir) {
@@ -104,6 +104,13 @@ if (Test-Path $offlineDir) {
 }
 if ($LASTEXITCODE -ne 0) { Write-Host "[错误] 依赖安装失败"; exit 1 }
 Write-Host "      依赖安装完成"
+# 校验 venv 内 Python 版本（离线 wheel 按 cp312 打包，须为 3.12）
+$venvPy = Join-Path $InstallDir "venv\Scripts\python.exe"
+if (Test-Path $venvPy) {
+    $vver = (& $venvPy -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
+    if ($vver -ne "3.12") { Write-Host "      [警告] venv Python 为 $vver，与离线 wheel (cp312) 不一致；如离线安装失败请删除 venv 并用 Python 3.12 重建" }
+    else { Write-Host "      venv Python: $vver（匹配 cp312） OK" }
+}
 
 # 3. 创建 .env（首次）
 $envFile = Join-Path $InstallDir ".env"

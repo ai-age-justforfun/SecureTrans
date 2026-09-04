@@ -179,10 +179,19 @@ NAS_ROOT="${NAS_ROOT:-/mnt/nas/securetrans}"
 echo -e "${YELLOW}[5/9] 创建虚拟环境并安装依赖...${NC}"
 cd "$INSTALL_DIR"
 if [ ! -d "venv" ]; then
-    "$PY_CMD" -m venv venv
+    echo -e "  创建 venv（Python ${PY_VERSION}，--copies 与系统完全隔离）..."
+    "$PY_CMD" -m venv --copies venv
     echo -e "  虚拟环境已创建 ${GREEN}OK${NC}"
 else
     echo -e "  虚拟环境已存在，跳过创建 ${GREEN}OK${NC}"
+fi
+
+# 校验 venv 内 Python 版本（离线 wheel 按 cp312 打包，须为 3.12）
+VVER=$(venv/bin/python -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+if [ "$VVER" != "3.12" ]; then
+    echo -e "${YELLOW}  提示: venv Python 为 ${VVER}，与离线 wheel (cp312) 不一致；如离线安装失败请用 Python 3.12 重建 venv（删除 venv/ 后重跑）${NC}"
+else
+    echo -e "  venv Python: ${VVER}（匹配 cp312） ${GREEN}OK${NC}"
 fi
 
 source venv/bin/activate
