@@ -3,6 +3,5 @@ Flask-Login==0.6.3
 bcrypt==4.1.2
 APScheduler==3.10.4
 ldap3==2.9.1
-# 生产环境 WSGI 服务器（Linux 推荐 gunicorn，Windows 推荐 waitress）
-# gunicorn==21.2.0
-# waitress==3.0.0
+# WSGI 服务器（跨平台）：Linux 部署脚本额外安装 gunicorn；Windows 使用下方 waitress
+waitress==3.0.0

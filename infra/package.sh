@@ -60,8 +60,19 @@ cp "$PROJECT_ROOT/AGENTS.md" "$BUILD_DIR/$PACKAGE_NAME/" 2>/dev/null || true
 echo "[6/7] 内置离线依赖 (offline-deps)..."
 mkdir -p "$BUILD_DIR/$PACKAGE_NAME/offline-deps"
 tar xzf "$OFFLINE_DEPS" -C "$BUILD_DIR/$PACKAGE_NAME/offline-deps" --strip-components=1
-WHEEL_COUNT=$(ls "$BUILD_DIR/$PACKAGE_NAME/offline-deps"/*.whl | wc -l)
+WHEEL_COUNT=$(ls "$BUILD_DIR/$PACKAGE_NAME/offline-deps"/*.whl 2>/dev/null | wc -l) || true
 echo "  已内置 ${WHEEL_COUNT} 个 wheel"
+
+# Windows 离线依赖（双平台部署支持，可选）
+OFFLINE_DEPS_WIN="$PROJECT_ROOT/packages/offline-deps-win.tar.gz"
+if [ -f "$OFFLINE_DEPS_WIN" ]; then
+    mkdir -p "$BUILD_DIR/$PACKAGE_NAME/offline-deps-win"
+    tar xzf "$OFFLINE_DEPS_WIN" -C "$BUILD_DIR/$PACKAGE_NAME/offline-deps-win" --strip-components=1
+    WHEEL_COUNT_WIN=$(ls "$BUILD_DIR/$PACKAGE_NAME/offline-deps-win"/wheelhouse/*.whl 2>/dev/null | wc -l) || true
+    echo "  已内置 Windows 离线依赖 ${WHEEL_COUNT_WIN} 个 wheel"
+else
+    echo "  [提示] 未找到 Windows 离线依赖包，跳过（Windows 部署将在线安装）"
+fi
 
 # 7. 清理并打包
 echo "[7/7] 清理并打包..."
@@ -106,10 +117,11 @@ echo "  位置:   ${PROJECT_ROOT}/packages/"
 echo ""
 echo "  部署包内容:"
 echo "    src/          源代码 (Flask + 前端)"
-echo "    tests/        自动化测试 (150项)"
+echo "    tests/        自动化测试 (171项)"
 echo "    infra/        部署脚本 (deploy.sh/verify.sh/nginx/systemd)"
 echo "    docs/         全部文档（含 Rocky 8.10 部署 runbook）"
 echo "    offline-deps/ 离线 wheel 依赖 (${WHEEL_COUNT}个, Linux x86_64 / py3.12)"
+echo "    offline-deps-win/ Windows 离线 wheel 依赖 (cp312 win_amd64)"
 echo "    README/LICENSE/AGENTS.md"
 echo ""
 echo "  部署方法（Rocky 8.10, 见 docs/11-deploy-rocky810-runbook.md）:"

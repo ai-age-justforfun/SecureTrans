@@ -1,7 +1,7 @@
 """
 SecureTrans - 轻量级跨网文件审批摆渡系统 后端
 Flask + Flask-Login + SQLite + os.rename 0拷贝摆渡
-v1.4 - 适配初创公司 50 人规模
+适配初创公司 50 人规模（版本号见 APP_VERSION 常量）
 """
 import os
 import re
@@ -11,6 +11,7 @@ import uuid
 import shutil
 import sqlite3
 import hashlib
+import ipaddress
 import logging
 import datetime
 from pathlib import Path
@@ -37,7 +38,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.0.1"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.1.0"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
@@ -59,6 +60,9 @@ AD_BIND_PASSWORD = os.getenv("AD_BIND_PASSWORD", "")
 
 # 过期清理配置
 EXTERNAL_EXPIRY_DAYS = int(os.getenv("EXTERNAL_EXPIRY_DAYS", "7"))  # external 文件默认 7 天过期
+
+# 网络面识别（单网卡模式按网段区分内外网；逗号分隔 CIDR，留空则不启用网段识别）
+INTERNAL_CIDRS = os.getenv("INTERNAL_CIDRS", "").strip()
 
 # 日志
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -508,11 +512,39 @@ def rows_to_list(rows) -> list:
 def get_client_ip() -> str:
     return request.remote_addr or "unknown"
 
+def _ip_in_cidrs(ip: str, cidrs: str) -> bool:
+    """判断 IP 是否命中任一内网 CIDR（单网卡模式按网段识别内外网）。"""
+    if not cidrs:
+        return False
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    for cidr in cidrs.split(","):
+        cidr = cidr.strip()
+        if not cidr:
+            continue
+        try:
+            if addr in ipaddress.ip_network(cidr, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def get_network_zone() -> str:
     """识别当前请求来自内网(管理面)还是外网(下载面)。
-    由 Nginx 反向代理注入 X-Network-Zone 请求头；无代理(测试模式)默认 internal。"""
-    zone = request.headers.get("X-Network-Zone", "internal").strip().lower()
-    return zone if zone in ("internal", "external") else "internal"
+    优先级：
+      1) Nginx 注入的 X-Network-Zone 请求头（生产权威，双网卡/单网卡 Nginx 均注入）；
+      2) 未注入且配置了 INTERNAL_CIDRS 时，按客户端 IP 网段识别（直连/单网卡无代理场景）；
+      3) 均无 → internal（本地测试模式默认）。"""
+    zone = request.headers.get("X-Network-Zone", "").strip().lower()
+    if zone in ("internal", "external"):
+        return zone
+    if INTERNAL_CIDRS:
+        client_ip = request.remote_addr or ""
+        return "internal" if _ip_in_cidrs(client_ip, INTERNAL_CIDRS) else "external"
+    return "internal"
 
 # 外网面(下载面)允许访问的路径前缀；其余接口一律拒绝，防止绕过前端直接调用管理API
 EXTERNAL_ALLOW_PREFIXES = (

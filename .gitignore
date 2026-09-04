@@ -48,3 +48,5 @@ desktop.ini
 packages/*.tar.gz
 packages/*.md5
 packages/*.sha256
+
+packages/offline-deps-win/wheelhouse/
