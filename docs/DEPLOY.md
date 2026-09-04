@@ -1,6 +1,6 @@
 # SecureTrans 部署指南
 
-> 版本：v2.1.0 | 日期：2026-09-04
+> 版本：v2.2.0 | 日期：2026-09-04
 > 唯一部署文档：测试环境（本地/WSL）↔ 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
 > 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
@@ -59,7 +59,7 @@ powershell -ExecutionPolicy Bypass -File infra/deploy.ps1 -InstallDir C:\SecureT
 运行测试（另一个终端）：
 ```bash
 cd tests
-python test_api.py    # 171项全通过
+python test_api.py    # 172项全通过
 ```
 
 ### 2.3 方式 B：WSL Rocky Linux（模拟生产环境）
@@ -82,7 +82,7 @@ python app.py    # 部署模式: testing
 
 Windows 浏览器访问 http://localhost:8000（WSL2 自动端口转发）。运行测试：
 ```bash
-cd ~/securetrans/tests && python3 test_api.py   # 171项全通过
+cd ~/securetrans/tests && python3 test_api.py   # 172项全通过
 ```
 
 ### 2.4 测试验证清单
@@ -101,13 +101,47 @@ cd ~/securetrans/tests && python3 test_api.py   # 171项全通过
 
 ---
 
-## 三、生产环境部署（封闭数据中心）—— Rocky 8.10 分阶段执行手册
+## 三、生产环境部署（封闭数据中心）—— Rocky 8.10
 
 > 适用：新建 Rocky Linux 8.10 虚拟机服务器（可配置 mirrors 在线源，但**默认走离线包**）
-> 执行方式：**用户手工逐条执行**，每阶段有明确"通过标准"，测试不过不进下一阶段
+
+### 3.0 一键式部署（推荐，Python 3.12 自动获取）
+
+上传部署包后，一条命令完成全部部署（Python 获取 → venv → 依赖 → .env → systemd → 启动验证）：
+
+```bash
+# 1. 上传部署包（含内置 offline-deps 离线 wheel）并解压
+tar xzf securetrans-<版本>.tar.gz -C /opt/securetrans --strip-components=1
+# 2. 一键部署（root 运行）
+sudo bash /opt/securetrans/infra/deploy.sh
+# 3. 全量验证（172项）
+sudo bash /opt/securetrans/infra/verify.sh
+```
+
+**Python 3.12 三种获取方式**（deploy.sh 自动按序尝试）：
+
+| 优先级 | 来源 | 说明 |
+|--------|------|------|
+| 1 | 系统已有 Python 3.10+ | 直接用 |
+| 2 | `offline-python/*.rpm`（离线） | 见下方「离线 Python 获取」 |
+| 3 | 在线 `dnf module` 安装 | 需网络，防火墙临时放行 80/443 访问镜像 |
+
+**离线 Python 获取**（在可联网的 Rocky 8 环境运行一次，生成 RPM 随部署包携带）：
+
+```bash
+sudo bash infra/get-offline-python.sh   # 产出 offline-python/*.rpm（python3.12 + 依赖）
+# 将整个 offline-python/ 目录随部署包携带；离线服务器一键部署自动 dnf localinstall
+```
+
+> **网络要求**：完全离线时无需放行外网（Python RPM + 离线 wheel 全内置）；仅当走"在线安装"分支时，才需防火墙临时放行 80/443 访问镜像源（repo.huaweicloud.com / mirrors.aliyun.com / mirrors.rockylinux.org）。
+
+### 3.1 分阶段执行手册（可选，逐步验证）
+
+> 一键部署已自动完成 阶段0-3。如需逐步验证每个环节（测试→生产→NAS→网络隔离→验收），按以下阶段执行，每阶段有明确"通过标准"，测试不过不进下一阶段。
+
 > 总览：阶段0 基础准备 → 阶段1 上传+离线依赖 → 阶段2 测试环境验证 → 阶段3 生产环境验证 → 阶段4 NAS → 阶段5 网络隔离 → 阶段6 手工验收+内部试用
 
-### 阶段0：服务器基础准备
+### 阶段0：服务器基础准备（一键部署已自动完成，此处为手工参考）
 
 ```bash
 cat /etc/rocky-release                 # 确认 Rocky Linux release 8.10
@@ -135,7 +169,7 @@ firewall-cmd --permanent --add-port=8000/tcp && firewall-cmd --reload
 
 ### 阶段1：上传部署包 + 离线安装依赖
 
-把 `securetrans-<当前版本>.tar.gz`（如 v2.1.0）从本地传到服务器（scp / U盘 / 堡垒机）：
+把 `securetrans-<当前版本>.tar.gz`（如 v2.2.0）从本地传到服务器（scp / U盘 / 堡垒机）：
 
 ```bash
 scp securetrans-2.1.0.tar.gz root@<服务器IP>:/root/
@@ -160,7 +194,7 @@ python3 -m venv venv
 
 ### 阶段2：测试环境部署 + 自动化测试（DEPLOY_MODE=testing）
 
-> 目的：先用最简模式（本地文件系统 + Flask 自带服务器）确认程序在服务器上能跑、171 项全过。
+> 目的：先用最简模式（本地文件系统 + Flask 自带服务器）确认程序在服务器上能跑、172 项全过。
 
 ```bash
 cd /opt/securetrans/src
@@ -174,12 +208,12 @@ curl -s http://127.0.0.1:8000/api/health
 
 cd /opt/securetrans/tests
 python3 test_api.py
-# 预期: 总计171 | 通过171 | 通过率100.0%
+# 预期: 总计172 | 通过172 | 通过率100.0%
 ```
 
 **通过标准**
 - [ ] 健康检查返回 `deployMode":"testing"`
-- [ ] 171 项测试 100% 通过
+- [ ] 172 项测试 100% 通过
 - [ ] 浏览器访问 `http://<内网IP>:8000`，admin/Admin@123 登录（首次强制改密）
 
 ### 阶段3：生产环境部署 + 自动化测试（DEPLOY_MODE=production）
@@ -215,12 +249,12 @@ curl -s http://127.0.0.1:8000/api/health
 systemctl is-active securetrans       # 预期 active
 cd /opt/securetrans/tests
 NAS_ROOT=/opt/securetrans/nas python3 test_api.py
-# 预期: 总计171 | 通过171 | 通过率100.0%
+# 预期: 总计172 | 通过172 | 通过率100.0%
 ```
 
 **通过标准**
 - [ ] systemd 服务 active，`deployMode":"production"`
-- [ ] 171 项测试 100% 通过（生产模式）
+- [ ] 172 项测试 100% 通过（生产模式）
 - [ ] 确认 gunicorn 多 worker 无并发初始化报错
 - [ ] 首次访问初始化正常：`/opt/securetrans/data/securetrans.db`、`/opt/securetrans/nas/{staging,external,archive}` 自动创建
 
@@ -252,7 +286,7 @@ df -h /mnt/nas/securetrans/staging /mnt/nas/securetrans/external /mnt/nas/secure
 
 **通过标准**
 - [ ] NAS 三个目录同一文件系统
-- [ ] 生产模式在 NAS 上再跑 171 项自动化测试 100%
+- [ ] 生产模式在 NAS 上再跑 172 项自动化测试 100%
 - [ ] os.rename 0拷贝：上传→审批→摆渡 毫秒级
 
 ### 阶段5：网络隔离（双网卡 / 单网卡 geo 二选一）
@@ -345,16 +379,22 @@ systemctl start securetrans
 
 ---
 
-## 四、Windows 服务器部署（可选）
+## 四、Windows 服务器部署（可选，与 Linux 同等一键式）
 
-客户端/服务器是 Windows 时同样支持，无需 Nginx（应用层网段识别直接生效）：
+客户端/服务器是 Windows 时同样支持，无需 Nginx（应用层网段识别直接生效）。
 
-**前置**：安装 Python 3.10+（https://www.python.org/downloads/ ，安装时勾选 *Add python.exe to PATH*）。封闭离线环境提前下载 Windows 安装包（离线 wheel 已随发布包内置 `offline-deps-win/`）。
+**Python 3.10+ 三种获取方式**（deploy.ps1 自动按序尝试）：
+
+| 优先级 | 来源 | 说明 |
+|--------|------|------|
+| 1 | 系统已装 Python 3.10+ | 直接用 |
+| 2 | `offline-python-win/python-*.exe`（离线） | 官方安装器放入该目录，deploy.ps1 自动静默安装 |
+| 3 | 在线下载安装 | https://www.python.org/downloads/ ，勾选 *Add python.exe to PATH* |
 
 ```powershell
 # 1. 上传/解压发布包到服务器，进入项目根目录
-# 2. 一键部署（离线优先，自动建 venv + 装依赖 + 生成 .env）
-powershell -ExecutionPolicy Bypass -File infra/deploy.ps1 -InstallDir C:\SecureTrans
+# 2. 一键部署（离线优先：Python 自动获取 + venv + 离线 wheel + .env + 启动）
+powershell -ExecutionPolicy Bypass -File infra/deploy.ps1 -InstallDir C:\SecureTrans -Start
 # 3. 编辑 .env：NAS_ROOT、INTERNAL_CIDRS、SECRET_KEY
 notepad C:\SecureTrans\.env
 # 4. 生产启动（waitress，Windows 生产推荐，替代 Linux 的 gunicorn）
@@ -363,6 +403,18 @@ cd C:\SecureTrans
 ```
 
 Windows 服务化（开机自启）可用 NSSM：`nssm install SecureTrans` 指向 venv python + app.py；或用计划任务。单网卡直连时，`INTERNAL_CIDRS` 决定内外网：内网段全功能，非内网段仅登录+下载。
+
+**Windows 部署验证清单**（与 Linux 同等完善）：
+
+| # | 验证项 | 结果 |
+|---|--------|------|
+| 1 | `python --version` ≥ 3.10（deploy.ps1 自动检测） | ☐ |
+| 2 | 一键部署成功，`C:\SecureTrans\.env` 生成 | ☐ |
+| 3 | 访问 http://localhost:8000，admin/Admin@123 登录 | ☐ |
+| 4 | 运行全量测试：`cd tests; python test_api.py`（172项） | ☐ |
+| 5 | waitress 生产启动健康检查通过 | ☐ |
+| 6 | 单网卡隔离：内网段全功能，非内网段仅登录+下载（管理接口403） | ☐ |
+| 7 | NSSM/计划任务服务化（可选） | ☐ |
 
 ---
 
@@ -389,11 +441,11 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 │   ├── .env.production       # 生产环境配置模板
 │   └── static/               # 前端SPA（index.html，单页应用）
 ├── tests/
-│   └── test_api.py           # 171项全量测试
+│   └── test_api.py           # 172项全量测试
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署 (Linux)
 │   ├── deploy.ps1            # 一键部署 (Windows)
-│   ├── verify.sh             # 部署验证（171项全量测试）
+│   ├── verify.sh             # 部署验证（172项全量测试）
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式
 │   ├── nginx-securetrans-single.conf # Nginx 单网卡模式
 │   ├── securetrans.service   # systemd 服务
@@ -407,4 +459,4 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 
 ---
 
-*部署指南 v2.1.0 | 2026-09-04*
+*部署指南 v2.2.0 | 2026-09-04*

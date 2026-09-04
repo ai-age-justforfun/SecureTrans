@@ -1,6 +1,6 @@
 # SecureTrans 测试报告
 
-> 版本：v1.11.0 | 日期：2026-09-01 | 阶段：PSF
+> 版本：v2.2.0 | 日期：2026-09-04 | 阶段：PSF
 > 测试环境：Windows 11 (本地dev) + Rocky Linux 10.1 (WSL2 test)，Python 3.13/3.12 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
 > 测试工具：tests/test_api.py（Python urllib，无额外依赖）
@@ -248,3 +248,28 @@
 
 *文档结束 | SecureTrans 测试报告 v1.11.0 | 2026-09-01*
 
+## 十二、v2.2.0 部署能力升级验证（2026-09-04）
+
+**总计 172 项测试，Windows 本地 + WSL Rocky 双环境全部通过，通过率 100%。**
+
+### 一键式部署（方案 B）落地
+
+- **Linux（deploy.sh）**：Python 3.12 自动获取（系统已有→`offline-python/*.rpm` 离线→在线 dnf），离线 wheel 优先，NAS_ROOT 环境变量可覆盖并写回 .env，systemd ReadWritePaths 由模板按 NAS_ROOT 自动渲染，一键完成部署+健康检查。
+- **Windows（deploy.ps1）**：Python 3.10+ 自动获取（系统→`offline-python-win/python-*.exe` 静默安装→URL），离线 wheel 优先（`offline-deps-win/wheelhouse`），新增 Python 3.12/cp312 匹配预警，UTF-8 BOM 保证 PowerShell 5.1 中文正确。
+- **离线 Python 获取**：`infra/get-offline-python.sh` 在联网 Rocky 8 运行一次生成 `offline-python/*.rpm`（python3.12+依赖），随部署包离线携带。
+
+### 本轮修复的 Bug
+
+| Bug | 影响 | 修复 |
+|-----|------|------|
+| Linux 离线依赖包缺 waitress | 一键部署步骤5离线安装失败 | 将 waitress-3.0.0（py3-none-any）补入 `securetrans-offline-deps.tar.gz`（17→18 wheel） |
+| loopback(127.0.0.1)被判外网 | 本机健康检查/管理接口 403 | app.py `get_network_zone` 增加 loopback 恒为内网判断 |
+| verify.sh 拷贝测试脚本到 /tmp | 破坏 test_api.py 相对路径（nas 文件检查、src/app.py 源码检查） | 改为环境变量传 BASE_URL/NAS_ROOT，原地运行 |
+| deploy.ps1 离线 wheel 路径错误 | `--find-links` 指向 wheelhouse 父目录 + 发布包/仓库路径不一致 | 指向 `offline-deps-win/wheelhouse`，发布包根 + packages/ 双路径 fallback |
+| deploy.ps1 无 BOM 中文乱码 | PowerShell 5.1 解析失败 | 转 UTF-8 BOM |
+
+### 验证方式
+
+- WSL Rocky 10.1（systemd）：解压发布包 → `deploy.sh` 一键部署 → `verify.sh` 全量 **172 项 100%** 通过。
+- Windows：deploy.ps1 离线链路实测（Python 3.12 venv + 离线 wheel 安装 + .env 生成）。
+- 新增测试：`网络: loopback(127.0.0.1/::1)恒为内网管理面`（172 项之一）。
