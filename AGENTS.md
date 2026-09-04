@@ -161,7 +161,8 @@ main ────●────●────●────●────  �
 
 ### 部署脚本（infra/）
 
-- `infra/deploy.sh`：一键部署（9步自动化），必须在Linux服务器以root运行
+- `infra/deploy.sh`：一键式部署（Python 3.12 自动获取: 系统/offline-python离线RPM/在线; 离线wheel优先; NAS_ROOT可环境变量覆盖并写回.env; systemd ReadWritePaths模板渲染），root运行
+- `infra/get-offline-python.sh`：离线 Python 3.12 RPM 获取（联网 Rocky8 运行一次，产出 offline-python/ 随包离线携带）
 - `infra/verify.sh`：部署验证（172项全量测试），确认部署正确
 - `infra/nginx-securetrans.conf`：Nginx反向代理配置
 - `infra/securetrans.service`：systemd服务配置
