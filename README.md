@@ -18,6 +18,8 @@ SecureTrans 是面向中小企业的轻量级单向跨网文件审批摆渡系�
 - **分级审批**：合作方一级审批，非合作方二级审批
 - **轻量级部署**：单服务器 + SQLite + NAS，支撑50人到200人
 - **双模式部署**：测试环境（本地文件系统+Flask）/ 生产环境（NAS+gunicorn），一个开关切换
+- **双 OS 支持**：Windows（waitress）与 Linux（gunicorn）均可一键部署，离线依赖随发布包内置
+- **单/双网卡网络隔离**：单网卡按来源网段识别内外网（Nginx geo / 应用层 INTERNAL_CIDRS 兜底）；双网卡绑定内/外网卡，应用层隔离统一——外网面仅登录+下载，管理接口 403
 
 ---
 
@@ -46,12 +48,12 @@ cd src && python app.py
 # 另一个终端运行测试
 cd tests
 python test_api.py
-# 预期：166项测试全部通过，通过率100%
+# 预期：171项测试全部通过，通过率100%
 ```
 
 ### 测试环境部署（服务器验证）
 
-详见 [测试环境部署指南](docs/TESTING-DEPLOY.md) — 5步部署 + 验证清单 + 生产环境切换。
+详见 [部署指南](docs/DEPLOY.md) — 本地/WSL 测试环境 + 生产环境 + 单/双网卡 + Windows 部署，统一到一份文档。
 
 ### 生产环境部署
 
@@ -59,10 +61,10 @@ python test_api.py
 # 部署脚本在 infra/
 cd infra
 sudo bash deploy.sh    # 一键部署（9步自动化）
-bash verify.sh         # 部署验证（166项全量测试）
+bash verify.sh         # 部署验证（171项全量测试）
 ```
 
-详见 [生产环境部署指南](infra/DEPLOY.md)。
+详见 [生产环境部署指南](docs/DEPLOY.md)。
 
 ---
 
@@ -101,7 +103,7 @@ SecureTrans/
 │   └── TESTING-DEPLOY.md              # 测试环境部署指南
 └── infra/                    # 基础设施配置
     ├── deploy.sh             # 一键部署脚本（9步自动化）
-    ├── verify.sh             # 部署验证脚本（166项全量测试）
+    ├── verify.sh             # 部署验证脚本（171项全量测试）
     ├── DEPLOY.md             # 生产环境详细部署指南
     ├── nginx-securetrans.conf # Nginx反向代理配置
     └── securetrans.service   # systemd服务配置

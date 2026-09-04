@@ -1,6 +1,6 @@
 # SecureTrans 部署指南
 
-> 版本：v1.5.0 | 日期：2026-08-27
+> 版本：v2.1.0 | 日期：2026-09-04
 > 双模式部署：测试环境（本地/WSL）↔ 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
 
 ---
@@ -19,6 +19,21 @@
 
 **切换方式**：修改 `.env` 中的 `DEPLOY_MODE` 和 `NAS_ROOT`，换启动命令。代码不变。
 
+### 1.1 网络模式（单网卡 / 双网卡，部署时二选一）
+
+| 模式 | 配置 | 识别方式 | 适用 |
+|------|------|---------|------|
+| 单网卡 | `NETWORK_MODE=single`，Nginx 单 server + geo 网段识别 | 按来源 IP 网段（`INTERNAL_CIDRS`）自动分 internal/external | 只有一张网卡，防火墙放行内外网访问同一地址 |
+| 双网卡 | `NETWORK_MODE=dual`，Nginx 内/外网两个 server 绑定不同网卡 | 按访问入口（网卡）分面 | 物理隔离的内外网两张网卡 |
+
+应用层只认 `X-Network-Zone` 头（Nginx 注入）；无 Nginx 直连（Windows 本地/单网卡直连）时，应用层按 `INTERNAL_CIDRS` 兜底识别来源网段。**内外网功能隔离由应用层统一保证**：外网面仅开放登录 + 下载，管理/审批/配置接口一律 403，与单/双网卡无关。
+
+.env 示例：
+```ini
+NETWORK_MODE=single
+INTERNAL_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16   # 逗号分隔，留空=全部视为内网
+```
+
 ---
 
 ## 二、测试环境
@@ -33,21 +48,17 @@
 
 ### 2.2 方式 A：Windows 直接运行（最快）
 
-```bash
-cd src
-cp .env.testing .env          # DEPLOY_MODE=testing，NAS_ROOT=./nas
-python -m venv venv
-.\venv\Scripts\activate
-pip install -r requirements.txt
-python app.py
+一键部署（自动建 venv + 装依赖 + 生成 .env）：
+```powershell
+powershell -ExecutionPolicy Bypass -File infra/deploy.ps1 -InstallDir C:\SecureTrans -Start
 ```
 
-访问 http://localhost:8000，账号 `admin / Admin@123`。
+访问 http://localhost:8000，账号 `admin / Admin@123`（首次登录强制改密）。
 
 运行测试（另一个终端）：
 ```bash
 cd tests
-python test_api.py    # 102项全通过
+python test_api.py    # 171项全通过
 ```
 
 ### 2.3 方式 B：WSL Rocky Linux（模拟生产环境）
@@ -166,7 +177,7 @@ python app.py
 # 另一个 WSL 终端
 cd ~/securetrans/tests
 python3 test_api.py
-# 预期: 102项全部通过，通过率100%
+# 预期: 171项全部通过，通过率100%
 ```
 
 ### 3.6 WSL 中验证生产模式（可选）
@@ -270,9 +281,12 @@ sudo bash infra/deploy.sh
 sudo vi /opt/securetrans/.env
 sudo systemctl restart securetrans
 
-# 配置 Nginx 反向代理
-sudo cp /tmp/securetrans/infra/nginx-securetrans.conf /etc/nginx/conf.d/securetrans.conf
-sudo vi /etc/nginx/conf.d/securetrans.conf   # 修改 server_name
+# 配置 Nginx 反向代理（单/双网卡二选一）
+# 双网卡：内网卡+外网卡两个 server，绑定各自网卡 IP
+#   sudo cp /tmp/securetrans/infra/nginx-securetrans.conf /etc/nginx/conf.d/securetrans.conf
+# 单网卡：一个 server，geo 按来源网段自动分内外网（推荐简化方案）
+sudo cp /tmp/securetrans/infra/nginx-securetrans-single.conf /etc/nginx/conf.d/securetrans.conf
+sudo vi /etc/nginx/conf.d/securetrans.conf   # 修改 server_name 与 geo 网段
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
@@ -281,7 +295,7 @@ sudo nginx -t && sudo systemctl reload nginx
 ```bash
 cd /tmp/securetrans
 bash infra/verify.sh
-# 预期: 健康检查通过 + 102项API测试全通过
+# 预期: 健康检查通过 + 171项API测试全通过
 ```
 
 ### 4.6 初始账号
@@ -289,6 +303,27 @@ bash infra/verify.sh
 | 用户名 | 密码 | 角色 |
 |--------|------|------|
 | `admin` | `Admin@123` | 系统管理员（首次登录强制改密） |
+
+### 4.7 Windows 服务器部署（可选）
+
+客户端/服务器是 Windows 时同样支持，无需 Nginx（应用层网段识别直接生效）：
+
+**前置**：安装 Python 3.10+（https://www.python.org/downloads/ ，安装时勾选 *Add python.exe to PATH*）。封闭离线环境提前下载 Windows 安装包（离线 wheel 已随发布包内置 `offline-deps-win/`）。
+
+```powershell
+# 1. 上传/解压发布包到服务器，进入项目根目录
+# 2. 一键部署（离线优先，自动建 venv + 装依赖 + 生成 .env）
+powershell -ExecutionPolicy Bypass -File infra/deploy.ps1 -InstallDir C:\SecureTrans
+
+# 3. 编辑 .env：NAS_ROOT、INTERNAL_CIDRS、SECRET_KEY
+notepad C:\SecureTrans\.env
+
+# 4. 生产启动（waitress，Windows 生产推荐，替代 Linux 的 gunicorn）
+cd C:\SecureTrans
+.\venv\Scripts\waitress-serve.exe --host=0.0.0.0 --port=8000 app:app
+```
+
+Windows 服务化（开机自启）可用 NSSM：`nssm install SecureTrans` 指向 venv python + app.py；或用计划任务。单网卡直连时，`INTERNAL_CIDRS` 决定内外网：内网段全功能，非内网段仅登录+下载。
 
 ---
 
@@ -355,12 +390,15 @@ sudo systemctl start securetrans
 │   ├── .env.production       # 生产环境配置
 │   └── static/               # 前端SPA
 ├── tests/
-│   └── test_api.py           # 102项全量测试
+│   └── test_api.py           # 171项全量测试
 ├── infra/                    # 部署脚本和配置
-│   ├── deploy.sh             # 一键部署
+│   ├── deploy.sh             # 一键部署 (Linux)
+│   ├── deploy.ps1            # 一键部署 (Windows)
 │   ├── verify.sh             # 部署验证
-│   ├── nginx-securetrans.conf
-│   └── securetrans.service
+│   ├── nginx-securetrans.conf       # Nginx 双网卡模式
+│   ├── nginx-securetrans-single.conf # Nginx 单网卡模式
+│   ├── securetrans.service
+│   └── package.sh / release.ps1     # 打包与 Gitea 发布
 └── docs/
     └── DEPLOY.md             # 本部署指南
 ```

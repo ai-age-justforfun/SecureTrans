@@ -14,7 +14,7 @@
 阶段2  测试环境部署（testing：本地文件系统+Flask）→ 自动化测试150项
 阶段3  生产环境部署（production：本地磁盘+gunicorn+systemd）→ 自动化测试150项
 阶段4  NAS 切换（本地磁盘 OK 后，创建 dataset + 挂载 + 迁移）
-阶段5  双网卡 + Nginx 双 server
+阶段5  网络隔离（双网卡 / 单网卡 geo 二选一）
 阶段6  手工验收 + 内部试用发布（清测试数据 → 正式配置）
 ```
 
@@ -293,6 +293,24 @@ vi /etc/nginx/conf.d/securetrans.conf
 #   确认两个 server 分别 proxy_set_header X-Network-Zone internal / external
 nginx -t && systemctl reload nginx
 ```
+
+### 5.2 单网卡模式（替代双网卡，按实际部署二选一）
+
+只有一张网卡、防火墙放行内外网访问同一地址时，用单网卡模板，Nginx 按来源网段自动识别内外网，
+功能隔离与应用层统一（外网面仅登录+下载，管理接口 403）：
+
+```bash
+cd /opt/securetrans
+cp infra/nginx-securetrans-single.conf /etc/nginx/conf.d/securetrans.conf
+vi /etc/nginx/conf.d/securetrans.conf
+# 修改：
+#   server_name -> 实际域名/IP
+#   geo $network_zone 中的网段 -> 实际内网网段（与 INTERNAL_CIDRS 一致）
+nginx -t && systemctl reload nginx
+```
+
+应用层 .env 同步：`NETWORK_MODE=single` + `INTERNAL_CIDRS=<内网网段>`。
+无 Nginx 直连（Windows 本地 / 单网卡直连）时应用层按网段兜底，行为一致。
 
 ### 5.3 验收
 
