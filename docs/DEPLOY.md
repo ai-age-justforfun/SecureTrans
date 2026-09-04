@@ -122,7 +122,7 @@ sudo bash /opt/securetrans/infra/verify.sh
 
 | 优先级 | 来源 | 说明 |
 |--------|------|------|
-| 1 | 系统已有 Python 3.10+ | 直接用 |
+| 1 | 系统已有 Python 3.10+（**优先 3.12**） | 优先用 3.12（匹配 cp312 wheel）；非 3.12 且部署包有离线 3.12 RPM 时自动切换 3.12 |
 | 2 | `offline-python/*.rpm`（离线） | 见下方「离线 Python 获取」 |
 | 3 | 在线 `dnf module` 安装 | 需网络，防火墙临时放行 80/443 访问镜像 |
 
@@ -387,7 +387,7 @@ systemctl start securetrans
 
 | 优先级 | 来源 | 说明 |
 |--------|------|------|
-| 1 | 系统已装 Python 3.10+ | 直接用 |
+| 1 | 系统已装 Python 3.10+（**优先 3.12**） | 优先用 3.12；非 3.12 且 offline-python-win 有 3.12 安装器时自动切换 3.12 |
 | 2 | `offline-python-win/python-*.exe`（离线） | 官方安装器放入该目录，deploy.ps1 自动静默安装 |
 | 3 | 在线下载安装 | https://www.python.org/downloads/ ，勾选 *Add python.exe to PATH* |
 

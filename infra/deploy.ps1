@@ -57,6 +57,20 @@ if ([int]($pyVer.Split('.')[0]) -lt 3 -or ([int]($pyVer.Split('.')[0]) -eq 3 -an
     exit 1
 }
 Write-Host "[0/5] Python: $pyVer OK"
+# 版本匹配强化：离线 wheel 按 cp312 打包，若当前 Python 非 3.12 且存在离线 3.12 安装器，
+# 优先静默安装 3.12（保证与离线依赖一致），而不是降级用非 3.12
+$is312cur = (& python -c "import sys; print(1 if sys.version_info[:2]==(3,12) else 0)").Trim()
+if ($is312cur -eq "0" -and (Test-Path $offlinePyDir)) {
+    $installer312 = Get-ChildItem $offlinePyDir -Filter "python-3.12*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($installer312) {
+        Write-Host "[0/5] 当前 Python 为 $pyVer，检测到离线 Python 3.12 安装器 $($installer312.Name)，切换安装 3.12 以匹配离线 wheel (cp312)..."
+        Start-Process -FilePath $installer312.FullName -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1 Include_pip=1 Include_tcltk=1" -Wait -NoNewWindow
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        Start-Sleep -Seconds 3
+        $pyVer = (& python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
+        Write-Host "[0/5] Python 已切换: $pyVer"
+    }
+}
 # 离线 wheel 按 cp312 打包，Python 需 3.12；非 3.12 且走离线时预警
 if (Test-Path $offlineDir) {
     $is312 = (& python -c "import sys; print(1 if sys.version_info[:2]==(3,12) else 0)").Trim()

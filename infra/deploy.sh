@@ -45,10 +45,10 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# 找 >=3.10 的系统 Python
+# 找 >=3.10 的系统 Python（3.12 优先，离线 wheel 按 cp312 打包）
 find_python() {
     local cmd ver maj min
-    for cmd in python3 python3.12 python3.11 python3.10; do
+    for cmd in python3.12 python3.11 python3.10 python3; do
         if command -v "$cmd" &>/dev/null; then
             ver=$("$cmd" -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "0.0")
             maj=${ver%%.*}
@@ -81,6 +81,19 @@ fi
 PY_CMD="${PY_CMD:-python3}"
 PY_VERSION=$("$PY_CMD" -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 echo -e "  Python: ${PY_CMD} (${PY_VERSION}) ${GREEN}OK${NC}"
+
+# 版本匹配强化：离线 wheel 按 cp312 打包，若当前 Python 非 3.12 且部署包内有离线 3.12 RPM，
+# 优先切换安装 3.12（保证与离线依赖一致），而不是降级用非 3.12
+if [ "$PY_VERSION" != "3.12" ] && ls "$OFFLINE_PYTHON_DIR"/*.rpm &>/dev/null 2>&1; then
+    echo -e "${YELLOW}  当前 Python 为 ${PY_VERSION}，检测到离线 Python 3.12 RPM，切换安装 3.12 以匹配离线 wheel (cp312)...${NC}"
+    dnf localinstall -y "$OFFLINE_PYTHON_DIR"/*.rpm
+    if command -v python3.12 &>/dev/null; then
+        alternatives --set python3 /usr/bin/python3.12 2>/dev/null || true
+        PY_CMD="python3.12"
+        PY_VERSION=$("$PY_CMD" -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+        echo -e "  Python 已切换: ${PY_CMD} (${PY_VERSION}) ${GREEN}OK${NC}"
+    fi
+fi
 
 # 兼容性提示：内置离线 wheel 按 cp312 打包，若 Python 非 3.12 且离线安装失败请改用 3.12
 if [ -d "$OFFLINE_DEPS_DIR" ] && [ "$PY_VERSION" != "3.12" ]; then
