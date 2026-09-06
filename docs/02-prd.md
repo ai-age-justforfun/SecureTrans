@@ -1,10 +1,11 @@
-# SecureTrans 轻量级跨网文件审批摆渡系统 PRD v2.0
+# SecureTrans 轻量级跨网文件审批摆渡系统 PRD v2.1
 
-> 版本：v2.0 | 更新日期：2026-09-04 | 产品：SecureTrans（安全摆渡）
+> 版本：v2.1 | 更新日期：2026-09-06 | 产品：SecureTrans（安全摆渡）
 >
 > v1.4 核心调整：放弃软链接架构，改用 os.rename 同文件系统移动（0拷贝）；技术栈从 FastAPI 改为 Flask+Flask-Login；适配初创公司 50 人规模。
 >
 > v2.0 核心调整（2026-09-04）：单网卡部署支持（网段识别内外网，双网卡保留可选）；双操作系统支持（Windows/Linux）；版本号单一来源；部署文档统一；Rocky Linux 一键式部署（Python 3.12 自动获取 + 离线包）；Windows 部署同等完善（方案 B）；部署验证增强（172 项全量）。
+> v2.1 核心调整（2026-09-06）：部署环境与系统完全隔离（Python 3.12 venv --copies 复制解释器，独立运行与发布；Linux/Windows 双平台强制，含 venv 内版本校验）。
 
 ---
 
@@ -142,6 +143,7 @@ SecureTrans 是一款面向中小企业的轻量级单向跨网文件审批摆�
 
 | 层级 | 技术选型 | 说明 |
 |------|---------|------|
+| 运行环境 | **Python 3.12 + venv（--copies）** | 与系统 Python 完全隔离，独立运行与发布（见 3.1b） |
 | Web框架 | **Flask 3.x** | 轻量级，生态成熟，适合小团队 |
 | 认证 | **Flask-Login** | 会话管理，本地用户+AD用户统一接入 |
 | 数据库 | **SQLite** | 单文件，零配置，支撑 50 人绰绰有余 |
@@ -150,6 +152,17 @@ SecureTrans 是一款面向中小企业的轻量级单向跨网文件审批摆�
 | 定时任务 | **APScheduler** 或系统 Cron | 过期文件清理，半夜执行 |
 | 反向代理 | Nginx | 负载均衡、HTTPS、大文件上传缓冲 |
 | 进程管理 | systemd (Linux) / 计划任务 (Windows) | 开机自启、崩溃重启 |
+
+### 3.1b venv 部署环境隔离（v2.1 新增）
+
+**要求：应用运行环境与服务器系统环境完全隔离，可独立运行与发布。**
+
+- 部署必须创建独立 venv：`python3.12 -m venv --copies venv`；应用与依赖全部安装在 venv 内，不写入系统环境。
+- `--copies` 为复制解释器（非符号链接）：venv 内 python3 是独立可执行文件，系统 Python 升级/移动/卸载不影响应用；应用卸载也不影响系统。
+- 依赖安装进 venv（`venv/bin/pip install --no-index --find-links wheelhouse`），不碰系统 site-packages。
+- 启动与进程管理（gunicorn / waitress / systemd）一律使用 venv 内解释器路径（如 `venv/bin/gunicorn`、`venv/Scripts/python.exe`）。
+- 版本一致性：venv 内 Python 必须为 3.12（与离线 wheel 的 cp312 匹配）；部署脚本创建后自动校验版本，不匹配告警并提示重建。
+- 双平台强制：Linux `deploy.sh` 与 Windows `deploy.ps1` 均执行 `--copies` 创建 + venv 内版本校验。
 
 ### 3.2 为什么选 Flask 而不是 FastAPI
 - Flask 生态更成熟，Flask-Login 等插件稳定
@@ -269,7 +282,7 @@ app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024 * 1024  # 1GB 上限
 | 可用性 | 单服务器部署，7×24 运行；进程崩溃自动重启（systemd） |
 | 安全性 | HTTPS 传输；密码 bcrypt；Flask-Login 会话管理；操作全审计入 SQLite；文件 MD5 校验 |
 | 兼容性 | Chrome/Edge/Firefox 最新两个版本；支持 Windows AD（LDAP v3） |
-| 可维护性 | 单实例部署，配置文件化；日志可导出；支持备份恢复 |
+| 可维护性 | 单实例部署，配置文件化；日志可导出；支持备份恢复；部署环境与系统隔离（venv），升级/卸载互不影响 |
 | 数据保留 | 归档文件永久保留（磁盘/NAS 容量规划）；操作日志保留 1 年；下载记录保留 1 年 |
 | 扩展性 | 架构支撑到 200 人规模不改代码；超过后考虑 PostgreSQL + 多机部署 |
 
@@ -424,4 +437,9 @@ app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024 * 1024  # 1GB 上限
 - loopback(127.0.0.1/::1) 恒为内网管理面（修复健康检查被判外网 403）。
 - 离线依赖补全（waitress 等），修复 Linux/Windows 离线链路 4 个 Bug；全量测试 172 项。
 
-*文档结束 | SecureTrans PRD v2.0 | 2026-09-04*
+### 10.8 venv 完全隔离部署（v2.1 新增，对应发布 v2.2.1）
+- 部署环境与系统完全隔离：`python3.12 -m venv --copies venv`（复制解释器，非符号链接）；venv 独立 site-packages/pip，系统 Python 升级/卸载不影响应用，独立运行与发布。
+- 双平台 `deploy.sh` / `deploy.ps1` 均加 `--copies` 创建 + venv 内 Python 版本校验（须 3.12 匹配 cp312 离线 wheel）。
+- 实测（WSL Rocky 10）：venv/bin/python3 为非符号链接普通文件，隔离成立；本地 + WSL 全量回归 172 项 100%。
+
+*文档结束 | SecureTrans PRD v2.1 | 2026-09-06*

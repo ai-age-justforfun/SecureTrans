@@ -94,7 +94,7 @@ SecureTrans/
 ├── docs/                     # 统一文档（数字前缀排序，持续刷新）
 │   ├── 00-lean-startup-phase-map.md   # Lean Startup三阶段映射与决策门
 │   ├── 01-scrum-io-definition.md      # Scrum各阶段输入输出定义
-│   ├── 02-prd.md                     # 产品需求文档（最新，内部版本v2.0）
+│   ├── 02-prd.md                     # 产品需求文档（最新，内部版本v2.1）
 │   ├── 03-psf-process.md              # PSF阶段标准流程
 │   ├── 04-pmf-process.md              # PMF阶段标准流程（下一阶段准备）
 │   ├── 05-test-cases.md               # 测试用例
@@ -200,7 +200,7 @@ main ────●────●────●────●────  �
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
 - [Scrum各阶段输入输出定义](docs/01-scrum-io-definition.md)
-- [产品需求文档 PRD v2.0](docs/02-prd.md)
+- [产品需求文档 PRD v2.1](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
 - [测试报告（172项全通过）](docs/06-test-report.md)
@@ -218,11 +218,11 @@ main ────●────●────●────●────  �
 
 ### ADR-001：os.rename 而不是软链接
 - 0拷贝性能等价，但全平台原生支持，NAS兼容性好，权限简单
-- 详见 PRD v2.0 第2.2节
+- 详见 PRD v2.1 第2.2节
 
 ### ADR-002：Flask 而不是 FastAPI
 - Flask-Login生态成熟，团队学习成本低，50人规模性能不是瓶颈
-- 详见 PRD v2.0 第3.2节
+- 详见 PRD v2.1 第3.2节
 
 ### ADR-003：主干开发 + 单分支
 - 小团队/副业项目，避免多分支合并冲突，main始终可部署
