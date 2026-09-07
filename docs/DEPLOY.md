@@ -238,9 +238,9 @@ grep -E '^(DEPLOY_MODE|NAS_ROOT|HOST|PORT|FLASK_DEBUG|SECRET_KEY)=' .env
 cd /opt/securetrans
 cp infra/securetrans.service /etc/systemd/system/securetrans.service
 # 关键：本阶段 NAS_ROOT 是本地目录，systemd 的 ReadWritePaths 需放开（阶段4 再指向 /mnt/nas）
-# 容器环境（LXC/Docker/WSL，无 CAP_SYS_ADMIN）下 PrivateTmp/ProtectSystem/ReadWritePaths 会导致启动失败 status=226/NAMESPACE
-# deploy.sh 已自动检测并移除加固指令（真机保留）；手工部署请参照执行下面一行：
-# sed -i '/^PrivateTmp=/d; /^ProtectSystem=/d; /^ReadWritePaths=/d' /etc/systemd/system/securetrans.service
+# 注：service 模板默认不含 PrivateTmp/ProtectSystem/ReadWritePaths（这些 mount namespace 加固指令
+# 在部分环境启动报 status=226/NAMESPACE，如容器、特定虚拟化/挂载组合）；默认仅 NoNewPrivileges 基础加固，
+# 兼容真机/容器。如需完整加固，真机验证兼容后自行加回。
 systemctl daemon-reload
 systemctl enable --now securetrans
 systemctl status securetrans --no-pager -l | head -15

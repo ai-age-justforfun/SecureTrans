@@ -21,12 +21,12 @@ RestartSec=5
 KillMode=mixed
 TimeoutStopSec=30
 
-# 安全加固
+# 基础加固（无需 mount namespace，容器/真机通用）
 NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-# __NAS_ROOT__ 由 deploy.sh 按 .env 的 NAS_ROOT 渲染
-ReadWritePaths=/opt/securetrans __NAS_ROOT__
+# 说明：曾配置 PrivateTmp=true / ProtectSystem=strict / ReadWritePaths=，
+# 这些指令需创建 mount namespace，在部分环境（容器、特定虚拟化/挂载组合）
+# 下启动报 status=226/NAMESPACE。默认移除以保证可部署性；
+# 如需完整加固，真机验证兼容后可自行加回。
 
 [Install]
 WantedBy=multi-user.target

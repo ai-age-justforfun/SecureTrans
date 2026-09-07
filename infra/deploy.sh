@@ -240,15 +240,6 @@ echo -e "  权限设置完成 ${GREEN}OK${NC}"
 echo -e "${YELLOW}[8/9] 安装 systemd 服务...${NC}"
 cp "$SCRIPT_DIR/securetrans.service" /etc/systemd/system/securetrans.service
 sed -i "s|__NAS_ROOT__|${NAS_ROOT}|" /etc/systemd/system/securetrans.service
-
-# 容器环境降级：无 CAP_SYS_ADMIN 时，PrivateTmp/ProtectSystem/ReadWritePaths 等
-# mount namespace 加固指令会导致服务启动失败 status=226/NAMESPACE（LXC/Docker/WSL 常见）
-# 真机虚拟机（kvm/vmware/hyperv）保留完整加固
-VIO=$(systemd-detect-virt 2>/dev/null || echo "none")
-if echo "$VIO" | grep -qiE "lxc|docker|podman|openvz|wsl|systemd-nspawn"; then
-    echo -e "  检测到容器环境 ($VIO)，移除 mount namespace 加固指令（PrivateTmp/ProtectSystem/ReadWritePaths）"
-    sed -i '/^PrivateTmp=/d; /^ProtectSystem=/d; /^ReadWritePaths=/d' /etc/systemd/system/securetrans.service
-fi
 systemctl daemon-reload
 systemctl enable securetrans
 echo -e "  systemd 服务已安装并设为开机自启（ReadWritePaths=${NAS_ROOT}） ${GREEN}OK${NC}"
