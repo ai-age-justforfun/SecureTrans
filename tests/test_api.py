@@ -12,6 +12,26 @@ import time
 import tempfile
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
+
+def _resolve_nas_root():
+    """NAS_ROOT 解析优先级：环境变量 > 安装目录 .env > 本地开发默认(src/nas)
+    保证测试断言路径与服务端(deploy.sh 写入 .env 的 NAS_ROOT)一致，无需手动传参"""
+    env = os.getenv("NAS_ROOT")
+    if env:
+        return env
+    _base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env_file = os.path.join(_base, ".env")
+    # 仅当 .env 与 app.py 同目录（部署结构 /opt/securetrans）才可信，避免误读项目根残留的测试 .env
+    if os.path.exists(env_file) and os.path.exists(os.path.join(_base, "app.py")):
+        try:
+            with open(env_file, encoding="utf-8", errors="ignore") as _f:
+                for _line in _f:
+                    _line = _line.strip()
+                    if _line.startswith("NAS_ROOT="):
+                        return _line.split("=", 1)[1].strip().strip('"').strip("'")
+        except Exception:
+            pass
+    return os.path.join(_base, "src", "nas")
 results = []
 
 # 创建带 cookie 的 opener（模拟浏览器 session）
@@ -482,7 +502,7 @@ approval_levels = [(a.get('level'), a.get('action')) for a in data.get('approval
 test("语义B: 审计记录含level2自动跳过", (2, 'approve') in approval_levels, f"approvals={approval_levels}")
 
 # 文件已摆渡到 external（os.path 计算路径，避免依赖后文 pathlib）
-_dual_nas_root = os.getenv("NAS_ROOT", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "nas"))
+_dual_nas_root = _resolve_nas_root()
 dual_in_external = os.path.exists(os.path.join(_dual_nas_root, "external", dual_sub_id))
 test("语义B: 文件已摆渡到external", dual_in_external, f"path={os.path.join(_dual_nas_root, 'external', dual_sub_id)}")
 
@@ -640,7 +660,7 @@ test("手动触发过期清理（无过期文件）", code == 200 and 'cleaned' 
 
 # 提前定义物理路径（供驳回/归档测试使用）
 import pathlib
-nas_root = pathlib.Path(os.getenv("NAS_ROOT", str(pathlib.Path(__file__).parent.parent / "src" / "nas")))
+nas_root = pathlib.Path(_resolve_nas_root())
 staging_dir = nas_root / "staging"
 external_dir = nas_root / "external"
 archive_dir = nas_root / "archive"

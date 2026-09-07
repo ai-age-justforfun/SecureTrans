@@ -38,7 +38,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.4"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.5"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")

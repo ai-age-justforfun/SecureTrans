@@ -1,6 +1,6 @@
 # SecureTrans 部署指南
 
-> 版本：v2.2.4 | 日期：2026-09-07
+> 版本：v2.2.5 | 日期：2026-09-07
 > 唯一部署文档：测试环境（本地/WSL）↔ 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
 > 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
@@ -192,7 +192,7 @@ firewall-cmd --permanent --add-port=8000/tcp && firewall-cmd --reload
 
 ### 阶段1：上传部署包 + 离线安装依赖
 
-把 `securetrans-<当前版本>.tar.gz`（如 v2.2.4）从本地传到服务器（scp / U盘 / 堡垒机）：
+把 `securetrans-<当前版本>.tar.gz`（如 v2.2.5）从本地传到服务器（scp / U盘 / 堡垒机）：
 
 ```bash
 scp securetrans-2.1.0.tar.gz root@<服务器IP>:/root/
@@ -277,7 +277,8 @@ curl -s http://127.0.0.1:8000/api/health
 # 预期: {"deployMode":"production",...}
 systemctl is-active securetrans       # 预期 active
 cd /opt/securetrans/tests
-NAS_ROOT=/opt/securetrans/nas python3 test_api.py
+python3 test_api.py    # 自动读取 /opt/securetrans/.env 的 NAS_ROOT，无需手工传参；
+                        # 若 .env 缺失（直接跑 app.py 未部署），才需手工指定：NAS_ROOT=... python3 test_api.py
 # 预期: 总计172 | 通过172 | 通过率100.0%
 ```
 
@@ -317,6 +318,11 @@ df -h /mnt/nas/securetrans/staging /mnt/nas/securetrans/external /mnt/nas/secure
 - [ ] NAS 三个目录同一文件系统
 - [ ] 生产模式在 NAS 上再跑 172 项自动化测试 100%
 - [ ] os.rename 0拷贝：上传→审批→摆渡 毫秒级
+
+> **说明：测试/内网试用阶段不需要 Nginx**——gunicorn 已是生产 WSGI 服务器，直接监听 8000 即可完整服务。
+> Nginx 仅为以下场景可选安装：① 双网卡隔离（注入 X-Network-Zone 头）；② HTTPS 对外；③ 大文件上传限制（client_max_body_size）。
+> 安装：`dnf install nginx`（离线环境需提前下载 nginx RPM 随包携带）；配置模板：`infra/nginx-securetrans.conf`（双网卡）/ `infra/nginx-securetrans-single.conf`（单网卡按网段识别）。
+
 
 ### 阶段5：网络隔离（双网卡 / 单网卡 geo 二选一）
 
@@ -488,4 +494,4 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 
 ---
 
-*部署指南 v2.2.4 | 2026-09-07*
+*部署指南 v2.2.5 | 2026-09-07*
