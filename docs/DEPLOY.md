@@ -1,6 +1,6 @@
 # SecureTrans 部署指南
 
-> 版本：v2.2.1 | 日期：2026-09-04
+> 版本：v2.2.2 | 日期：2026-09-07
 > 唯一部署文档：测试环境（本地/WSL）↔ 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
 > 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
@@ -169,7 +169,7 @@ firewall-cmd --permanent --add-port=8000/tcp && firewall-cmd --reload
 
 ### 阶段1：上传部署包 + 离线安装依赖
 
-把 `securetrans-<当前版本>.tar.gz`（如 v2.2.1）从本地传到服务器（scp / U盘 / 堡垒机）：
+把 `securetrans-<当前版本>.tar.gz`（如 v2.2.2）从本地传到服务器（scp / U盘 / 堡垒机）：
 
 ```bash
 scp securetrans-2.1.0.tar.gz root@<服务器IP>:/root/
@@ -461,4 +461,4 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 
 ---
 
-*部署指南 v2.2.1 | 2026-09-04*
+*部署指南 v2.2.2 | 2026-09-07*

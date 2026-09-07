@@ -1,6 +1,6 @@
 # SecureTrans 测试报告
 
-> 版本：v2.2.1 | 日期：2026-09-04 | 阶段：PSF
+> 版本：v2.2.2 | 日期：2026-09-07 | 阶段：PSF
 > 测试环境：Windows 11 (本地dev) + Rocky Linux 10.1 (WSL2 test)，Python 3.13/3.12 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
 > 测试工具：tests/test_api.py（Python urllib，无额外依赖）
@@ -279,3 +279,8 @@
 - WSL Rocky 10.1（systemd）：解压发布包 → `deploy.sh` 一键部署 → `verify.sh` 全量 **172 项 100%** 通过。
 - Windows：deploy.ps1 离线链路实测（Python 3.12 venv + 离线 wheel 安装 + .env 生成）。
 - 新增测试：`网络: loopback(127.0.0.1/::1)恒为内网管理面`（172 项之一）。
+
+### 12.2 v2.2.2 部署修复验证（2026-09-07）
+- 修复：systemd 服务启动失败 status=226/NAMESPACE——mount namespace 加固指令（PrivateTmp/ProtectSystem=strict/ReadWritePaths）在部分虚拟化/挂载组合下（如 ESXi VM + NAS 未挂载路径）无法建立命名空间。
+- 变更：securetrans.service 默认移除三行加固指令，保留 NoNewPrivileges + 独立用户（securetrans），保证真机/容器可部署；deploy.sh 同步简化；DEPLOY.md 说明。
+- 验证：本地全量回归 172 项 100%（服务器部署验证后补充）。
