@@ -239,7 +239,15 @@ echo -e "  权限设置完成 ${GREEN}OK${NC}"
 # ============================================================
 echo -e "${YELLOW}[8/9] 安装 systemd 服务...${NC}"
 cp "$SCRIPT_DIR/securetrans.service" /etc/systemd/system/securetrans.service
-sed -i "s|__NAS_ROOT__|${NAS_ROOT}|" /etc/systemd/system/securetrans.service
+# ReadWritePaths 只保留存在的路径：systemd 239（RHEL8/Rocky8）对不存在的路径报 226/NAMESPACE
+# （如 NAS 未挂载时 /mnt/nas/securetrans 不存在）；NAS 挂载后重跑部署自动补全
+RW_PATHS="/opt/securetrans"
+if [ -n "$NAS_ROOT" ] && [ -d "$NAS_ROOT" ]; then
+    RW_PATHS="$RW_PATHS $NAS_ROOT"
+else
+    echo -e "  NAS_ROOT ($NAS_ROOT) 不存在或未挂载，ReadWritePaths 仅保留 /opt/securetrans（挂载后重跑部署更新）"
+fi
+sed -i "s|__NAS_ROOT__|${RW_PATHS}|" /etc/systemd/system/securetrans.service
 systemctl daemon-reload
 systemctl enable securetrans
 echo -e "  systemd 服务已安装并设为开机自启（ReadWritePaths=${NAS_ROOT}） ${GREEN}OK${NC}"

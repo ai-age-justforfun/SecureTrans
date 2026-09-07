@@ -21,12 +21,14 @@ RestartSec=5
 KillMode=mixed
 TimeoutStopSec=30
 
-# 基础加固（无需 mount namespace，容器/真机通用）
+# 安全加固（mount namespace，已实测兼容 systemd 239/257）
 NoNewPrivileges=true
-# 说明：曾配置 PrivateTmp=true / ProtectSystem=strict / ReadWritePaths=，
-# 这些指令需创建 mount namespace，在部分环境（容器、特定虚拟化/挂载组合）
-# 下启动报 status=226/NAMESPACE。默认移除以保证可部署性；
-# 如需完整加固，真机验证兼容后可自行加回。
+PrivateTmp=true
+ProtectSystem=strict
+# __NAS_ROOT__ 由 deploy.sh 按 NAS_ROOT 存在性渲染（不存在则仅保留 /opt/securetrans）
+# 注：systemd 239（RHEL8/Rocky8）对 ReadWritePaths 中不存在的路径启动报 226/NAMESPACE，
+#     deploy.sh 已做存在性检查；NAS 挂载后重跑部署或手工 daemon-reload 更新。
+ReadWritePaths=/opt/securetrans __NAS_ROOT__
 
 [Install]
 WantedBy=multi-user.target
