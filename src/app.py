@@ -30,7 +30,7 @@ DB_PATH = DATA_DIR / "securetrans.db"
 LOG_PATH = DATA_DIR / "securetrans.log"
 
 # 存储目录（必须在同一个文件系统，os.rename 才能 0拷贝）
-NAS_ROOT = Path(os.getenv("NAS_ROOT", str(BASE_DIR / "nas")).strip())  # strip 防 .env CRLF 污染()
+NAS_ROOT = Path(os.getenv("NAS_ROOT", str(BASE_DIR / "nas")).strip())  # strip 防 .env CRLF 污染(CR)
 STAGING_DIR = NAS_ROOT / "staging"    # 刚上传，待审核
 EXTERNAL_DIR = NAS_ROOT / "external"   # 审核通过，可外网下载
 ARCHIVE_DIR = NAS_ROOT / "archive"     # 过期/驳回，永久归档
@@ -38,15 +38,15 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.3"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.4"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
-MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(800 * 1024 * 1024)))  # 800MB 上传上限
+MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(800 * 1024 * 1024)).strip())  # 800MB 上传上限
 
 # 部署模式：testing（本地文件系统+Flask自带服务器）/ production（NAS+gunicorn）
 # testing 为默认值，适合开发和测试环境验证；生产环境设为 production
-DEPLOY_MODE = os.getenv("DEPLOY_MODE", "testing").lower()
+DEPLOY_MODE = os.getenv("DEPLOY_MODE", "testing").strip().lower()
 if DEPLOY_MODE not in ("testing", "production"):
     DEPLOY_MODE = "testing"
 

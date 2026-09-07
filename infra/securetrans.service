@@ -28,7 +28,7 @@ ProtectSystem=strict
 # __NAS_ROOT__ 由 deploy.sh 按 NAS_ROOT 存在性渲染（不存在则仅保留 /opt/securetrans）
 # 注：systemd 239（RHEL8/Rocky8）对 ReadWritePaths 中不存在的路径启动报 226/NAMESPACE，
 #     deploy.sh 已做存在性检查；NAS 挂载后重跑部署或手工 daemon-reload 更新。
-ReadWritePaths=/opt/securetrans __NAS_ROOT__
+ReadWritePaths=__RW_PATHS__
 
 [Install]
 WantedBy=multi-user.target

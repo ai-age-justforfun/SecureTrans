@@ -1,6 +1,6 @@
 # SecureTrans 部署指南
 
-> 版本：v2.2.3 | 日期：2026-09-07
+> 版本：v2.2.4 | 日期：2026-09-07
 > 唯一部署文档：测试环境（本地/WSL）↔ 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
 > 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
@@ -101,6 +101,29 @@ cd ~/securetrans/tests && python3 test_api.py   # 172项全通过
 
 ---
 
+## 2.5 环境一致性（关键：为什么 WSL 成功、服务器失败）
+
+**三环境路径约定（已对齐）**：
+
+| 环境 | 安装目录 | NAS_ROOT | 存储/启动方式 | systemd |
+|------|---------|----------|--------------|---------|
+| 本地 Windows dev | `src/` | 默认 `src/nas`（testing） | 本地文件系统 + Flask 内置 | 无 |
+| WSL 测试（影子环境） | `/opt/securetrans` | `/mnt/nas/securetrans` | NAS 目录 + gunicorn + systemd | 257 |
+| 服务器生产 | `/opt/securetrans` | `/mnt/nas/securetrans` | NAS 挂载 + gunicorn + systemd | 239 |
+
+**为什么 WSL 成功而 ESXi 服务器失败（226/NAMESPACE）**：
+1. **systemd 版本差异（主因）**：WSL Rocky10 = systemd 257，**忽略** ReadWritePaths 中不存在的路径；ESXi Rocky 8.10 = systemd 239，**严格失败**（226/NAMESPACE）
+2. **路径存在性（诱因）**：服务器 NAS 未挂载 → `/mnt/nas/securetrans` 不存在；WSL 当时特意用了存在且干净的 `/var/nas/securetrans`
+3. **CRLF 污染（帮凶）**：`.env`/service 模板 CRLF → `NAS_ROOT` 值带 `\r` → 异形目录 + ReadWritePaths 渲染异常路径
+4. v2.2.0 时代 WSL 的 service 模板是 CRLF，ReadWritePaths 带 `\r`（路径"不存在"），257 忽略 → 服务照常启动；同样的模板在 239 上必炸
+
+**因此**：WSL 无法直接复现 226（257 太宽容），deploy.sh 已加 **preflight 自检** 兜底——检查 ReadWritePaths 每个路径存在且无 CR，WSL 跑通 = 服务器行为一致。
+
+**部署注意（防再次踩坑）**：
+- 不要从 Windows 工作区直接运行 `deploy.sh`（`src/` 含本地开发产物 `.env`/`data`/`nas`/`venv`）；deploy.sh 已用 tar 排除这些目录并保护生产 `.env`
+- 全量测试前必须**重置干净基线**（admin/Admin@123）：删除 `data/securetrans.db` + 清空 NAS 下 `staging/external/archive`
+- `.env` 用 LF 保存（Windows 记事本会写 CRLF，VSCode 右下角可切换）
+
 ## 三、生产环境部署（封闭数据中心）—— Rocky 8.10
 
 > 适用：新建 Rocky Linux 8.10 虚拟机服务器（可配置 mirrors 在线源，但**默认走离线包**）
@@ -169,7 +192,7 @@ firewall-cmd --permanent --add-port=8000/tcp && firewall-cmd --reload
 
 ### 阶段1：上传部署包 + 离线安装依赖
 
-把 `securetrans-<当前版本>.tar.gz`（如 v2.2.3）从本地传到服务器（scp / U盘 / 堡垒机）：
+把 `securetrans-<当前版本>.tar.gz`（如 v2.2.4）从本地传到服务器（scp / U盘 / 堡垒机）：
 
 ```bash
 scp securetrans-2.1.0.tar.gz root@<服务器IP>:/root/
@@ -465,4 +488,4 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 
 ---
 
-*部署指南 v2.2.3 | 2026-09-07*
+*部署指南 v2.2.4 | 2026-09-07*

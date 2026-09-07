@@ -145,7 +145,17 @@ fi
 # ============================================================
 echo -e "${YELLOW}[3/9] 复制程序文件到 ${INSTALL_DIR}...${NC}"
 mkdir -p "$INSTALL_DIR"
-cp -a "$SRC_DIR/." "$INSTALL_DIR/"
+# 3.5 保护生产 .env 不被本地开发配置覆盖（src/.env 为 testing 配置）
+if [ -f "$INSTALL_DIR/.env" ]; then
+    cp -a "$INSTALL_DIR/.env" "$INSTALL_DIR/.env.deploybak"
+fi
+# 用 tar 排除本地开发产物（.env/data/nas/venv 等），避免覆盖生产配置/数据库/venv
+tar --exclude='./.env' --exclude='./.env.*' --exclude='./data' --exclude='./nas' \
+    --exclude='./venv' --exclude='./server_err.log' --exclude='./start.bat' \
+    -C "$SRC_DIR" -cf - . | tar -C "$INSTALL_DIR" -xf -
+if [ -f "$INSTALL_DIR/.env.deploybak" ]; then
+    mv "$INSTALL_DIR/.env.deploybak" "$INSTALL_DIR/.env"
+fi
 mkdir -p "$INSTALL_DIR/data"
 echo -e "  程序文件已复制 ${GREEN}OK${NC}"
 
@@ -251,7 +261,7 @@ if [ -n "$NAS_ROOT" ] && [ -d "$NAS_ROOT" ]; then
 else
     echo -e "  NAS_ROOT ($NAS_ROOT) 不存在或未挂载，ReadWritePaths 仅保留 /opt/securetrans（挂载后重跑部署更新）"
 fi
-sed -i "s|__NAS_ROOT__|${RW_PATHS}|" /etc/systemd/system/securetrans.service
+sed -i "s|__RW_PATHS__|${RW_PATHS}|" /etc/systemd/system/securetrans.service
 systemctl daemon-reload
 systemctl enable securetrans
 echo -e "  systemd 服务已安装并设为开机自启（ReadWritePaths=${NAS_ROOT}） ${GREEN}OK${NC}"
@@ -273,10 +283,41 @@ fi
 
 sleep 2
 HEALTH=$(curl -s http://127.0.0.1:8000/api/health 2>/dev/null || echo "FAILED")
-if echo "$HEALTH" | grep -q '"status":"ok"'; then
+if echo "$HEALTH" | tr -d "\n" | grep -q '"status":"ok"'; then
     echo -e "  健康检查通过: ${HEALTH} ${GREEN}OK${NC}"
 else
     echo -e "  ${YELLOW}健康检查未通过（可能启动较慢）: ${HEALTH}${NC}"
+
+# ============================================================
+# 9.5 preflight 自检（模拟 systemd 239 严格行为：ReadWritePaths 路径必须全部存在且无 CR）
+# 在 WSL/本地测试环境跑通后，服务器生产环境行为一致
+# ============================================================
+echo -e "${YELLOW}[9.5/9] preflight 自检（ReadWritePaths 路径存在性 + 无 CR）...${NC}"
+PRE_FAIL=0
+# 1) .env 无 CR（CRLF 行尾会污染 NAS_ROOT 值，创建异形目录）
+if grep -q $'\r' "$INSTALL_DIR/.env"; then
+    echo -e "  ${RED}[FAIL] .env 含 CR 字符（CRLF 行尾）${NC}"
+    PRE_FAIL=1
+fi
+# 2) service 最终产物无 CR 且每个路径存在（257 会忽略不存在路径，239 严格报 226——WSL 不能复现，此检查兜底）
+RWP=$(grep '^ReadWritePaths=' /etc/systemd/system/securetrans.service | cut -d= -f2)
+if echo "$RWP" | grep -q $'\r'; then
+    echo -e "  ${RED}[FAIL] ReadWritePaths 含 CR 字符${NC}"
+    PRE_FAIL=1
+fi
+for p in $RWP; do
+    if [ ! -d "$p" ]; then
+        echo -e "  ${RED}[FAIL] ReadWritePaths 路径不存在: $p（systemd 239 将报 226/NAMESPACE）${NC}"
+        echo -e "  ${YELLOW}  解决: 挂载 NAS / 创建目录后重跑 deploy.sh${NC}"
+        PRE_FAIL=1
+    fi
+done
+if [ "$PRE_FAIL" -eq 0 ]; then
+    echo -e "  ReadWritePaths: $RWP ${GREEN}全部存在且无 CR OK${NC}"
+else
+    echo -e "  ${RED}preflight 未通过，请修复后重跑部署（切勿直接上服务器生产环境）${NC}"
+    exit 1
+fi
 fi
 
 echo ""
