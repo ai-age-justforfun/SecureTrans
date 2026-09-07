@@ -25,12 +25,12 @@ import bcrypt
 # 配置
 # ============================================================
 BASE_DIR = Path(__file__).parent.resolve()
-DATA_DIR = Path(os.getenv("SECURETRANS_DATA", str(BASE_DIR / "data")))
+DATA_DIR = Path(os.getenv("SECURETRANS_DATA", str(BASE_DIR / "data")).strip())
 DB_PATH = DATA_DIR / "securetrans.db"
 LOG_PATH = DATA_DIR / "securetrans.log"
 
 # 存储目录（必须在同一个文件系统，os.rename 才能 0拷贝）
-NAS_ROOT = Path(os.getenv("NAS_ROOT", str(BASE_DIR / "nas")))
+NAS_ROOT = Path(os.getenv("NAS_ROOT", str(BASE_DIR / "nas")).strip())  # strip 防 .env CRLF 污染()
 STAGING_DIR = NAS_ROOT / "staging"    # 刚上传，待审核
 EXTERNAL_DIR = NAS_ROOT / "external"   # 审核通过，可外网下载
 ARCHIVE_DIR = NAS_ROOT / "archive"     # 过期/驳回，永久归档
@@ -38,7 +38,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.2"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.3"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")

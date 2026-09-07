@@ -166,11 +166,15 @@ fi
 # ============================================================
 # 4.5 解析 NAS_ROOT（环境变量可覆盖，并写回 .env 保持 app/service 一致）
 # ============================================================
+# .env 统一转 LF：Windows 编辑/CRLF 模板会导致 NAS_ROOT 值带 \r，
+# 创建"异形目录"(securetrans$'\r')，且 systemd 239 ReadWritePaths 含 \r 路径报 226/NAMESPACE
+sed -i 's/\r$//' "$INSTALL_DIR/.env"
 if [ -n "${NAS_ROOT:-}" ]; then
+    NAS_ROOT=$(printf '%s' "$NAS_ROOT" | tr -d '\r')
     echo -e "${YELLOW}[4.5/9] NAS_ROOT 环境变量覆盖: ${NAS_ROOT}（写回 .env）...${NC}"
     sed -i "s|^NAS_ROOT=.*|NAS_ROOT=${NAS_ROOT}|" "$INSTALL_DIR/.env"
 fi
-NAS_ROOT=$(grep -E '^NAS_ROOT=' "$INSTALL_DIR/.env" | cut -d= -f2)
+NAS_ROOT=$(grep -E '^NAS_ROOT=' "$INSTALL_DIR/.env" | cut -d= -f2 | tr -d '\r')
 NAS_ROOT="${NAS_ROOT:-/mnt/nas/securetrans}"
 
 # ============================================================

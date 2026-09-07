@@ -116,7 +116,7 @@ if (Test-Path $venvPy) {
 $envFile = Join-Path $InstallDir ".env"
 if (-not (Test-Path $envFile)) {
     $key = (& python -c "import secrets; print(secrets.token_hex(32))").Trim()
-    @"
+    $envTemplate = @"
 DEPLOY_MODE=testing
 NAS_ROOT=$InstallDir\nas
 SECRET_KEY=$key
@@ -133,7 +133,9 @@ AD_DOMAIN=
 AD_BASE_DN=
 AD_BIND_DN=
 AD_BIND_PASSWORD=
-"@ | Out-File -FilePath $envFile -Encoding utf8
+"@
+    $envContent = $envTemplate -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText($envFile, $envContent, (New-Object System.Text.UTF8Encoding $false))
     Write-Host "[3/5] .env 已创建（SECRET_KEY 已随机生成），请检查 NAS_ROOT / INTERNAL_CIDRS"
 } else {
     Write-Host "[3/5] .env 已存在，保留原有配置"

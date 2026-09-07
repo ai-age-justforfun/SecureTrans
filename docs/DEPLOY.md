@@ -1,6 +1,6 @@
 # SecureTrans 部署指南
 
-> 版本：v2.2.2 | 日期：2026-09-07
+> 版本：v2.2.3 | 日期：2026-09-07
 > 唯一部署文档：测试环境（本地/WSL）↔ 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
 > 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
@@ -169,7 +169,7 @@ firewall-cmd --permanent --add-port=8000/tcp && firewall-cmd --reload
 
 ### 阶段1：上传部署包 + 离线安装依赖
 
-把 `securetrans-<当前版本>.tar.gz`（如 v2.2.2）从本地传到服务器（scp / U盘 / 堡垒机）：
+把 `securetrans-<当前版本>.tar.gz`（如 v2.2.3）从本地传到服务器（scp / U盘 / 堡垒机）：
 
 ```bash
 scp securetrans-2.1.0.tar.gz root@<服务器IP>:/root/
@@ -241,6 +241,10 @@ cp infra/securetrans.service /etc/systemd/system/securetrans.service
 # 注：service 含 PrivateTmp/ProtectSystem=strict/ReadWritePaths 加固（实测兼容 systemd 239/257）；
 # 但 systemd 239（RHEL8/Rocky8）对 ReadWritePaths 中不存在的路径（如 NAS 未挂载）启动报 226/NAMESPACE——
 # deploy.sh 已按 NAS_ROOT 存在性渲染（不存在则仅 /opt/securetrans）；NAS 挂载后重跑部署自动补全。
+# 注意：.env 若在 Windows 编辑保存为 CRLF（行尾 \r\n），NAS_ROOT 值会带 \r，
+# 将创建"异形目录"(securetrans$'\r') 且 ReadWritePaths 渲染含 \r 路径，再次触发 226——
+# deploy.sh 现已自动将 .env 转 LF 并剥离 NAS_ROOT 的 \r；如服务器已有异形目录，先清理再重跑部署：
+#   rm -rf "/mnt/nas/securetrans"$'\r' && sed -i 's/\r$//' /opt/securetrans/.env && bash infra/deploy.sh
 systemctl daemon-reload
 systemctl enable --now securetrans
 systemctl status securetrans --no-pager -l | head -15
@@ -461,4 +465,4 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 
 ---
 
-*部署指南 v2.2.2 | 2026-09-07*
+*部署指南 v2.2.3 | 2026-09-07*
