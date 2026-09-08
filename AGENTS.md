@@ -171,7 +171,7 @@ main ────●────●────●────●────  �
 
 ### 生产环境要求
 
-- Python 3.10+
+- Python 3.12（与离线 wheel cp312 匹配；3.10+ 兼容但部署以 3.12 为准）
 - Nginx（反向代理）
 - NAS挂载（staging/external/archive同文件系统，os.rename才能0拷贝）
 - systemd（服务管理）

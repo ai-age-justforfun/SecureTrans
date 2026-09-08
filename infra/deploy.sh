@@ -70,8 +70,10 @@ if [ -z "$PY_CMD" ]; then
     else
         echo -e "${YELLOW}  [在线] dnf 安装 Python 3.12（需网络；如未放行镜像请先在防火墙临时放行 80/443）...${NC}"
         echo -e "${YELLOW}        镜像参考: repo.huaweicloud.com / mirrors.aliyun.com / mirrors.rockylinux.org${NC}"
-        dnf module enable -y python3.12
-        dnf install -y python3.12 python3.12-pip python3.12-devel
+        # Rocky 8: AppStream 直接提供 python3.12 包套件（无需 module enable、无需源码编译）
+        # 若 AppStream 缺失（老版本/精简源），兜底启用 EPEL 8
+        dnf install -y python3.12 python3.12-pip python3.12-devel 2>/dev/null \
+            || { dnf install -y epel-release && dnf install -y python3.12 python3.12-pip python3.12-devel; }
     fi
     if command -v python3.12 &>/dev/null; then
         alternatives --set python3 /usr/bin/python3.12 2>/dev/null || true

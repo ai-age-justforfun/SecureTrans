@@ -33,15 +33,14 @@ fi
 mkdir -p "$OUT_DIR"
 cd "$OUT_DIR"
 
-# 启用 python3.12 module 并下载依赖树（--resolve 自动拉全部依赖 RPM）
-echo "[1/3] 启用 python3.12 module..."
-dnf module enable -y python3.12
-
-echo "[2/3] 下载 python3.12 + pip + devel 及依赖 RPM..."
+# 下载 python3.12 + pip + devel 及依赖 RPM（--resolve 自动拉全部依赖）
+# Rocky 8 AppStream 直接提供 python3.12 包套件；若源缺失，先启用 EPEL 8:
+#   dnf install -y epel-release
+echo "[1/2] 下载 python3.12 + pip + devel 及依赖 RPM..."
 dnf download --resolve --alldeps \
     python3.12 python3.12-pip python3.12-devel
 
-echo "[3/3] 校验..."
+echo "[2/2] 校验..."
 COUNT=$(ls *.rpm 2>/dev/null | wc -l)
 if [ "$COUNT" -eq 0 ]; then
     echo "错误: 未下载到任何 RPM，请检查网络/镜像源"

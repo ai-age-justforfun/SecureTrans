@@ -1133,7 +1133,9 @@ test("版本: health 返回版本号", code == 200 and isinstance(data.get('vers
 
 # 网络面识别（app.py 源码检查：INTERNAL_CIDRS + ipaddress 网段兜底）
 import os as _os
-_src_app = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'src', 'app.py')
+_src_app = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'app.py')
+if not _os.path.exists(_src_app):
+    _src_app = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'src', 'app.py')
 try:
     with open(_src_app, encoding='utf-8') as _f:
         _app_src = _f.read()

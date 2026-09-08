@@ -100,7 +100,7 @@
 ### 3.3 测试环境
 
 - OS：Windows 11（本地验证）/ Linux（部署目标）
-- Python：3.13（本地）/ 3.10+（服务器要求）
+- Python：3.12（本地 / WSL / 服务器统一，venv 隔离）
 - Flask：3.0.0
 - 数据库：SQLite（WAL模式）
 - 后端服务：http://localhost:8000

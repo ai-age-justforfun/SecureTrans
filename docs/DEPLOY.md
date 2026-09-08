@@ -1,6 +1,6 @@
 # SecureTrans 部署指南
 
-> 版本：v2.2.5 | 日期：2026-09-07
+> 版本：v2.2.6 | 日期：2026-09-07
 > 唯一部署文档：测试环境（本地/WSL）↔ 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
 > 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
@@ -172,8 +172,8 @@ hostnamectl                            # 确认主机名、系统
 ip a                                   # 确认 IP（阶段5 会加第二块网卡）
 dnf repolist                           # 确认 mirrors 源 repo 可用
 
-# 安装 Python 3.12（关键：Rocky 8 默认 python3=3.6，不满足 3.10+）
-dnf module enable -y python3.12
+# 安装 Python 3.12（Rocky 8 AppStream 直接提供 python3.12 包套件，无需 module enable、无需源码编译）
+# 若 AppStream 缺失（老版本/精简源），先启用 EPEL 8: dnf install -y epel-release
 dnf install -y python3.12 python3.12-pip python3.12-devel
 alternatives --set python3 /usr/bin/python3.12 2>/dev/null || true
 python3 --version          # 预期 Python 3.12.x
@@ -192,7 +192,7 @@ firewall-cmd --permanent --add-port=8000/tcp && firewall-cmd --reload
 
 ### 阶段1：上传部署包 + 离线安装依赖
 
-把 `securetrans-<当前版本>.tar.gz`（如 v2.2.5）从本地传到服务器（scp / U盘 / 堡垒机）：
+把 `securetrans-<当前版本>.tar.gz`（如 v2.2.6）从本地传到服务器（scp / U盘 / 堡垒机）：
 
 ```bash
 scp securetrans-2.1.0.tar.gz root@<服务器IP>:/root/
@@ -494,4 +494,4 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 
 ---
 
-*部署指南 v2.2.5 | 2026-09-07*
+*部署指南 v2.2.6 | 2026-09-07*

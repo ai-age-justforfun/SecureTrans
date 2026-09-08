@@ -28,7 +28,7 @@ if [ ! -f "$OFFLINE_DEPS" ]; then
     echo "  pip download --only-binary=:all: --platform manylinux2014_x86_64 \\"
     echo "      --python-version 312 --implementation cp --abi cp312 \\"
     echo "      flask==3.0.0 flask-login==0.6.3 bcrypt==4.1.2 apscheduler==3.10.4 \\"
-    echo "      ldap3==2.9.1 gunicorn==21.2.0 -d <dir>"
+    echo "      ldap3==2.9.1 gunicorn==21.2.0 waitress==3.0.0 -d <dir>"
     exit 1
 fi
 
