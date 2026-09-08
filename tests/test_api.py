@@ -13,6 +13,10 @@ import tempfile
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 
+# 管理凭据参数化（生产环境 admin 密码可能已修改；verify.sh 通过环境变量传入，默认 admin/Admin@123）
+ADMIN_USER = os.environ.get("TEST_ADMIN_USER", "admin")
+ADMIN_PASS = os.environ.get("TEST_ADMIN_PASS", "Admin@123")
+
 def _resolve_nas_root():
     """NAS_ROOT 解析优先级：环境变量 > 安装目录 .env > 本地开发默认(src/nas)
     保证测试断言路径与服务端(deploy.sh 写入 .env 的 NAS_ROOT)一致，无需手动传参"""
@@ -117,18 +121,18 @@ test("未登录访问受保护接口被重定向到登录页", code == 302, f"co
 
 # 3. 登录 - admin
 print("\n--- 2. 认证 ---")
-code, data = request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+code, data = request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
 test("admin 登录成功", code == 200 and data.get('user', {}).get('role') == 'admin', f"code={code}, data={data}")
 
 # 4. 获取当前用户
 code, data = request('GET', '/api/auth/me')
-test("获取当前用户信息", code == 200 and data.get('username') == 'admin', f"code={code}, data={data}")
+test("获取当前用户信息", code == 200 and data.get('username') == ADMIN_USER, f"code={code}, data={data}")
 
 # 5. 错误密码登录
-code, data = request('POST', '/api/auth/login', json_data={"username": "admin", "password": "wrongpass"})
+code, data = request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": "wrongpass"})
 test("错误密码登录被拒绝", code == 401, f"code={code}")
 # 重新登录
-request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
 
 # 初始化关键系统配置（自动化回归前置条件，避免受手工操作影响）
 code, data = request('PUT', '/api/config/system', json_data={
@@ -238,7 +242,7 @@ test("文件下载（流式读取）", code == 200 and isinstance(data, (str, by
 # 16. 用户管理
 print("\n--- 8. 用户管理（admin） ---")
 code, data = request('GET', '/api/admin/local-users')
-test("本地用户列表", code == 200 and any(u['username'] == 'admin' for u in data), f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
+test("本地用户列表", code == 200 and any(u['username'] == ADMIN_USER for u in data), f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
 
 code, data = request('POST', '/api/admin/local-users', json_data={
     "username": "testuser01",
@@ -258,7 +262,7 @@ test("创建用户密码留空自动生成", code == 200 and isinstance(rand_pwd
 code, data = request('POST', '/api/auth/login', json_data={"username": "randuser01", "password": rand_pwd})
 test("随机初始密码可登录", code == 200, f"code={code}")
 request('POST', '/api/auth/logout')
-request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
 request('DELETE', '/api/admin/local-users/randuser01')
 test("清理随机密码用户", code == 200, f"code={code}")
 
@@ -275,7 +279,7 @@ test("用户自行修改密码", code == 200, f"code={code}, data={data}")
 code, data = request('POST', '/api/auth/login', json_data={"username": "testuser01", "password": "NewPwd@123456"})
 test("修改后新密码登录成功", code == 200, f"code={code}")
 request('POST', '/api/auth/logout')
-request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
 
 code, data = request('DELETE', '/api/admin/local-users/testuser01')
 test("删除本地用户", code == 200, f"code={code}, data={data}")
@@ -414,7 +418,7 @@ test("非admin访问审批人配置被拒绝", code == 403, f"code={code}")
 
 # 审批人配置生效：未配置的普通用户不能审批
 # 先用admin创建需要审批的提交单(EXE, non-partner)
-request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
 ap_exe = os.path.join(test_dir, "approver_test.exe")
 with open(ap_exe, 'wb') as f:
     f.write(b"MZ" + b"\x00" * 900)
@@ -458,7 +462,7 @@ test("配置的二级审批人审批通过(摆渡到external)", code == 200 and 
      f"code={code}, status={data.get('status')}")
 
 # 切回 admin，清理测试数据
-request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
 code, data = request('DELETE', f'/api/admin/approvers/{approver_id}')
 test("删除审批人配置", code == 200, f"code={code}, data={data}")
 
@@ -547,7 +551,7 @@ dual_in_external = os.path.exists(os.path.join(_dual_nas_root, "external", dual_
 test("语义B: 文件已摆渡到external", dual_in_external, f"path={os.path.join(_dual_nas_root, 'external', dual_sub_id)}")
 
 # 切回 admin，清理 dual1 测试数据
-request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
 code, data = request('GET', '/api/admin/approvers')
 for a in (data if isinstance(data, list) else []):
     if a.get('username') == 'dual1':
@@ -625,7 +629,7 @@ code, data = request('POST', f'/api/admin/feature-rules/{test_rule_id}/toggle')
 test("非admin开关切换被拒绝", code == 403, f"code={code}")
 
 # 切回admin，清理
-request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
 request('DELETE', '/api/admin/local-users/ruletestuser')
 
 # 删除特征码规则
@@ -861,14 +865,23 @@ external_ids = [s.get('id') for s in data] if isinstance(data, list) else []
 test("归档文件不在 external 下载列表", expire_sub_id not in external_ids,
      f"expire_id={expire_sub_id}, in_external={expire_sub_id in external_ids}")
 
-# 20e. 修改密码
+# 20e. 修改密码（专用测试用户 testpwuser，不碰生产 admin 密码）
 print("\n--- 10e. 修改密码 ---")
 
+# 幂等清理 + 创建专用测试用户
+request('DELETE', '/api/admin/local-users/testpwuser')
+code, data = request('POST', '/api/admin/local-users', json_data={
+    "username": "testpwuser", "password": "Test@123456", "displayName": "改密测试用户", "role": "internal-user"
+})
+test("创建改密测试用户", code == 200, f"code={code}")
+
+# 登录测试用户，修改自己的密码
+request('POST', '/api/auth/login', json_data={"username": "testpwuser", "password": "Test@123456"})
 code, data = request('POST', '/api/auth/change-password', json_data={
-    "old_password": "Admin@123",
+    "old_password": "Test@123456",
     "new_password": "Temp@123456"
 })
-test("修改管理员密码", code == 200, f"code={code}, data={data}")
+test("用户修改自己的密码", code == 200, f"code={code}, data={data}")
 
 # 错误旧密码应该被拒绝
 code, data = request('POST', '/api/auth/change-password', json_data={
@@ -877,12 +890,19 @@ code, data = request('POST', '/api/auth/change-password', json_data={
 })
 test("错误旧密码被拒绝", code == 400, f"code={code}")
 
-# 改回原密码（保持测试环境一致）
+# 新密码登录 + 改回原密码（保持环境一致）
+code, data = request('POST', '/api/auth/login', json_data={"username": "testpwuser", "password": "Temp@123456"})
+test("新密码登录成功", code == 200, f"code={code}")
 code, data = request('POST', '/api/auth/change-password', json_data={
     "old_password": "Temp@123456",
-    "new_password": "Admin@123"
+    "new_password": "Test@123456"
 })
 test("改回原密码（保持环境一致）", code == 200, f"code={code}")
+
+# 清理测试用户 + 恢复 admin 会话（后续测试依赖）
+request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+code, data = request('DELETE', '/api/admin/local-users/testpwuser')
+test("清理改密测试用户", code == 200, f"code={code}")
 
 # 21. 验证 os.rename 物理文件移动
 print("\n--- 12. 物理文件验证（os.rename 0拷贝） ---")
@@ -934,7 +954,7 @@ code, data = request('GET', f'/api/external/{auto_sub_id}/download/test_document
 test("external面文件下载放行", code == 200, f"code={code}")
 
 # 外网面：一律不允许修改密码（即使个人账户，也只能内网修改）——白名单不含 change-password，403 拒绝
-code, data = request('POST', '/api/auth/change-password', json_data={"old_password": "Admin@123", "new_password": "Admin@123"}, headers={"X-Network-Zone": "external"})
+code, data = request('POST', '/api/auth/change-password', json_data={"old_password": ADMIN_PASS, "new_password": ADMIN_PASS}, headers={"X-Network-Zone": "external"})
 test("external面修改密码被拒403(仅内网可改密)", code == 403, f"code={code}")
 
 # external 面：管理/业务接口全部拒绝 403
@@ -1078,7 +1098,7 @@ code, data = request('GET', '/api/stats')
 test("普通用户访问统计被拒403(仪表盘admin-only)", code == 403, f"code={code}")
 
 # 切回 admin
-code, data = request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+code, data = request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
 test("切回admin登录", code == 200, f"code={code}")
 
 # 禁用 enable_test1
@@ -1117,7 +1137,7 @@ test("退出后访问受保护接口被重定向到登录页", code == 302, f"co
 print("\n--- 14. i18n 双语 ---")
 
 # 重新登录 admin（前面已登出）
-code, data = request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+code, data = request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
 test("i18n: admin 重新登录", code == 200, f"code={code}")
 
 # 错误密码 -> error(中文) + error_en(英文)
