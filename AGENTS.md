@@ -97,6 +97,8 @@
 | ADR-003 | 主干开发 + 单分支（Sprint 只在文档体现） | README |
 | ADR-004 | Python 3.12 + venv 隔离（离线 wheel cp312 匹配） | README |
 | ADR-005 | 非硬编码原则：环境变量驱动（配置/部署/运行），含 systemd 变量展开生效机制（原 ADR-005/006 合并） | README + 本文件部署规范 |
+| ADR-006 | 网络面安全假设（封闭数据中心：IPsec+防火墙内部，系统防火墙可不启用，应用层流程管控隔离） | README + 本文件网络面语义 |
+| ADR-007 | 发布策略与调测门禁（调测期密集发布 / RTM 后手工发布 / 文档-only 不发布 / 双环境 TDD 全量回归门禁） | README + 本文件发布流程 |
 
 ### ADR-005 详述：非硬编码原则（强制）
 
@@ -109,6 +111,23 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
 - 动态运行：systemd EnvironmentFile + `${HOST}:${PORT}` 变量展开，改 .env + `systemctl restart` 即生效（原 ADR-005 并入）
 - 前端 API 相对路径（同源），不写死服务器地址
 - 已落点：v2.2.13（app.py / securetrans.service / deploy.sh / verify.sh / start-production.sh / release.ps1）
+
+### ADR-006 详述：网络面安全假设（强制边界）
+
+服务器位于数据中心防火墙内部，办公网 ↔ 数据中心经 IPsec 加密隧道互联；内/外网均为公司内部网络分区，
+无 NAT、不向互联网开放、无攻击威胁。**决策：假设网络层安全由公司基础设施承担，系统防火墙（firewalld）可不启用**；
+应用层保留流程管控级隔离（外网面仅登录+下载、管理接口 403）+ 认证/审批权限/审计/文件限制底线。
+**边界**：仅适用于封闭数据中心场景；若部署到互联网可达环境，必须启用 Nginx + HTTPS + firewalld（DEPLOY.md）。
+
+### ADR-007 详述：发布策略与调测门禁（强制）
+
+- 发布 = 正式版本（Gitea Release + git tag + 包资产），代表可部署产物
+- **调测期（PSF Alpha/Beta）**：代码/脚本/配置模板每次变更即发布（密集发布，便于服务器验证）
+- **RTM 后**：默认不逐次发布，关键里程碑手工发布
+- **文档-only 变更**：commit + push main，不 bump、不打包、不建 Release（随仓库演进，代码发布时包内自动带入最新）
+- **调测门禁（双环境 TDD 全量回归）**：本地调测中间阶段——Windows 开发环境（testing：`python test_api.py` 172 项）
+  + WSL 测试环境（production：`infra/verify.sh` 172 项），**全部通过才允许 bump + 发布**
+- 版本号是发布产物属性，APP_VERSION 只在代码发布时递增
 
 ## 研发流程
 
@@ -214,10 +233,10 @@ main ────●────●────●────●────  �
 
 ### 发布流程
 
-**触发规则**：
-- **文档-only 变更**（README/AGENTS/docs/*.md）：commit + push main 即可，**不 bump 版本、不打包、不建 Release**（文档随仓库演进；代码发布时包内自动带入最新文档）
-- **代码/脚本/配置模板变更**（影响可部署产物）：bump APP_VERSION + 全量回归 + package + release + git tag
-- **RTM 后**（Alpha/Beta 完成）：默认不逐次发布，关键里程碑手工发布
+**触发规则（详见 ADR-007）**：
+- 调测期（PSF Alpha/Beta）：代码/脚本/配置模板每次变更即发布（双环境 TDD 全量回归通过后）
+- RTM 后：默认不逐次发布，关键里程碑手工发布
+- 文档-only 变更：commit + push main，不 bump、不打包、不建 Release
 
 
 - **打包**：`bash infra/package.sh <版本>` → `packages/securetrans-<版本>.tar.gz`（含 offline-python/ + offline-deps）
@@ -254,4 +273,4 @@ main ────●────●────●────●────  �
 
 ---
 
-*AGENTS.md v1.6 | 2026-09-08*
+*AGENTS.md v1.7 | 2026-09-08*
