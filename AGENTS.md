@@ -7,11 +7,12 @@
 ## 项目概况
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
-- **当前阶段**：PSF（问题-方案匹配验证）
+- **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
+- **当前版本**：v2.2.10（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
-- **代码架构**：后端单文件（`src/app.py` ~1350行），前端单页应用（`src/static/index.html`）
+- **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
-- **部署目标**：封闭数据中心，Linux服务器，一键部署
+- **部署目标**：封闭数据中心，Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
 
 ---
 
@@ -21,7 +22,7 @@
 
 - **单文件架构**：所有后端逻辑在 `src/app.py` 中，不拆分模块（PSF阶段保持简单）
 - **配置**：所有可配置项通过环境变量读取，默认值在代码中定义，`.env` 文件覆盖
-- **部署模式**：`DEPLOY_MODE=testing`（本地文件系统+Flask）/ `production`（NAS+gunicorn），一个开关切换
+- **部署模式**：`DEPLOY_MODE=testing`（本地文件系统+Flask）/ `production`（NAS+gunicorn+systemd），一个开关切换
 - **数据库**：SQLite，使用 `sqlite3` 标准库，不使用 ORM（保持轻量）
 - **认证**：Flask-Login，本地用户 + AD用户（LDAP直连）统一会话管理
 - **文件操作**：必须使用 `os.rename` 实现0拷贝摆渡，禁止使用 `shutil.move`（会退化为复制）
@@ -35,9 +36,9 @@
 - **单页应用**：所有前端逻辑在 `src/static/index.html` 中，内联CSS和JS，不使用构建工具
 - **API调用**：使用 `fetch()`，`credentials: 'same-origin'`，JSON格式请求体
 - **样式**：简洁商务风格，蓝色主色调（#2563eb / #1e3a5f），不使用框架
-- **角色权限**：前端根据 `currentUser.role` 显示/隐藏菜单，但后端必须做权限校验（前端只做体验优化）
+- **角色权限**：前端根据 `currentUser.role` 显示/隐藏菜单，但后端必须做权限校验（前端只做体验优化）；权限模型简化——仅 admin 可管理配置，其他用户默认普通用户，审批权限通过 approvers 表配置
 - **i18n 双语**：全部界面中英双语（`I18N` 字典 zh/en + `t()` 取文案 + `data-i18n` 属性 + `applyI18n()` 统一渲染），右上角语言切换（localStorage 记忆，默认中文）；后端经 `after_request` 自动附加 `error_en`/`message_en`
-- **时间显示**：统一为服务器操作系统时区时间，不做时区转换（侧边栏已标注“时间=服务器系统时区”）；英文文案注意单复数（前端数字/单位分离、动态模板做单复数判断），业务数据（文件名/姓名）不翻译
+- **时间显示**：统一为服务器操作系统时区时间，不做时区转换（侧边栏已标注"时间=服务器系统时区"）；英文文案注意单复数；业务数据（文件名/姓名）不翻译
 
 ### Git 提交规范
 
@@ -49,19 +50,11 @@
 [可选] Story关联: #story-xxx
 ```
 
-- **type**：feat / fix / docs / refactor / test / chore / refactor
+- **type**：feat / fix / docs / refactor / test / chore
 - **scope**：auth / submission / approval / admin / deploy / doc / frontend / infra
 - **不强制带 Sprint 编号**：Sprint是管理节奏，不是代码的身份证
 - **可关联 Story 编号**：当需要追踪需求来源时
 - **原子化**：每个独立功能点一次commit，便于回退和追溯
-
-示例：
-```
-feat(submission): 增加tar系列压缩包自动解包
-fix(auth): 修复gunicorn启动时数据库不初始化的问题
-docs(deploy): 补充测试环境部署指南
-refactor: 目录结构重构为主干开发模式(src/tests/infra)
-```
 
 ---
 
@@ -71,19 +64,23 @@ refactor: 目录结构重构为主干开发模式(src/tests/infra)
 
 | 文档 | 位置 | 更新时机 |
 |------|------|---------|
-| PRD | `docs/02-prd.md` | 需求变更时 |
+| PRD | `docs/02-prd.md`（内部版本 v2.2，文件名不带版本号） | 需求变更时 |
 | PSF流程 | `docs/03-psf-process.md` | 流程调整时 |
 | PMF流程 | `docs/04-pmf-process.md` | 流程调整时 |
 | 测试用例 | `docs/05-test-cases.md` | 新增功能时 |
 | 测试报告 | `docs/06-test-report.md` | 每次全量测试后 |
-| 迭代小结 | `docs/07-psf-sprintN-retrospective.md` | 每个Sprint结束 |
-| 部署指南（测试/生产/双OS/网络隔离，唯一） | `docs/DEPLOY.md` | 部署流程变更时 |
-| README | `README.md` | 项目概况变更时 |
+| 迭代小结 | `docs/07-psf-sprint4-retrospective.md` | 每个Sprint结束 |
+| 生产预验收 | `docs/09-preprod-verification.md` | 预验收前 |
+| 生产模拟验证 | `docs/10-prod-sim-verification.md` | 生产模拟后 |
+| 架构演进 | `docs/11-architecture-evolution.md` | 技术路线决策时 |
+| 部署指南（测试/生产/双OS/网络隔离/防火墙，唯一） | `docs/DEPLOY.md` | 部署流程变更时 |
+| README | `README.md`（人 + AI 同步查阅） | 项目概况变更时 |
+| AI协作指南 | `AGENTS.md`（AI 默认扫根目录） | 规范变更时 |
 
 ### 文档原则
 
 - **聚焦关键内容**：不追求大公司级完美，重点记录决策、结论、行动项
-- **可追溯**：每个技术决策有ADR记录，每个Sprint有复盘文档
+- **可追溯**：每个技术决策有ADR记录（README 汇总 + PRD 章节），每个Sprint有复盘文档
 - **版本化**：重要文档带版本号和日期，旧版本保留（不覆盖）
 - **文件名不含版本号**：版本号写在文档内部（各领域文档内部版本号统一），文件名固定（如 `02-prd.md`）；关键需求变更用 Git tag 记录，最终以发布版本（git tag vX.Y）为准
 - **中文为主**：项目文档使用中文，代码注释中英文均可
@@ -127,6 +124,7 @@ main ────●────●────●────●────  �
 - [ ] 测试报告（如测试有变化）
 - [ ] Git 提交（原子化，清晰的commit信息，不带Sprint编号）
 - [ ] 推送到 Gitea 仓库 main 分支
+- [ ] 发布（打包 + Gitea Release + git tag，如版本变化）
 
 ---
 
@@ -135,8 +133,9 @@ main ────●────●────●────●────  �
 ### 自动化测试
 
 - **测试脚本**：`tests/test_api.py`，使用Python标准库urllib，无额外依赖
-- **测试范围**：全量172项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置、i18n双语）
+- **测试范围**：全量172项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置、i18n双语、网络面隔离）
 - **运行方式**：先启动服务（`cd src && python app.py`），再 `cd tests && python test_api.py`，预期通过率100%
+- **部署验证**：`infra/verify.sh`（172项全量，BASE_URL 自动适配 .env HOST/PORT——HOST=具体IP时自动用 http://<IP>:PORT）
 - **新增功能**：必须在 test_api.py 中添加对应测试用例
 - **i18n 测试**：双语回归组覆盖后端 error_en/message_en、动态模板翻译、前端 I18N 字典资源检查
 
@@ -156,26 +155,46 @@ main ────●────●────●────●────  �
 | 模式 | DEPLOY_MODE | 存储 | 启动方式 | 适用 |
 |------|-------------|------|---------|------|
 | 测试环境 | `testing`（默认） | 本地磁盘 `./nas` | `python app.py`（Flask自带） | 开发/测试验证 |
-| 生产环境 | `production` | NAS 挂载 | `gunicorn app:app` | 正式部署 |
+| 生产环境 | `production` | NAS 挂载 | `gunicorn app:app`（systemd 服务 securetrans） | 正式部署 |
 
 切换方式：修改 `.env` 中的 `DEPLOY_MODE` 和 `NAS_ROOT`，换启动命令。代码完全不变。
 
+### 配置生效机制（v2.2.9+）
+
+- `securetrans.service` 用 `EnvironmentFile=/opt/securetrans/.env` + `-b ${HOST}:${PORT}` 变量展开
+- **改 .env 后 `sudo systemctl restart securetrans` 即生效，无需重跑部署**（HOST/PORT/INTERNAL_CIDRS 等全部一致）
+- `.env` 由 deploy.sh 保护：已存在则不覆盖（.env.deploybak 备份），需要重置时手工删除后重跑
+
+### 网络面业务语义（重要）
+
+- 内/外网**均属公司内部网络分区**：内网=提交/审批区，外网=接收/下载区
+- 无 NAT、不向互联网开放、无攻击威胁——分面隔离是**单向摆渡流程管控**而非防攻击
+- `INTERNAL_CIDRS=10.10.10.0/24,10.10.30.0/24`（当前），后续加网段逗号追加 + restart
+- 单网卡：防火墙放行 8000 即可，用户内/外网访问同一网址，应用层按源 IP 分面（external 仅登录+下载，管理接口 403）
+- 双网卡（可选）：Nginx 双 server 注入 `X-Network-Zone` 头 + 应用层兜底
+
 ### 部署脚本（infra/）
 
-- `infra/deploy.sh`：一键式部署（Python 3.12 自动获取(3.12优先, 非3.12且有离线包自动切3.12): 系统/offline-python离线RPM/在线; 离线wheel优先; NAS_ROOT可环境变量覆盖并写回.env; systemd ReadWritePaths模板渲染），root运行
+- `infra/deploy.sh`：一键式部署（root运行；Python 3.12 获取优先级：系统已有 → offline-python/ 离线RPM → dnf AppStream/EPEL；离线 wheel 优先；NAS_ROOT 可环境变量覆盖并写回 .env；systemd ReadWritePaths 模板渲染——NAS 不存在时只保留 /opt/securetrans，避免 systemd 226/NAMESPACE）
 - `infra/get-offline-python.sh`：离线 Python 3.12 RPM 获取（联网 Rocky8 运行一次，产出 offline-python/ 随包离线携带）
-- `infra/verify.sh`：部署验证（172项全量测试），确认部署正确
-- `infra/nginx-securetrans.conf`：Nginx反向代理配置
-- `infra/securetrans.service`：systemd服务配置
-- 脚本必须使用LF换行，不能有CRLF
+- `infra/verify.sh`：部署验证（172项全量测试，BASE_URL 自适应绑定地址）
+- `infra/nginx-securetrans.conf` / `nginx-securetrans-single.conf`：Nginx 双/单网卡反向代理配置
+- `infra/securetrans.service`：systemd服务配置（gunicorn，${HOST}:${PORT} 变量展开）
+- 脚本必须使用LF换行，不能有CRLF；修改后必须 `bash -n` 语法检查
 
 ### 生产环境要求
 
-- Python 3.12（与离线 wheel cp312 匹配；3.10+ 兼容但部署以 3.12 为准）
-- Nginx（反向代理）
+- Python 3.12（与离线 wheel cp312 匹配；venv 与系统完全隔离；Rocky 8 用 AppStream/EPEL/离线 RPM 获取，不做源码编译）
+- Nginx（可选，Alpha 阶段 gunicorn 直连即可）
 - NAS挂载（staging/external/archive同文件系统，os.rename才能0拷贝）
 - systemd（服务管理）
 - gunicorn（WSGI服务器，不用Flask自带服务器）
+
+### 发布流程
+
+- **打包**：`bash infra/package.sh <版本>` → `packages/securetrans-<版本>.tar.gz`（含 offline-python/ + offline-deps）
+- **发布**：`powershell -File infra/release.ps1 -Version v<版本>` → Gitea Release（源码包 + offline-deps 资产）
+- **版本记录**：`git tag v<版本>` + push tags；每次部署打包=发布，需明确发布版本和 Gitea 记录
 
 ---
 
@@ -188,7 +207,7 @@ main ────●────●────●────●────  �
 - **文件上传**：限制大小（MAX_CONTENT_LENGTH），流式写入磁盘
 - **会话**：Flask-Login，HTTPOnly cookie，SameSite=Lax
 - **权限模型（简化）**：仅 admin 可管理配置（用户/系统/特征码/合作方/审批人）；其他用户默认普通用户无提权能力；审批权限通过 approvers 表由 admin 配置，不设复杂 role/group 体系
-- **双网卡隔离**：Nginx 内网/外网双 server 注入 `X-Network-Zone` 头；应用层 `before_request` 强制隔离——外网面仅开放登录+下载接口，管理接口返回 403
+- **网络面隔离**：应用层 `get_network_zone()` 两级识别（X-Network-Zone 头 → 客户端IP+INTERNAL_CIDRS 兜底）——外网面仅开放登录+下载接口，管理接口返回 403
 
 ---
 
@@ -202,7 +221,9 @@ main ────●────●────●────●────  �
 6. **不要用 CRLF 换行保存 shell 脚本**：Linux上会报 "command not found" 错误。
 7. **不要按Sprint建目录**：主干开发按功能模块组织代码（src/），Sprint在文档中体现，Git历史追溯变更。
 8. **不要在commit message中强制带Sprint编号**：Sprint是管理节奏，不是代码的身份证。
+9. **不要以为改 .env 需要重跑部署**：v2.2.9+ 改 .env 后 `systemctl restart securetrans` 即生效（systemd 变量展开）。
+10. **verify.sh 绑定自适应**：未传参时自动从 .env HOST/PORT 构造 BASE_URL（HOST=具体IP → http://<IP>:PORT），不要在服务器上手动传 127.0.0.1。
 
 ---
 
-*AGENTS.md v1.3 | 2026-09-01*
+*AGENTS.md v1.4 | 2026-09-08*

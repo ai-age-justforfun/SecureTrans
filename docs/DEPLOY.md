@@ -416,13 +416,17 @@ systemctl start securetrans
 
 ### 阶段7：正式上线——内部 Alpha 测试（可选不启动 Nginx）
 
-> **结论：Alpha 阶段可以不启动 Nginx**，gunicorn 直接监听即可供内部测试人员访问。
+> **结论：Alpha 阶段可以不启动 Nginx**，gunicorn 直接监听（绑定地址由 .env HOST/PORT 控制，restart 即生效）即可供内部测试人员访问；只需防火墙放行 8000 端口。
 > 初期访问量不大、以功能与基本性能为验证目标，无需 Nginx 的反代/HTTPS/大文件能力。
 
 **网络面隔离（无 Nginx 时仍生效）**：
 应用层 `get_network_zone()` 两级识别——① 优先读 Nginx 注入的 `X-Network-Zone` 头；② 未注入时按
 客户端 IP + `INTERNAL_CIDRS` 网段兜底（直连/无代理场景）。因此不启动 Nginx 时，外网 IP 访问管理接口
 仍返回 403，隔离能力不丢失（172 项测试含网络面用例）。
+
+**Alpha 测试访问路径**：数据中心内网与办公外网用户访问**同一网址** `http://10.10.30.8:8000`，
+应用层按源 IP 自动分面——内网网段（10.10.10.0/24、10.10.30.0/24）→ internal 全功能（提交/审批/管理）；
+办公外网网段 → external 仅登录+下载（防从外网发起提交/审批/管理）。
 
 **步骤（在阶段6 手工验收通过后）**：
 
@@ -432,16 +436,25 @@ systemctl start securetrans
 #    方案B 双网卡物理隔离：只监听内网 IP，外网卡不开放 8000 端口（无需 Nginx 即内外网隔离）
 sed -i 's|^HOST=.*|HOST=<内网IP或0.0.0.0>|' /opt/securetrans/.env
 
-# 2. 重新部署应用配置（渲染 gunicorn 绑定地址 __BIND__=HOST:PORT）
-cd /opt/securetrans && sudo bash infra/deploy.sh
+# 2. 使绑定生效（v2.2.9+：systemd 变量展开，改 .env 后 restart 即生效，无需重跑部署）
+sudo systemctl restart securetrans
 
-# 3. 防火墙放行 8000（限定内网网段更安全）
-sudo firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=<内网网段> port port=8000 protocol=tcp accept'
+# 3. 防火墙放行 8000 —— Alpha 内测（数据中心内网 + 办公外网都要能访问）
+#    场景说明：内/外网均属公司内部网络，无 NAT、不向互联网开放、无攻击威胁 → 简单放行即可
+sudo firewall-cmd --permanent --add-port=8000/tcp
 sudo firewall-cmd --reload
+#    可选最小权限（按网段限定，适合想收紧的场景）：
+#    sudo firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=10.10.10.0/24 port port=8000 protocol=tcp accept'
+#    sudo firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=10.10.30.0/24 port port=8000 protocol=tcp accept'
+#    sudo firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=<办公外网网段> port port=8000 protocol=tcp accept'
+#    sudo firewall-cmd --reload
+#    验证放行：sudo firewall-cmd --list-all | grep 8000
 
 # 4. 验证监听与访问
 ss -tlnp | grep 8000        # 期望 0.0.0.0:8000 或 <内网IP>:8000（非仅 127.0.0.1）
-# 浏览器访问 http://<服务器内网IP>:8000（内网测试人员即可访问）
+# 数据中心内网用户访问 http://10.10.30.8:8000（源IP在内网段 → internal 全功能）
+# 办公外网用户访问 http://10.10.30.8:8000（源IP为办公网段 → external 仅登录+下载）
+# 办公外网如需经防火墙 DNAT/路由转发，须保留原始源 IP（不 SNAT），应用层才能正确分面
 
 # 5. 回归确认
 cd /opt/securetrans/tests && python3 test_api.py   # 172 项全通过
