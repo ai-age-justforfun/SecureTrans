@@ -176,6 +176,13 @@ else
 fi
 
 # ============================================================
+# 4.6 确保 .env 含 RESET_PASSWORD 行（缺失时追加，值默认 Init@123456；与 app.py 默认一致，
+#     保证 verify.sh 凭据与部署重置后的 admin 密码同源）
+if ! grep -qE '^RESET_PASSWORD=' "$INSTALL_DIR/.env" 2>/dev/null; then
+    echo "RESET_PASSWORD=Init@123456" >> "$INSTALL_DIR/.env"
+    echo -e "  .env 缺失 RESET_PASSWORD，已追加默认值 Init@123456 ${YELLOW}(可编辑修改)${NC}"
+fi
+
 # 4.5 解析 NAS_ROOT（环境变量可覆盖，并写回 .env 保持 app/service 一致）
 # ============================================================
 # .env 统一转 LF：Windows 编辑/CRLF 模板会导致 NAS_ROOT 值带 \r，
@@ -349,6 +356,19 @@ else
     echo -e "  ${YELLOW}未检测到 firewalld（或未启用），跳过防火墙配置；如需放行请按 DEPLOY.md 阶段7 手工执行${NC}"
 fi
 
+# 9.7 重置 admin 密码为 .env RESET_PASSWORD（每次部署重置，保证 verify 与首次登录凭据一致；
+#     界面"重置密码"显示值与 .env RESET_PASSWORD 同源，登录后请立即修改）
+echo -e "${YELLOW}[9.7/9] 重置 admin 密码为 RESET_PASSWORD（.env）...${NC}"
+ENV_RESET_PWD=$(grep -E '^RESET_PASSWORD=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r' | head -1 || true)
+ENV_RESET_PWD="${ENV_RESET_PWD:-Init@123456}"
+if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
+    RESET_PY="$INSTALL_DIR/venv/bin/python"
+else
+    RESET_PY="$PY_CMD"
+fi
+(cd "$INSTALL_DIR" && "$RESET_PY" app.py --reset-admin-password 2>/dev/null | grep "admin 密码已重置" || echo "  (admin 用户不存在，跳过)")
+echo -e "  admin 密码 = ${ENV_RESET_PWD}（.env RESET_PASSWORD），首次登录强制修改 ${GREEN}OK${NC}"
+
 echo -e "${GREEN}============================================================${NC}"
 echo -e "${GREEN}  部署完成！${NC}"
 echo -e "${GREEN}============================================================${NC}"
@@ -357,11 +377,11 @@ echo "  安装目录:   ${INSTALL_DIR}"
 echo "  配置文件:   ${INSTALL_DIR}/.env"
 echo "  存储目录:   ${NAS_ROOT}"
 echo "  访问地址:   http://<服务器IP>:${ENV_PORT}  (或通过 nginx 代理)"
-echo "  初始账号:   admin / Admin@123  (首次登录强制修改密码)"
+echo "  初始账号:   admin / ${ENV_RESET_PWD}  (每次部署重置为 .env RESET_PASSWORD，首次登录强制修改)"
 echo ""
 echo -e "${YELLOW}  后续步骤:${NC}"
 echo "  1. 编辑 .env 确认 NAS_ROOT / INTERNAL_CIDRS（单网卡按网段隔离时）"
 echo "  2. 配置 nginx 反向代理（单/双网卡模板见 infra/nginx-securetrans-*.conf）"
-echo "  3. 全量验证: sudo bash infra/verify.sh  (172项)"
-echo "  4. 登录系统修改 admin 初始密码"
+echo "  3. 全量验证: sudo bash infra/verify.sh  (187项，自动使用 RESET_PASSWORD 凭据)"
+echo "  4. 登录系统修改 admin 初始密码（修改后 verify 需 VERIFY_ADMIN_PASS 显式传参，见 DEPLOY.md）"
 echo ""

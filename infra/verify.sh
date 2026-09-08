@@ -87,7 +87,7 @@ fi
 
 # 3. 运行全量 API 测试
 echo ""
-echo "[3/4] 运行全量 API 测试 (172项)..."
+echo "[3/4] 运行全量 API 测试 (187项)..."
 echo "  (测试脚本会创建测试用户和测试文件，完成后自动清理)"
 echo ""
 
@@ -106,8 +106,21 @@ elif command -v python3.12 &>/dev/null; then
 else
     PY="python3"
 fi
-# 原地运行 test_api.py（保留 tests/ 相对路径依赖），BASE_URL / NAS_ROOT 用环境变量传入
-BASE_URL="$BASE_URL" NAS_ROOT="$NAS_ROOT" "$PY" "$TEST_SCRIPT_PATH"
+
+# 管理凭据自适应（非硬编码，ADR-005）：
+#   部署时 admin 密码会被 deploy.sh 重置为 .env RESET_PASSWORD，因此验证凭据自动取 .env RESET_PASSWORD；
+#   也可用环境变量 VERIFY_ADMIN_USER / VERIFY_ADMIN_PASS 显式覆盖（例如 admin 密码已手工修改、临时验证时）
+ENV_RESET_PWD=""
+if [ -f "$INSTALL_DIR/.env" ]; then
+    ENV_RESET_PWD=$(grep -E '^RESET_PASSWORD=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r' | head -1 || true)
+fi
+TEST_ADMIN_USER="${VERIFY_ADMIN_USER:-admin}"
+# 兜底与 app.py RESET_PASSWORD 默认一致（Init@123456），不用 Admin@123（部署后 admin 已重置）
+TEST_ADMIN_PASS="${VERIFY_ADMIN_PASS:-${ENV_RESET_PWD:-Init@123456}}"
+echo "  验证账号: ${TEST_ADMIN_USER} (凭据: .env RESET_PASSWORD 或 VERIFY_ADMIN_PASS)"
+
+# 原地运行 test_api.py（保留 tests/ 相对路径依赖），BASE_URL / NAS_ROOT / 凭据用环境变量传入
+BASE_URL="$BASE_URL" NAS_ROOT="$NAS_ROOT" TEST_ADMIN_USER="$TEST_ADMIN_USER" TEST_ADMIN_PASS="$TEST_ADMIN_PASS" "$PY" "$TEST_SCRIPT_PATH"
 TEST_EXIT=$?
 
 if [ $TEST_EXIT -ne 0 ]; then
