@@ -1,6 +1,6 @@
 # SecureTrans 部署指南
 
-> 版本：v2.2.6 | 日期：2026-09-07
+> 版本：v2.2.7 | 日期：2026-09-07
 > 唯一部署文档：测试环境（本地/WSL）↔ 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
 > 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
@@ -192,7 +192,7 @@ firewall-cmd --permanent --add-port=8000/tcp && firewall-cmd --reload
 
 ### 阶段1：上传部署包 + 离线安装依赖
 
-把 `securetrans-<当前版本>.tar.gz`（如 v2.2.6）从本地传到服务器（scp / U盘 / 堡垒机）：
+把 `securetrans-<当前版本>.tar.gz`（如 v2.2.7）从本地传到服务器（scp / U盘 / 堡垒机）：
 
 ```bash
 scp securetrans-2.1.0.tar.gz root@<服务器IP>:/root/
@@ -414,6 +414,45 @@ systemctl start securetrans
 
 ---
 
+### 阶段7：正式上线——内部 Alpha 测试（可选不启动 Nginx）
+
+> **结论：Alpha 阶段可以不启动 Nginx**，gunicorn 直接监听即可供内部测试人员访问。
+> 初期访问量不大、以功能与基本性能为验证目标，无需 Nginx 的反代/HTTPS/大文件能力。
+
+**网络面隔离（无 Nginx 时仍生效）**：
+应用层 `get_network_zone()` 两级识别——① 优先读 Nginx 注入的 `X-Network-Zone` 头；② 未注入时按
+客户端 IP + `INTERNAL_CIDRS` 网段兜底（直连/无代理场景）。因此不启动 Nginx 时，外网 IP 访问管理接口
+仍返回 403，隔离能力不丢失（172 项测试含网络面用例）。
+
+**步骤（在阶段6 手工验收通过后）**：
+
+```bash
+# 1. 配置监听地址（二选一）
+#    方案A 单网卡：监听全部网卡，应用层 INTERNAL_CIDRS 识别内外网（默认已配 HOST=0.0.0.0）
+#    方案B 双网卡物理隔离：只监听内网 IP，外网卡不开放 8000 端口（无需 Nginx 即内外网隔离）
+sed -i 's|^HOST=.*|HOST=<内网IP或0.0.0.0>|' /opt/securetrans/.env
+
+# 2. 重新部署应用配置（渲染 gunicorn 绑定地址 __BIND__=HOST:PORT）
+cd /opt/securetrans && sudo bash infra/deploy.sh
+
+# 3. 防火墙放行 8000（限定内网网段更安全）
+sudo firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=<内网网段> port port=8000 protocol=tcp accept'
+sudo firewall-cmd --reload
+
+# 4. 验证监听与访问
+ss -tlnp | grep 8000        # 期望 0.0.0.0:8000 或 <内网IP>:8000（非仅 127.0.0.1）
+# 浏览器访问 http://<服务器内网IP>:8000（内网测试人员即可访问）
+
+# 5. 回归确认
+cd /opt/securetrans/tests && python3 test_api.py   # 172 项全通过
+```
+
+**何时再引入 Nginx**（Alpha 验证结束、正式发布前）：
+- 需要 HTTPS（对外/合规）
+- 需要 Nginx 大文件上限（client_max_body_size，当前 gunicorn 直连按 .env MAX_CONTENT_LENGTH 生效）
+- 需要 Nginx 注入 `X-Network-Zone` 权威头（双网卡正式模式）
+- 需要负载均衡/静态资源加速
+
 ## 四、Windows 服务器部署（可选，与 Linux 同等一键式）
 
 客户端/服务器是 Windows 时同样支持，无需 Nginx（应用层网段识别直接生效）。
@@ -494,4 +533,4 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 
 ---
 
-*部署指南 v2.2.6 | 2026-09-07*
+*部署指南 v2.2.7 | 2026-09-07*

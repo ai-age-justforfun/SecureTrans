@@ -11,7 +11,7 @@ WorkingDirectory=/opt/securetrans
 EnvironmentFile=/opt/securetrans/.env
 ExecStart=/opt/securetrans/venv/bin/gunicorn \
     -w 2 \
-    -b 127.0.0.1:8000 \
+    -b __BIND__ \
     -t 300 \
     --access-logfile /opt/securetrans/data/gunicorn-access.log \
     --error-logfile /opt/securetrans/data/gunicorn-error.log \
