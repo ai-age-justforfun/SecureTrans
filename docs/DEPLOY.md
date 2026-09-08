@@ -59,7 +59,7 @@ powershell -ExecutionPolicy Bypass -File infra/deploy.ps1 -InstallDir C:\SecureT
 运行测试（另一个终端）：
 ```bash
 cd tests
-python test_api.py    # 187项全通过
+python test_api.py    # 190项全通过
 ```
 
 ### 2.3 方式 B：WSL Rocky Linux（模拟生产环境）
@@ -82,7 +82,7 @@ python app.py    # 部署模式: testing
 
 Windows 浏览器访问 http://localhost:8000（WSL2 自动端口转发）。运行测试：
 ```bash
-cd ~/securetrans/tests && python3 test_api.py   # 187项全通过
+cd ~/securetrans/tests && python3 test_api.py   # 190项全通过
 ```
 
 ### 2.4 测试验证清单
@@ -137,9 +137,15 @@ cd ~/securetrans/tests && python3 test_api.py   # 187项全通过
 tar xzf securetrans-<版本>.tar.gz -C /opt/securetrans --strip-components=1
 # 2. 一键部署（root 运行）
 sudo bash /opt/securetrans/infra/deploy.sh
-# 3. 全量验证（187项）
+# 3. 全量验证（190项，admin 凭据自动取 .env RESET_PASSWORD）
 sudo bash /opt/securetrans/infra/verify.sh
 ```
+
+> **部署凭据（ADR-009）**：**每次运行 deploy.sh 都会将 admin 密码重置为 `.env` 的 `RESET_PASSWORD`**
+> （默认 `Init@123456`，界面"重置密码"显示与 .env 同源），并置"首次登录强制改密"。因此：
+> - 部署完成即可用 `admin / <RESET_PASSWORD>` 登录，verify.sh 自动使用该凭据验证
+> - 登录后请立即修改 admin 密码；之后若需再跑 verify，用 `VERIFY_ADMIN_PASS=<你的密码> sudo bash infra/verify.sh` 显式传参
+> - `.env` 缺失 `RESET_PASSWORD` 行时 deploy.sh 自动追加默认值；改密码只改 .env 这一处
 
 **Python 3.12 三种获取方式**（deploy.sh 自动按序尝试）：
 
@@ -498,7 +504,7 @@ Windows 服务化（开机自启）可用 NSSM：`nssm install SecureTrans` 指�
 | 1 | `python --version` ≥ 3.10（deploy.ps1 自动检测） | ☐ |
 | 2 | 一键部署成功，`C:\SecureTrans\.env` 生成 | ☐ |
 | 3 | 访问 http://localhost:8000，admin 登录（密码 = .env RESET_PASSWORD） | ☐ |
-| 4 | 运行全量测试：`cd tests; python test_api.py`（187项） | ☐ |
+| 4 | 运行全量测试：`cd tests; python test_api.py`（190项） | ☐ |
 | 5 | waitress 生产启动健康检查通过 | ☐ |
 | 6 | 单网卡隔离：内网段全功能，非内网段仅登录+下载（管理接口403） | ☐ |
 | 7 | NSSM/计划任务服务化（可选） | ☐ |
@@ -528,11 +534,11 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 │   ├── .env.production       # 生产环境配置模板
 │   └── static/               # 前端SPA（index.html，单页应用）
 ├── tests/
-│   └── test_api.py           # 187项全量测试
+│   └── test_api.py           # 190项全量测试
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署 (Linux)
 │   ├── deploy.ps1            # 一键部署 (Windows)
-│   ├── verify.sh             # 部署验证（187项全量测试，凭据自动取 .env RESET_PASSWORD）
+│   ├── verify.sh             # 部署验证（190项全量测试，凭据自动取 .env RESET_PASSWORD）
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式
 │   ├── nginx-securetrans-single.conf # Nginx 单网卡模式
 │   ├── securetrans.service   # systemd 服务

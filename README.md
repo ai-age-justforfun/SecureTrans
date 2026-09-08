@@ -268,8 +268,6 @@ main ────●────●────●────●────  �
   start-production.sh（`-b ${HOST:-127.0.0.1}:${PORT}`）、release.ps1（GITEA_BASE 环境变量覆盖）
 - **强制要求**：新增代码/脚本禁止写死地址、端口、网段、路径；必须从 `.env` 或运行环境读取，默认值仅作开发 fallback
 
-- **强制要求**：新增代码/脚本禁止写死地址、端口、网段、路径；必须从 `.env` 或运行环境读取，默认值仅作开发 fallback
-
 ### ADR-006：网络面安全假设（封闭数据中心场景）
 - **背景**：服务器位于数据中心防火墙内部，办公网 ↔ 数据中心经 IPsec 加密隧道互联；内/外网均为公司内部网络分区
   （内网=提交/审批区，外网=接收/下载区），无 NAT、不向互联网开放、无攻击威胁
@@ -284,7 +282,7 @@ main ────●────●────●────●────  �
   - **调测期（PSF Alpha/Beta）**：代码/脚本/配置模板每次变更即发布（密集发布，便于服务器及时验证）
   - **正式发布后（RTM）**：默认不逐次发布，关键里程碑手工发布
   - **文档-only 变更**（README/AGENTS/docs/*.md）：commit + push main，不 bump、不打包、不建 Release（随仓库演进，代码发布时包内自动带入最新）
-  - **调测门禁**：本地调测中间阶段保持双环境 TDD 全量回归——Windows 开发环境（testing：`python test_api.py` 182 项）
+  - **调测门禁**：本地调测中间阶段保持双环境 TDD 全量回归——Windows 开发环境（testing：`python test_api.py` 190 项）
     + WSL 测试环境（production：`infra/verify.sh` 190 项），**全部通过才允许 bump + 发布**
   - 版本号是发布产物属性，APP_VERSION 只在代码发布时递增；文档内部版本号独立演进
 
@@ -310,6 +308,18 @@ main ────●────●────●────●────  �
 - **已落点**：v2.2.14（单网卡单端口 + INTERNAL_CIDRS + get_network_zone 两级识别；nginx-securetrans-single.conf
   单网卡配置 + nginx-securetrans.conf 双网卡配置保留备用）
 
+### ADR-009：部署凭据策略——每次部署重置 admin 密码为 .env RESET_PASSWORD
+- **背景**：verify.sh 原用写死的 admin/Admin@123 登录验证；生产环境 admin 密码被手工修改后验证直接 401 失败。
+  且用户重置密码（Init@123456）固定不可配、界面显示与 .env 可能不一致。
+- **决策**：
+  - **单一来源**：`.env RESET_PASSWORD` 是重置密码唯一配置源（默认 Init@123456），界面"重置密码"显示、部署重置、verify 凭据三者同源，禁止其他位置出现第二份默认密码
+  - **每次部署重置**：deploy.sh 9.7 步调用 `python app.py --reset-admin-password`，将 admin 密码重置为 .env RESET_PASSWORD 并置强制改密标记（幂等；保证部署完成即可登录、verify 直接通过）；`--reset-admin-password` 为独立 CLI，不启动 Web 服务
+  - **verify 凭据自适应**：verify.sh 自动从 .env RESET_PASSWORD 取凭据（`VERIFY_ADMIN_USER`/`VERIFY_ADMIN_PASS` 环境变量可显式覆盖）；admin 密码被手工修改后，验证时显式传 `VERIFY_ADMIN_PASS=xxx`
+  - **测试不碰真实密码**：test_api.py 凭据参数化（TEST_ADMIN_USER/TEST_ADMIN_PASS）；改密测试用专用用户 testpwuser（创建→改密→新密码登录→改回→清理），绝不修改真实 admin 密码（生产安全）
+  - **deploy.sh 兜底**：.env 缺失 RESET_PASSWORD 行时自动追加默认值，避免 verify 凭据与部署重置不一致（此坑已在 WSL 环境实测命中）
+- **已落点**：v2.2.18（app.py CLI / deploy.sh 9.7+4.6 / verify.sh 凭据读取 / test_api.py 参数化+专用用户）
+- **边界**：Windows dev 场景 admin 初始仍为 Admin@123（init_db 首次创建），不随部署重置；生产环境以 RESET_PASSWORD 为准
+
 ---
 
 ## 许可证
@@ -319,3 +329,4 @@ main ────●────●────●────●────  �
 ---
 
 *SecureTrans v2.2.14 | 2026-09-08*
+
