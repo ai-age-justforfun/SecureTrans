@@ -7,9 +7,30 @@
 # ============================================================
 set -euo pipefail
 
-BASE_URL="${1:-http://127.0.0.1:8000}"
+INSTALL_DIR="/opt/securetrans"
+BASE_URL="${1:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_SCRIPT_PATH="$SCRIPT_DIR/../tests/test_api.py"
+
+# 未显式指定 BASE_URL 时，从 .env HOST/PORT 自适应：
+#   HOST=0.0.0.0 / 127.0.0.1 / 空 -> 127.0.0.1:PORT（loopback 可达）
+#   HOST=<具体IP>               -> http://<IP>:PORT（gunicorn 仅监听该 IP，127.0.0.1 不可达）
+if [ -z "$BASE_URL" ]; then
+    ENV_HOST=""
+    ENV_PORT="8000"
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        ENV_HOST=$(grep -E '^HOST=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r' | head -1 || true)
+        ENV_PORT=$(grep -E '^PORT=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r' | head -1 || true)
+        ENV_PORT="${ENV_PORT:-8000}"
+    fi
+    case "$ENV_HOST" in
+        ""|0.0.0.0|127.0.0.1|localhost)
+            BASE_URL="http://127.0.0.1:${ENV_PORT}" ;;
+        *)
+            BASE_URL="http://${ENV_HOST}:${ENV_PORT}" ;;
+    esac
+fi
+
 
 echo "============================================================"
 echo "  SecureTrans 部署验证"
@@ -37,7 +58,6 @@ fi
 # 2. 检查关键目录
 echo ""
 echo "[2/4] 存储目录与文件系统检查..."
-INSTALL_DIR="/opt/securetrans"
 if [ -f "$INSTALL_DIR/.env" ]; then
     NAS_ROOT=$(grep -E '^NAS_ROOT=' "$INSTALL_DIR/.env" | cut -d= -f2)
 else
