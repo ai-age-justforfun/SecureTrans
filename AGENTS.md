@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.2.13（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
+- **当前版本**：v2.2.14（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
@@ -110,7 +110,7 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
 - 动态部署：deploy.sh 探测环境自适应（Python 三级获取、ReadWritePaths 按 NAS 存在性渲染、防火墙按 firewalld 状态）
 - 动态运行：systemd EnvironmentFile + `${HOST}:${PORT}` 变量展开，改 .env + `systemctl restart` 即生效（原 ADR-005 并入）
 - 前端 API 相对路径（同源），不写死服务器地址
-- 已落点：v2.2.13（app.py / securetrans.service / deploy.sh / verify.sh / start-production.sh / release.ps1）
+- 已落点：v2.2.14（app.py / securetrans.service / deploy.sh / verify.sh / start-production.sh / release.ps1）
 
 ### ADR-006 详述：网络面安全假设（强制边界）
 

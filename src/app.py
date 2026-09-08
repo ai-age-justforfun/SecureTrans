@@ -11,6 +11,7 @@ import uuid
 import shutil
 import sqlite3
 import hashlib
+import secrets
 import ipaddress
 import logging
 import datetime
@@ -38,7 +39,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.13"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.14"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
@@ -60,6 +61,8 @@ AD_BIND_PASSWORD = os.getenv("AD_BIND_PASSWORD", "")
 
 # 过期清理配置
 EXTERNAL_EXPIRY_DAYS = int(os.getenv("EXTERNAL_EXPIRY_DAYS", "7"))  # external 文件默认 7 天过期
+RESET_PASSWORD = os.getenv("RESET_PASSWORD", "Init@123456").strip()  # 重置密码默认值，可配置(.env)
+AUTO_APPROVAL_ENABLED = os.getenv("AUTO_APPROVAL_ENABLED", "false").strip().lower()  # 免审批总开关默认关闭
 
 # 网络面识别（单网卡模式按网段区分内外网；逗号分隔 CIDR，留空则不启用网段识别）
 INTERNAL_CIDRS = os.getenv("INTERNAL_CIDRS", "").strip()
@@ -373,15 +376,20 @@ def init_db():
         (str(uuid.uuid4()), "admin", admin_hash, "系统管理员", "admin@localhost", "admin", "active", 1, now_str())
     )
 
-    # 初始系统配置
+    # 初始系统配置：单一来源 = .env（AUTO_APPROVAL_ENABLED / EXTERNAL_EXPIRY_DAYS / MAX_CONTENT_LENGTH）
     defaults = {
-        "auto_approval_enabled": "true",
-        "default_expiry_days": "7",
-        "max_file_size_mb": "800",
+        "auto_approval_enabled": os.getenv("AUTO_APPROVAL_ENABLED", "false").strip().lower(),
+        "default_expiry_days": os.getenv("EXTERNAL_EXPIRY_DAYS", "7").strip(),
+        "max_file_size_mb": str(MAX_CONTENT_LENGTH // 1024 // 1024),
         "app_name": "SecureTrans",
     }
     for k, v in defaults.items():
         conn.execute("INSERT OR IGNORE INTO system_config (key,value) VALUES (?,?)", (k, v))
+    # 旧库迁移：免审批开关旧默认 true（硬编码）→ 与 .env 默认 false 对齐（仅当 env 未显式设置时）
+    if "AUTO_APPROVAL_ENABLED" not in os.environ:
+        _row = conn.execute("SELECT value FROM system_config WHERE key='auto_approval_enabled'").fetchone()
+        if _row and _row["value"] == "true":
+            conn.execute("UPDATE system_config SET value='false' WHERE key='auto_approval_enabled'")
 
     # 初始特征码规则
     cursor = conn.execute("SELECT COUNT(*) as c FROM feature_rules")
@@ -491,6 +499,23 @@ def get_config_value(key: str, default: str = None) -> str:
     db = get_db()
     row = db.execute("SELECT value FROM system_config WHERE key=?", (key,)).fetchone()
     return row["value"] if row else default
+
+ENV_FILE = BASE_DIR / ".env"
+
+def write_env_config(updates: dict) -> bool:
+    """系统配置变更写回 .env（单一配置源持久化）。.env 不存在时跳过（配置已存 DB）。"""
+    if not ENV_FILE.exists():
+        return False
+    text = ENV_FILE.read_text(encoding="utf-8", errors="ignore")
+    for k, v in updates.items():
+        line = f"{k}={v}"
+        pat = re.compile(rf"^{re.escape(k)}=.*$", re.MULTILINE)
+        if pat.search(text):
+            text = pat.sub(line, text, count=1)
+        else:
+            text = text.rstrip("\n") + "\n" + line + "\n"
+    ENV_FILE.write_text(text, encoding="utf-8")
+    return True
 
 def can_approve_level(level: int) -> bool:
     """审批权限纯由 approvers 表配置（不设 role 体系）；admin 作为系统管理员可审批任意级别"""
@@ -868,7 +893,11 @@ def cleanup_expired_files():
             continue
         try:
             approved_dt = datetime.datetime.strptime(row["approved_time"], TS_FMT)
-            expiry_days = row["expiry_days"] if row["expiry_days"] is not None else EXTERNAL_EXPIRY_DAYS
+            try:
+                _cfg_expiry = int(float(get_config_value("default_expiry_days", str(EXTERNAL_EXPIRY_DAYS)) or 0))
+            except (ValueError, TypeError):
+                _cfg_expiry = EXTERNAL_EXPIRY_DAYS
+            expiry_days = row["expiry_days"] if row["expiry_days"] is not None else _cfg_expiry
             if (now - approved_dt).days >= expiry_days:
                 sub_id = row["id"]
                 move_to_archive(sub_id, from_dir="external")
@@ -1044,12 +1073,18 @@ def api_upload_file():
     if not file.filename:
         return jsonify({"error": "文件名不能为空"}), 400
 
-    # 检查文件大小
+    # 检查文件大小：单一来源 system_config max_file_size_mb（与界面一致，运行时生效）
     file.seek(0, 2)
     size = file.tell()
     file.seek(0)
-    if size > MAX_CONTENT_LENGTH:
-        return jsonify({"error": f"文件过大，最大支持 {MAX_CONTENT_LENGTH//1024//1024}MB"}), 400
+    try:
+        max_mb = int(float(get_config_value("max_file_size_mb", str(MAX_CONTENT_LENGTH // 1024 // 1024)) or 0))
+    except (ValueError, TypeError):
+        max_mb = MAX_CONTENT_LENGTH // 1024 // 1024
+    if max_mb <= 0:
+        max_mb = MAX_CONTENT_LENGTH // 1024 // 1024
+    if size > max_mb * 1024 * 1024:
+        return jsonify({"error": f"文件过大，最大支持 {max_mb}MB"}), 400
 
     # 创建临时提交目录（staging）
     temp_id = gen_submission_id()
@@ -1420,8 +1455,12 @@ def api_create_local_user():
     email = data.get("email", "")
     # 不设 role 体系：所有非 admin 用户统一为普通用户，审批权由 approvers 表配置
     role = "internal-user"
-    if not username or not password:
-        return jsonify({"error": "用户名和密码不能为空"}), 400
+    if not username:
+        return jsonify({"error": "用户名不能为空"}), 400
+    random_pwd = False
+    if not password:
+        password = secrets.token_urlsafe(9)  # 留空自动生成初始密码
+        random_pwd = True
     if len(password) < 6:
         return jsonify({"error": "密码至少6位"}), 400
     db = get_db()
@@ -1429,12 +1468,13 @@ def api_create_local_user():
     if exists:
         return jsonify({"error": "用户名已存在"}), 400
     db.execute(
-        "INSERT INTO local_users (id,username,password_hash,display_name,email,role,status,enabled,created_at) VALUES (?,?,?,?,?,?,?,1,?)",
-        (str(uuid.uuid4()), username, hash_password(password), display_name, email, role, "active", now_str())
+        "INSERT INTO local_users (id,username,password_hash,display_name,email,role,status,enabled,must_change_password,created_at) VALUES (?,?,?,?,?,?,?,1,?,?)",
+        (str(uuid.uuid4()), username, hash_password(password), display_name, email, role, "active", 1 if random_pwd else 0, now_str())
     )
     db.commit()
     add_audit_log(current_user.username, "create_local_user", username, f"创建本地用户，角色{role}（默认使能）", get_client_ip())
-    return jsonify({"message": "创建成功"})
+    msg = "创建成功" + (f"，初始密码：{password}（请安全告知用户，首次登录后可自行修改）" if random_pwd else "")
+    return jsonify({"message": msg, "initialPassword": password if random_pwd else None})
 
 @app.route("/api/admin/local-users/<username>", methods=["DELETE"])
 @login_required
@@ -1452,7 +1492,7 @@ def api_delete_local_user(username):
 @login_required
 @role_required("admin")
 def api_reset_local_password(username):
-    new_pwd = "Init@123456"
+    new_pwd = os.getenv("RESET_PASSWORD", "Init@123456").strip()
     db = get_db()
     db.execute("UPDATE local_users SET password_hash=?, must_change_password=1 WHERE username=?",
                (hash_password(new_pwd), username))
@@ -1773,11 +1813,29 @@ def api_get_system_config():
 def api_update_system_config():
     config = request.get_json()
     db = get_db()
+    env_updates = {}
     for k, v in config.items():
         db.execute("INSERT OR REPLACE INTO system_config (key,value) VALUES (?,?)", (k, str(v)))
+        # 同步映射回 .env（单一配置源）：max_file_size_mb→MAX_CONTENT_LENGTH 等
+        if k == "max_file_size_mb":
+            try:
+                env_updates["MAX_CONTENT_LENGTH"] = str(int(float(v)) * 1024 * 1024)
+            except (ValueError, TypeError):
+                pass
+        elif k == "default_expiry_days":
+            try:
+                env_updates["EXTERNAL_EXPIRY_DAYS"] = str(int(float(v)))
+            except (ValueError, TypeError):
+                pass
+        elif k == "auto_approval_enabled":
+            env_updates["AUTO_APPROVAL_ENABLED"] = "true" if str(v).lower() == "true" else "false"
     db.commit()
+    synced = False
+    if env_updates:
+        synced = write_env_config(env_updates)
     add_audit_log(current_user.username, "update_system_config", "", json.dumps(config, ensure_ascii=False), get_client_ip())
-    return jsonify({"message": "配置已保存"})
+    msg = "配置已保存" + ("，并同步到 .env（重启后由 systemd 加载）" if synced else "（未同步 .env，仅存数据库）")
+    return jsonify({"message": msg})
 
 # ============================================================
 # 路由：审计日志与统计

@@ -171,6 +171,7 @@
       <div class="role" id="userRole">--</div>
       <div style="margin-top:6px;"><span class="network-badge internal" id="networkBadge" data-i18n="net.internal">内网</span></div>
       <div class="sidebar-tz" data-i18n="sidebar.tz">时间=服务器系统时区</div>
+      <button class="btn-logout" style="background:rgba(37,99,235,0.3);border-color:rgba(37,99,235,0.45);" onclick="showChangePwdModal()" data-i18n="sidebar.changePwd">修改密码</button>
       <button class="btn-logout" onclick="logout()" data-i18n="sidebar.logout">退出登录</button>
     </div>
   </div>
@@ -203,7 +204,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.2.13';
+const APP_VERSION = 'v2.2.14';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -217,7 +218,8 @@ const I18N = {
     'nav.external': '外网下载', 'nav.users': '用户管理', 'nav.partners': '合作方管理',
     'nav.config': '系统配置', 'nav.audit': '审计日志', 'nav.dashboard': '仪表盘',
     'net.internal': '内网', 'net.external': '外网',
-    'sidebar.logout': '退出登录', 'sidebar.tz': '时间=服务器系统时区',
+    'sidebar.logout': '退出登录', 'sidebar.changePwd': '修改密码', 'sidebar.tz': '时间=服务器系统时区',
+    'pwd.title': '修改密码', 'pwd.old': '原密码', 'pwd.new': '新密码（至少6位）', 'pwd.confirm': '确认新密码', 'pwd.mismatch': '两次输入的新密码不一致', 'pwd.success': '密码修改成功', 'pwd.changeFail': '密码修改失败：',
     'role.admin': '系统管理员', 'role.internalUser': '普通用户',
     'status.pending': '待一级审批', 'status.pending2': '待二级审批', 'status.approved': '已摆渡',
     'status.downloaded': '已下载', 'status.rejected': '已驳回', 'status.archived': '已归档', 'status.auto': '免审批',
@@ -268,6 +270,7 @@ const I18N = {
     'detail.ferryInfo': '接收方: {0} | 摆渡时间: {1}',
     'user.newBtn': '+ 新建用户', 'user.createTitle': '新建本地用户',
     'user.username': '用户名', 'user.usernamePh': '登录用户名', 'user.password': '密码 *', 'user.passwordPh': '至少6位',
+    'user.pwdOpt': '密码（留空自动生成）', 'user.pwdOptPh': '留空自动生成初始密码，首次登录后请修改',
     'user.displayName': '显示名', 'user.displayNamePh': '如：张三', 'user.email': '邮箱', 'user.emailPh': 'user@company.com',
     'user.role': '角色', 'user.roleInternal': '普通用户（审批权限请在审批人配置中授予）',
     'user.createdAt': '创建时间', 'user.resetPwd': '重置密码', 'user.permanent': '永久启用',
@@ -311,7 +314,7 @@ const I18N = {
     'toast.cleanupDone': '清理完成', 'toast.cleanupFail': '清理失败: {0}',
     'err.externalOnly': '外网面仅提供文件下载',
     'err.requireName': '请填写接收方姓名', 'err.requireOrg': '请填写接收方单位', 'err.requireFile': '请先上传文件',
-    'err.requireUserPwd': '用户名和密码不能为空', 'err.requirePartnerName': '合作方名称不能为空',
+    'err.requireUserPwd': '用户名和密码不能为空', 'err.requireUsername': '请输入用户名', 'err.requirePartnerName': '合作方名称不能为空',
     'confirm.deleteRule': '确定删除该特征码规则？',
     'prompt.approveComment': '审批通过备注（可选）：', 'prompt.rejectReason': '驳回原因：'
   },
@@ -321,7 +324,8 @@ const I18N = {
     'nav.external': 'External Download', 'nav.users': 'User Management', 'nav.partners': 'Partner Management',
     'nav.config': 'System Config', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
     'net.internal': 'Intranet', 'net.external': 'Extranet',
-    'sidebar.logout': 'Logout', 'sidebar.tz': 'Times = Server System Timezone',
+    'sidebar.logout': 'Logout', 'sidebar.changePwd': 'Change Password', 'sidebar.tz': 'Times = Server System Timezone',
+    'pwd.title': 'Change Password', 'pwd.old': 'Current Password', 'pwd.new': 'New Password (min 6)', 'pwd.confirm': 'Confirm New Password', 'pwd.mismatch': 'The two new passwords do not match', 'pwd.success': 'Password changed successfully', 'pwd.changeFail': 'Password change failed: ',
     'role.admin': 'System Administrator', 'role.internalUser': 'Regular User',
     'status.pending': 'Pending L1', 'status.pending2': 'Pending L2', 'status.approved': 'Ferried',
     'status.downloaded': 'Downloaded', 'status.rejected': 'Rejected', 'status.archived': 'Archived', 'status.auto': 'Auto',
@@ -372,6 +376,7 @@ const I18N = {
     'detail.ferryInfo': 'Recipient: {0} | Ferried At: {1}',
     'user.newBtn': '+ New User', 'user.createTitle': 'Create Local User',
     'user.username': 'Username', 'user.usernamePh': 'Login username', 'user.password': 'Password *', 'user.passwordPh': 'At least 6 chars',
+    'user.pwdOpt': 'Password (blank = auto-generate)', 'user.pwdOptPh': 'Leave blank to auto-generate an initial password, change after first login',
     'user.displayName': 'Display Name', 'user.displayNamePh': 'e.g. Zhang San', 'user.email': 'Email', 'user.emailPh': 'user@company.com',
     'user.role': 'Role', 'user.roleInternal': 'Regular user (approval rights granted in approver config)',
     'user.createdAt': 'Created At', 'user.resetPwd': 'Reset Password', 'user.permanent': 'Permanent',
@@ -415,7 +420,7 @@ const I18N = {
     'toast.cleanupDone': 'Cleanup done', 'toast.cleanupFail': 'Cleanup failed: {0}',
     'err.externalOnly': 'External network provides file download only',
     'err.requireName': 'Please fill in recipient name', 'err.requireOrg': 'Please fill in recipient org', 'err.requireFile': 'Please upload files first',
-    'err.requireUserPwd': 'Username and password are required', 'err.requirePartnerName': 'Partner name is required',
+    'err.requireUserPwd': 'Username and password are required', 'err.requireUsername': 'Username is required', 'err.requirePartnerName': 'Partner name is required',
     'confirm.deleteRule': 'Delete this signature rule?',
     'prompt.approveComment': 'Approval comment (optional): ', 'prompt.rejectReason': 'Rejection reason: '
   }
@@ -569,6 +574,36 @@ async function loadUser() {
 async function logout() {
   try { await api('/api/auth/logout', { method: 'POST' }); } catch (e) {}
   window.location.href = '/login';
+}
+
+function showChangePwdModal() {
+  document.getElementById('modalTitle').textContent = t('pwd.title');
+  document.getElementById('modalBody').innerHTML = `
+    <div class="form-group mb-8"><label data-i18n="pwd.old">原密码</label><input type="password" id="pwdOld" autocomplete="current-password"></div>
+    <div class="form-group mb-8"><label data-i18n="pwd.new">新密码（至少6位）</label><input type="password" id="pwdNew" autocomplete="new-password"></div>
+    <div class="form-group"><label data-i18n="pwd.confirm">确认新密码</label><input type="password" id="pwdNew2" autocomplete="new-password"></div>
+  `;
+  document.getElementById('modalFooter').innerHTML = `
+    <button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.cancel">取消</button>
+    <button class="btn btn-primary" onclick="changePassword()" data-i18n="common.save">保存</button>
+  `;
+  applyI18n();
+  openModal();
+}
+
+async function changePassword() {
+  const oldPwd = document.getElementById('pwdOld').value;
+  const newPwd = document.getElementById('pwdNew').value;
+  const newPwd2 = document.getElementById('pwdNew2').value;
+  if (!oldPwd || !newPwd) { toast(t('err.requireUserPwd'), 'error'); return; }
+  if (newPwd !== newPwd2) { toast(t('pwd.mismatch'), 'error'); return; }
+  try {
+    const data = await api('/api/auth/change-password', { method: 'POST', body: { old_password: oldPwd, new_password: newPwd } });
+    toast(data && data.message ? data.message : t('pwd.success'), 'success');
+    closeModal();
+  } catch (e) {
+    toast(t('pwd.changeFail') + (e && e.message ? e.message : ''), 'error');
+  }
 }
 
 // ============================================================
@@ -1059,7 +1094,7 @@ function showCreateUser() {
   document.getElementById('modalTitle').textContent = t('user.createTitle');
   document.getElementById('modalBody').innerHTML = `
     <div class="form-group mb-8"><label data-i18n="user.username">用户名 *</label><input type="text" id="newUsername" placeholder="${t('user.usernamePh')}"></div>
-    <div class="form-group mb-8"><label data-i18n="user.password">密码 *</label><input type="password" id="newPassword" placeholder="${t('user.passwordPh')}"></div>
+    <div class="form-group mb-8"><label data-i18n="user.pwdOpt">密码（留空自动生成）</label><input type="password" id="newPassword" placeholder="${t('user.pwdOptPh')}"></div>
     <div class="form-group mb-8"><label data-i18n="user.displayName">显示名</label><input type="text" id="newDisplayName" placeholder="${t('user.displayNamePh')}"></div>
     <div class="form-group mb-8"><label data-i18n="user.email">邮箱</label><input type="email" id="newEmail" placeholder="${t('user.emailPh')}"></div>
     <div class="form-group"><label data-i18n="user.role">角色</label>
@@ -1079,7 +1114,7 @@ function showCreateUser() {
 async function createUser() {
   const username = document.getElementById('newUsername').value.trim();
   const password = document.getElementById('newPassword').value;
-  if (!username || !password) { toast(t('err.requireUserPwd'), 'error'); return; }
+  if (!username) { toast(t('err.requireUsername'), 'error'); return; }
   try {
     await api('/api/admin/local-users', {
       method: 'POST',
@@ -1090,7 +1125,7 @@ async function createUser() {
         role: document.getElementById('newRole').value
       }
     });
-    toast(t('toast.createSuccess'), 'success');
+    toast(data && data.message ? data.message : t('toast.createSuccess'), 'success');
     closeModal();
     renderUsers();
   } catch (e) {

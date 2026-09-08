@@ -132,7 +132,7 @@ request('POST', '/api/auth/login', json_data={"username": "admin", "password": "
 
 # 初始化关键系统配置（自动化回归前置条件，避免受手工操作影响）
 code, data = request('PUT', '/api/config/system', json_data={
-    "auto_approval_enabled": "true", "default_expiry_days": "7"
+    "auto_approval_enabled": "true", "default_expiry_days": "7", "max_file_size_mb": "800"
 })
 test("初始化免审批总开关开启+默认有效期7天", code == 200, f"code={code}")
 
@@ -249,8 +249,33 @@ code, data = request('POST', '/api/admin/local-users', json_data={
 })
 test("创建本地用户", code == 200, f"code={code}, data={data}")
 
+# 创建用户密码留空 → 自动生成初始密码
+code, data = request('POST', '/api/admin/local-users', json_data={
+    "username": "randuser01", "password": "", "displayName": "随机密码用户", "email": "", "role": "internal-user"})
+rand_pwd = (data or {}).get('initialPassword', '')
+test("创建用户密码留空自动生成", code == 200 and isinstance(rand_pwd, str) and len(rand_pwd) >= 6,
+     f"code={code}, pwd_len={len(rand_pwd)}")
+code, data = request('POST', '/api/auth/login', json_data={"username": "randuser01", "password": rand_pwd})
+test("随机初始密码可登录", code == 200, f"code={code}")
+request('POST', '/api/auth/logout')
+request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
+request('DELETE', '/api/admin/local-users/randuser01')
+test("清理随机密码用户", code == 200, f"code={code}")
+
 code, data = request('POST', '/api/admin/local-users/testuser01/reset-password')
 test("重置本地用户密码", code == 200, f"code={code}, data={data}")
+test("重置密码为可配置默认值(Init@123456)", code == 200 and 'Init@123456' in data.get('message', ''),
+     f"code={code}, msg={data.get('message', '')}")
+
+# 用户自行修改密码（原密码 → 新密码）
+code, data = request('POST', '/api/auth/login', json_data={"username": "testuser01", "password": "Init@123456"})
+test("重置后的默认密码可登录", code == 200, f"code={code}")
+code, data = request('POST', '/api/auth/change-password', json_data={"old_password": "Init@123456", "new_password": "NewPwd@123456"})
+test("用户自行修改密码", code == 200, f"code={code}, data={data}")
+code, data = request('POST', '/api/auth/login', json_data={"username": "testuser01", "password": "NewPwd@123456"})
+test("修改后新密码登录成功", code == 200, f"code={code}")
+request('POST', '/api/auth/logout')
+request('POST', '/api/auth/login', json_data={"username": "admin", "password": "Admin@123"})
 
 code, data = request('DELETE', '/api/admin/local-users/testuser01')
 test("删除本地用户", code == 200, f"code={code}, data={data}")
@@ -1099,6 +1124,32 @@ test("i18n: 动态模板 message_en 翻译", code == 200 and "Password" in data.
 # 清理测试用户
 code, data = request('DELETE', f'/api/admin/local-users/i18n_{_i18n_suf}')
 test("i18n: 清理测试用户", code == 200, f"code={code}")
+
+# 上传大小限制（系统配置单一来源，运行时生效）
+print("\n--- 上传大小限制（系统配置） ---")
+code, data = request('PUT', '/api/config/system', json_data={"max_file_size_mb": "1"})
+test("系统配置最大文件改为1MB", code == 200, f"code={code}")
+_big = os.path.join(test_dir, "big_2mb.bin")
+with open(_big, 'wb') as f:
+    f.write(b'\x00' * (2 * 1024 * 1024))
+_ok_http = False
+try:
+    code, data = upload_file(_big, "big_2mb.bin")
+    _ok_http = True
+except urllib.error.HTTPError as _he:
+    code = _he.code
+    try:
+        data = json.loads(_he.read().decode('utf-8'))
+    except Exception:
+        data = {}
+    _ok_http = True
+test("超过最大文件大小被拒绝(400)", _ok_http and code == 400 and '最大支持' in data.get('error', ''),
+     f"code={code}, err={data.get('error', '')}")
+
+# 恢复系统配置默认（防污染 .env：免审批关闭/7天/800MB）
+code, data = request('PUT', '/api/config/system', json_data={
+    "auto_approval_enabled": "false", "default_expiry_days": "7", "max_file_size_mb": "800"})
+test("恢复系统配置默认（免审批关/7天/800MB）", code == 200, f"code={code}")
 
 # 登录页静态资源可访问（双语界面资源存在性）
 import urllib.request as _ur
