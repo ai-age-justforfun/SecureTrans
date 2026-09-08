@@ -4,6 +4,7 @@ Flask + Flask-Login + SQLite + os.rename 0拷贝摆渡
 适配初创公司 50 人规模（版本号见 APP_VERSION 常量）
 """
 import os
+import sys
 import re
 import json
 import time
@@ -39,7 +40,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.17"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.18"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
@@ -2002,10 +2003,24 @@ logger.info("=" * 60)
 # 启动（仅 python app.py 时执行；gunicorn 不执行此块）
 # ============================================================
 if __name__ == "__main__":
+    # CLI: 重置 admin 密码为 .env RESET_PASSWORD（每次部署调用，保证 verify 与首次登录凭据一致）
+    if "--reset-admin-password" in sys.argv:
+        new_pwd = os.getenv("RESET_PASSWORD", "Init@123456").strip()
+        with app.app_context():
+            db = get_db()
+            row = db.execute("SELECT id FROM local_users WHERE username=?", ("admin",)).fetchone()
+            if row:
+                db.execute("UPDATE local_users SET password_hash=?, must_change_password=1 WHERE username=?",
+                           (hash_password(new_pwd), "admin"))
+                db.commit()
+                print(f"[SecureTrans] admin 密码已重置为: {new_pwd}（.env RESET_PASSWORD），首次登录需修改")
+                sys.exit(0)
+            else:
+                print("[SecureTrans] admin 用户不存在，跳过重置（首次部署 init_db 已创建 admin/Admin@123）")
+                sys.exit(0)
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))
     logger.info("SecureTrans 启动: http://%s:%s", host, port)
-    logger.info("初始管理员: admin / Admin@123")
     # 测试模式用 Flask 自带服务器；生产模式应用 gunicorn 启动
     debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     app.run(host=host, port=port, debug=debug)
