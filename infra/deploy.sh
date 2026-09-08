@@ -264,12 +264,8 @@ else
     echo -e "  NAS_ROOT ($NAS_ROOT) 不存在或未挂载，ReadWritePaths 仅保留 /opt/securetrans（挂载后重跑部署更新）"
 fi
 sed -i "s|__RW_PATHS__|${RW_PATHS}|" /etc/systemd/system/securetrans.service
-# 渲染 gunicorn 绑定地址（从 .env 读 HOST/PORT；生产默认 0.0.0.0 全网卡，
-# 双网卡物理隔离可改 HOST=<内网IP>，外网卡不监听端口）
-BIND_HOST=$(grep -E '^HOST=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r' | head -1 || true)
-BIND_PORT=$(grep -E '^PORT=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r' | head -1 || true)
-BIND_ADDR="${BIND_HOST:-127.0.0.1}:${BIND_PORT:-8000}"
-sed -i "s|__BIND__|${BIND_ADDR}|" /etc/systemd/system/securetrans.service
+# gunicorn 绑定地址由 systemd 变量展开（ExecStart 中 ${HOST}:${PORT}，读 EnvironmentFile .env），
+# 改 .env 的 HOST/PORT 后 systemctl restart securetrans 即生效，无需重跑部署
 systemctl daemon-reload
 systemctl enable securetrans
 echo -e "  systemd 服务已安装并设为开机自启（ReadWritePaths=${NAS_ROOT}） ${GREEN}OK${NC}"
