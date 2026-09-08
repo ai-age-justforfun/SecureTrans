@@ -96,10 +96,9 @@
 | ADR-002 | Flask 而非 FastAPI（生态成熟、团队成本低） | README / PRD v2.2 |
 | ADR-003 | 主干开发 + 单分支（Sprint 只在文档体现） | README |
 | ADR-004 | Python 3.12 + venv 隔离（离线 wheel cp312 匹配） | README |
-| ADR-005 | gunicorn 绑定 systemd 变量展开（改 .env + restart 生效） | README |
-| ADR-006 | 非硬编码原则：环境变量驱动（配置/部署/运行） | README + 本文件部署规范 |
+| ADR-005 | 非硬编码原则：环境变量驱动（配置/部署/运行），含 systemd 变量展开生效机制（原 ADR-005/006 合并） | README + 本文件部署规范 |
 
-### ADR-006 详述：非硬编码原则（强制）
+### ADR-005 详述：非硬编码原则（强制）
 
 prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → 测试(WSL) → 生产(Rocky) 环境差异大，
 配置越来越复杂、环境越来越灵活，**新增代码/脚本一律不得写死地址、端口、网段、路径**：
@@ -107,7 +106,7 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
 - 环境相关配置从 `.env` 环境变量读取，代码/脚本只保留合理默认值（HOST=0.0.0.0、PORT=8000）作 fallback，生产必须显式配置
 - 动态采集：deploy.sh 健康检查/防火墙端口、verify.sh BASE_URL 运行期从 .env grep，不静态编码
 - 动态部署：deploy.sh 探测环境自适应（Python 三级获取、ReadWritePaths 按 NAS 存在性渲染、防火墙按 firewalld 状态）
-- 动态运行：systemd EnvironmentFile + `${HOST}:${PORT}` 变量展开，改 .env + `systemctl restart` 即生效
+- 动态运行：systemd EnvironmentFile + `${HOST}:${PORT}` 变量展开，改 .env + `systemctl restart` 即生效（原 ADR-005 并入）
 - 前端 API 相对路径（同源），不写死服务器地址
 - 已落点：v2.2.13（app.py / securetrans.service / deploy.sh / verify.sh / start-production.sh / release.ps1）
 
@@ -215,6 +214,12 @@ main ────●────●────●────●────  �
 
 ### 发布流程
 
+**触发规则**：
+- **文档-only 变更**（README/AGENTS/docs/*.md）：commit + push main 即可，**不 bump 版本、不打包、不建 Release**（文档随仓库演进；代码发布时包内自动带入最新文档）
+- **代码/脚本/配置模板变更**（影响可部署产物）：bump APP_VERSION + 全量回归 + package + release + git tag
+- **RTM 后**（Alpha/Beta 完成）：默认不逐次发布，关键里程碑手工发布
+
+
 - **打包**：`bash infra/package.sh <版本>` → `packages/securetrans-<版本>.tar.gz`（含 offline-python/ + offline-deps）
 - **发布**：`powershell -File infra/release.ps1 -Version v<版本>` → Gitea Release（源码包 + offline-deps 资产）
 - **版本记录**：`git tag v<版本>` + push tags；每次部署打包=发布，需明确发布版本和 Gitea 记录
@@ -249,4 +254,4 @@ main ────●────●────●────●────  �
 
 ---
 
-*AGENTS.md v1.5 | 2026-09-08*
+*AGENTS.md v1.6 | 2026-09-08*

@@ -188,6 +188,11 @@ SecureTrans/
 - **发布**：`powershell -File infra/release.ps1 -Version v<版本>` → Gitea Release（源码包 + 离线依赖包）
 - **版本记录**：Git tag（`v2.2.x`）+ Gitea Release 资产 + SHA256 校验
 - **变更记录**：文档内部版本号（如 PRD v2.2）独立演进，关键需求变更用 Git tag
+- **发布触发规则**：
+  - **文档-only 变更**（README/AGENTS/docs/*.md）：commit + push main 即可，**不 bump 版本、不打包、不建 Release**——文档随仓库持续演进，代码发布时包内自动带入最新
+  - **代码/脚本/配置模板变更**（影响可部署产物）：bump APP_VERSION + 全量回归 + package + release + git tag
+  - 版本号是发布产物属性，APP_VERSION 只在代码发布时递增；文档内部版本号（如 PRD v2.2、AGENTS v1.6）独立演进
+  - **RTM 后**（Alpha/Beta 完成）：默认不逐次发布，关键里程碑手工发布
 
 ---
 
@@ -249,16 +254,13 @@ main ────●────●────●────●────  �
 ### ADR-004：Python 3.12 + venv 隔离
 - 与系统环境完全隔离（`python -m venv --copies`），离线 wheel cp312 匹配；Rocky 8 用 AppStream/EPEL/离线 RPM 获取，无需源码编译
 
-### ADR-005：gunicorn 绑定用 systemd 变量展开
-- service 中 `-b ${HOST}:${PORT}` 读 EnvironmentFile .env，改 .env + `systemctl restart` 即生效，与 INTERNAL_CIDRS 等所有配置生效机制统一
-
-### ADR-006：非硬编码原则——环境变量驱动（配置/部署/运行）
+### ADR-005：非硬编码原则——环境变量驱动（配置/部署/运行）
 - **背景**：prototype/MVP 阶段代码内默认值可快速验证；但环境从 Windows 本地开发 → WSL 测试 → Rocky 生产
   逐步复杂、逐步灵活，地址/端口/网段/存储路径/密钥必须动态配置，不能写死
 - **决策**：
   - **动态采集**：所有环境相关配置从 `.env` 环境变量读取，代码/脚本只保留合理默认值（如 HOST=0.0.0.0、PORT=8000）作 fallback，生产必须显式配置
   - **动态部署**：deploy.sh 运行期探测环境自适应——Python 3.12 三级获取（系统→离线RPM→dnf）、ReadWritePaths 按 NAS 存在性渲染、防火墙按 firewalld 启用状态执行、健康检查目标从 .env HOST/PORT 构造
-  - **动态运行**：systemd EnvironmentFile + `${HOST}:${PORT}` 变量展开，改 .env + `systemctl restart` 即生效，无需重跑部署
+  - **动态运行**：systemd EnvironmentFile + `${HOST}:${PORT}` 变量展开，改 .env + `systemctl restart` 即生效，无需重跑部署（原 ADR-005 并入）
   - **动态采集（脚本）**：verify.sh BASE_URL、deploy.sh 防火墙端口均运行期从 .env grep 采集，不静态编码
   - **前端**：API 全部相对路径（同源），不写死服务器地址；时间显示用服务器系统时区
 - **已落点（v2.2.13）**：app.py（HOST/PORT/NAS_ROOT/SECURETRANS_DATA/AD_HOST/SECRET_KEY 全 os.getenv）、
