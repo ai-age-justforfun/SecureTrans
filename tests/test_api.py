@@ -513,8 +513,23 @@ dual_sub_id = data.get('id')
 test("创建语义B测试提交单(pending)", code == 200 and data.get('status') == 'pending',
      f"code={code}, status={data.get('status')}")
 
-# dual1 一级审批通过 → 应自动跳过二级，直接 approved 摆渡
+# 纯 approvers 权限模型：审批人可访问待我审批列表（不依赖角色体系）
+code, data = request('GET', '/api/submissions/pending/my')
+test("审批人可访问待我审批列表(pending/my 200)", code == 200 and isinstance(data, list) and any(x.get('id') == dual_sub_id for x in data),
+     f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
+
+# 非审批人普通用户 → 403（纯 approvers 权限模型）
+request('DELETE', '/api/admin/local-users/plainuser1')  # 幂等：清理上次残留
+code, data = request('POST', '/api/admin/local-users', json_data={
+    "username": "plainuser1", "password": "Test@123456", "displayName": "普通无权限用户", "role": "internal-user"
+})
+test("创建非审批人用户(plainuser1)", code == 200, f"code={code}")
+request('POST', '/api/auth/login', json_data={"username": "plainuser1", "password": "Test@123456"})
+code, data = request('GET', '/api/submissions/pending/my')
+test("非审批人访问待我审批列表被拒(403)", code == 403, f"code={code}")
 request('POST', '/api/auth/login', json_data={"username": "dual1", "password": "Test@123456"})
+
+# dual1 一级审批通过 → 应自动跳过二级，直接 approved 摆渡
 code, data = request('POST', f'/api/submissions/{dual_sub_id}/approve', json_data={
     "action": "approve", "comment": "语义B一级通过"
 })
@@ -999,7 +1014,7 @@ code, data = request('POST', '/api/submissions', json_data={
 test("选择合作方且名称不在清单→提交成功并判定partner", code == 200 and data.get('receiver_type') == 'partner',
      f"code={code}, receiver_type={data.get('receiver_type')}")
 code, data = request('GET', '/api/admin/partners')
-auto_added = any(p.get('name') == '自动加入合作方测试' for p in data) if isinstance(data, list) else False
+auto_added = any(p.get('name') == '自动加入合作方测试公司' for p in data) if isinstance(data, list) else False
 test("提交后自动加入合作方清单", auto_added, f"count={len(data) if isinstance(data,list) else 'N/A'}")
 
 # 合作方去重：再次提交同名合作方 → 不重复加入清单
@@ -1014,7 +1029,7 @@ code, data = request('POST', '/api/submissions', json_data={
 })
 test("同名合作方再次提交成功", code == 200, f"code={code}")
 code, data = request('GET', '/api/admin/partners')
-dup_count = sum(1 for p in data if p.get('name') == '自动加入合作方测试') if isinstance(data, list) else 0
+dup_count = sum(1 for p in data if p.get('name') == '自动加入合作方测试公司') if isinstance(data, list) else 0
 test("合作方去重：同名不重复加入清单(count=1)", dup_count == 1, f"count={dup_count}")
 
 # --- 合作方使能开关 ---
@@ -1034,7 +1049,7 @@ test("重新启用合作方", code == 200, f"code={code}, data={data}")
 
 # 清理：删除自动加入 + 使能测试合作方
 code, data = request('GET', '/api/admin/partners')
-auto_pid = next((p.get('id') for p in data if p.get('name') == '自动加入合作方测试'), None) if isinstance(data, list) else None
+auto_pid = next((p.get('id') for p in data if p.get('name') == '自动加入合作方测试公司'), None) if isinstance(data, list) else None
 if auto_pid:
     request('DELETE', f'/api/admin/partners/{auto_pid}')
 request('DELETE', f'/api/admin/partners/{tog_partner_id}')
