@@ -39,7 +39,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.15"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.16"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
@@ -584,6 +584,7 @@ EXTERNAL_ALLOW_PREFIXES = (
     "/api/auth/login",
     "/api/auth/logout",
     "/api/auth/me",
+    "/api/auth/change-password",  # 个人账户操作（需旧密码验证），非管理操作，外网面放行
     "/api/external/",
 )
 
