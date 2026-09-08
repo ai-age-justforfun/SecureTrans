@@ -1,6 +1,6 @@
 # SecureTrans 测试报告
 
-> 版本：v2.2.17 | 日期：2026-09-08 | 阶段：PSF
+> 版本：v2.2.18 | 日期：2026-09-08 | 阶段：PSF
 > 测试环境：Windows 11 (本地dev) + Rocky Linux 10.1 (WSL2 test)，Python 3.12 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
 > 测试工具：tests/test_api.py（Python urllib，无额外依赖）
@@ -9,7 +9,7 @@
 
 ## 一、测试结论
 
-**总计 187 项测试，双环境（Windows + WSL Rocky）全部通过，通过率 100%（PRD 全功能覆盖）。**
+**总计 190 项测试，双环境（Windows + WSL Rocky）全部通过，通过率 100%（PRD 全功能覆盖）。**
 
 核心流程（提交→审批→摆渡→下载→过期归档）端到端验证通过，os.rename 0拷贝摆渡特性在 Rocky Linux 10 ext4 文件系统上得到实际验证。特征码全量验证（含压缩包解包、Vivado Bitstream）、审批驳回、过期归档、修改密码、合作方白名单、审批人配置、特征码规则CRUD管理、网络面隔离（双网卡应用层兜底）、**语义B同人跨级自动跳过二级**等全部场景覆盖。
 
@@ -19,7 +19,7 @@
 
 ---
 
-## 二、测试覆盖范围（27大类 187项）
+## 二、测试覆盖范围（27大类 190项）
 
 | # | 类别 | 测试项 | 通过 |
 |---|------|--------|------|
@@ -317,4 +317,13 @@
   showChangePwdModal 前端拦截提示；外网面 must_change_password 不弹改密框，提示回内网修改（i18n pwd.externalOnly）。
 - 测试：external 面改密 403 断言（原放行用例反转）+ 前端外网隐藏改密入口资源检查。
 - 验证：Windows 187/187 + WSL verify 187/187，双环境 100%。
-*文档结束 | SecureTrans 测试报告 v1.14.0 | 2026-09-08*
+
+### 12.7 v2.2.18 部署凭据策略：admin 每次部署重置 + verify 自动读取（2026-09-08）
+- 决策：每次部署 deploy.sh 将 admin 密码重置为 .env RESET_PASSWORD（默认 Init@123456），界面"重置密码"与 .env 同源，
+  部署完成后 verify.sh 直接用该凭据即可通过（解决默认账号被修改后验证失败）。
+- 变更：app.py 新增 `--reset-admin-password` CLI（app_context 内更新密码+强制改密标记）；deploy.sh 9.7 步自动重置 + 确保 .env 含 RESET_PASSWORD 行；
+  verify.sh 凭据从 .env RESET_PASSWORD 读取（VERIFY_ADMIN_USER/VERIFY_ADMIN_PASS 可显式覆盖）；test_api.py 凭据参数化（TEST_ADMIN_USER/TEST_ADMIN_PASS），
+  改密测试改用专用用户 testpwuser（不碰真实 admin 密码，生产安全）。
+- 测试：190 项（改密测试重构 +5 项，外部改密 403 保留）。
+- 验证：Windows 190/190 + WSL verify 190/190，双环境 100%。
+*文档结束 | SecureTrans 测试报告 v1.15.0 | 2026-09-08*

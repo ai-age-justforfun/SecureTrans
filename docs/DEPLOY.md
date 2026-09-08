@@ -54,12 +54,12 @@ INTERNAL_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16   # 逗号分隔，留空
 powershell -ExecutionPolicy Bypass -File infra/deploy.ps1 -InstallDir C:\SecureTrans -Start
 ```
 
-访问 http://localhost:8000，账号 `admin / Admin@123`（首次登录强制改密）。
+访问 http://localhost:8000，账号 `admin / Admin@123`（Windows dev 场景；生产部署后 admin 密码自动重置为 .env `RESET_PASSWORD`，见 3.0）。
 
 运行测试（另一个终端）：
 ```bash
 cd tests
-python test_api.py    # 172项全通过
+python test_api.py    # 187项全通过
 ```
 
 ### 2.3 方式 B：WSL Rocky Linux（模拟生产环境）
@@ -82,13 +82,13 @@ python app.py    # 部署模式: testing
 
 Windows 浏览器访问 http://localhost:8000（WSL2 自动端口转发）。运行测试：
 ```bash
-cd ~/securetrans/tests && python3 test_api.py   # 172项全通过
+cd ~/securetrans/tests && python3 test_api.py   # 187项全通过
 ```
 
 ### 2.4 测试验证清单
 
 - [ ] 访问 http://服务器IP:8000 显示登录页
-- [ ] admin / Admin@123 登录成功，首次登录强制改密
+- [ ] admin 登录成功（生产密码 = .env `RESET_PASSWORD`；Windows dev = Admin@123），首次登录强制改密
 - [ ] 上传 PDF（匹配特征码，免审批自动通过）
 - [ ] 上传 EXE（不匹配，进入人工审批）
 - [ ] 上传 ZIP/TAR.GZ（自动解包列清单）
@@ -121,7 +121,7 @@ cd ~/securetrans/tests && python3 test_api.py   # 172项全通过
 
 **部署注意（防再次踩坑）**：
 - 不要从 Windows 工作区直接运行 `deploy.sh`（`src/` 含本地开发产物 `.env`/`data`/`nas`/`venv`）；deploy.sh 已用 tar 排除这些目录并保护生产 `.env`
-- 全量测试前必须**重置干净基线**（admin/Admin@123）：删除 `data/securetrans.db` + 清空 NAS 下 `staging/external/archive`
+- 全量测试前必须**重置干净基线**：删除 `data/securetrans.db` + 清空 NAS 下 `staging/external/archive`（admin 密码由 deploy.sh 自动重置为 .env `RESET_PASSWORD`，无需手工重置）
 - `.env` 用 LF 保存（Windows 记事本会写 CRLF，VSCode 右下角可切换）
 
 ## 三、生产环境部署（封闭数据中心）—— Rocky 8.10
@@ -137,7 +137,7 @@ cd ~/securetrans/tests && python3 test_api.py   # 172项全通过
 tar xzf securetrans-<版本>.tar.gz -C /opt/securetrans --strip-components=1
 # 2. 一键部署（root 运行）
 sudo bash /opt/securetrans/infra/deploy.sh
-# 3. 全量验证（172项）
+# 3. 全量验证（187项）
 sudo bash /opt/securetrans/infra/verify.sh
 ```
 
@@ -231,13 +231,13 @@ curl -s http://127.0.0.1:8000/api/health
 
 cd /opt/securetrans/tests
 python3 test_api.py
-# 预期: 总计172 | 通过172 | 通过率100.0%
+# 预期: 总计187 | 通过187 | 通过率100.0%
 ```
 
 **通过标准**
 - [ ] 健康检查返回 `deployMode":"testing"`
-- [ ] 172 项测试 100% 通过
-- [ ] 浏览器访问 `http://<内网IP>:8000`，admin/Admin@123 登录（首次强制改密）
+- [ ] 187 项测试 100% 通过
+- [ ] 浏览器访问 `http://<内网IP>:8000`，admin 登录（密码 = .env `RESET_PASSWORD`，首次强制改密）
 
 ### 阶段3：生产环境部署 + 自动化测试（DEPLOY_MODE=production）
 
@@ -279,12 +279,12 @@ systemctl is-active securetrans       # 预期 active
 cd /opt/securetrans/tests
 python3 test_api.py    # 自动读取 /opt/securetrans/.env 的 NAS_ROOT，无需手工传参；
                         # 若 .env 缺失（直接跑 app.py 未部署），才需手工指定：NAS_ROOT=... python3 test_api.py
-# 预期: 总计172 | 通过172 | 通过率100.0%
+# 预期: 总计187 | 通过187 | 通过率100.0%
 ```
 
 **通过标准**
 - [ ] systemd 服务 active，`deployMode":"production"`
-- [ ] 172 项测试 100% 通过（生产模式）
+- [ ] 187 项测试 100% 通过（生产模式）
 - [ ] 确认 gunicorn 多 worker 无并发初始化报错
 - [ ] 首次访问初始化正常：`/opt/securetrans/data/securetrans.db`、`/opt/securetrans/nas/{staging,external,archive}` 自动创建
 
@@ -497,8 +497,8 @@ Windows 服务化（开机自启）可用 NSSM：`nssm install SecureTrans` 指�
 |---|--------|------|
 | 1 | `python --version` ≥ 3.10（deploy.ps1 自动检测） | ☐ |
 | 2 | 一键部署成功，`C:\SecureTrans\.env` 生成 | ☐ |
-| 3 | 访问 http://localhost:8000，admin/Admin@123 登录 | ☐ |
-| 4 | 运行全量测试：`cd tests; python test_api.py`（172项） | ☐ |
+| 3 | 访问 http://localhost:8000，admin 登录（密码 = .env RESET_PASSWORD） | ☐ |
+| 4 | 运行全量测试：`cd tests; python test_api.py`（187项） | ☐ |
 | 5 | waitress 生产启动健康检查通过 | ☐ |
 | 6 | 单网卡隔离：内网段全功能，非内网段仅登录+下载（管理接口403） | ☐ |
 | 7 | NSSM/计划任务服务化（可选） | ☐ |
@@ -528,11 +528,11 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 │   ├── .env.production       # 生产环境配置模板
 │   └── static/               # 前端SPA（index.html，单页应用）
 ├── tests/
-│   └── test_api.py           # 172项全量测试
+│   └── test_api.py           # 187项全量测试
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署 (Linux)
 │   ├── deploy.ps1            # 一键部署 (Windows)
-│   ├── verify.sh             # 部署验证（172项全量测试）
+│   ├── verify.sh             # 部署验证（187项全量测试，凭据自动取 .env RESET_PASSWORD）
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式
 │   ├── nginx-securetrans-single.conf # Nginx 单网卡模式
 │   ├── securetrans.service   # systemd 服务

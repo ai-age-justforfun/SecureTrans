@@ -38,7 +38,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-访问 http://localhost:8000，初始账号 `admin / Admin@123`（首次登录强制改密）。
+访问 http://localhost:8000，初始账号 `admin / Admin@123`（Windows dev 场景；生产部署后 admin 密码每次自动重置为 .env `RESET_PASSWORD`，默认 Init@123456，首次登录强制改密）。
 
 ### 运行测试
 
@@ -49,7 +49,7 @@ cd src && python app.py
 # 另一个终端运行测试
 cd tests
 python test_api.py
-# 预期：172项测试全部通过，通过率100%
+# 预期：190项测试全部通过，通过率100%
 ```
 
 ### 一键部署（服务器，Rocky Linux）
@@ -62,7 +62,7 @@ cd /opt/securetrans
 # 2. 一键部署（9步自动化：Python 3.12 获取 → venv → 依赖 → .env → systemd → 启动验证）
 sudo bash infra/deploy.sh
 
-# 3. 部署验证（172项全量测试，BASE_URL 自动适配 .env HOST/PORT）
+# 3. 部署验证（190项全量测试；admin 凭据自动取 .env RESET_PASSWORD；BASE_URL 自动适配 .env HOST/PORT；若 admin 密码已手工修改，用 VERIFY_ADMIN_PASS 显式传入）
 bash infra/verify.sh
 
 # 4. 防火墙放行 8000（Alpha 内测：内网 + 办公外网访问）
@@ -92,7 +92,7 @@ SecureTrans/
 │   ├── .env.production       # 生产环境配置模板（唯一生产配置源）
 │   └── static/               # 前端静态文件（SPA + 登录页）
 ├── tests/                    # 自动化测试
-│   └── test_api.py           # 全量API测试脚本（172项，标准库urllib无额外依赖）
+│   └── test_api.py           # 全量API测试脚本（190项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
 ├── docs/                     # 统一文档（数字前缀排序，持续刷新）
 │   ├── 00-lean-startup-phase-map.md   # Lean Startup三阶段映射与决策门
 │   ├── 01-scrum-io-definition.md      # Scrum各阶段输入输出定义
@@ -100,7 +100,7 @@ SecureTrans/
 │   ├── 03-psf-process.md              # PSF阶段标准流程
 │   ├── 04-pmf-process.md              # PMF阶段标准流程（下一阶段准备）
 │   ├── 05-test-cases.md               # 测试用例
-│   ├── 06-test-report.md              # 测试报告（172项全通过）
+│   ├── 06-test-report.md              # 测试报告（190项全通过）
 │   ├── 07-psf-sprint4-retrospective.md # PSF阶段迭代小结
 │   ├── 08-cicd-gitops-architecture.md # CICD/GitOps架构规划
 │   ├── 09-preprod-verification.md     # 生产预验收清单
@@ -110,7 +110,7 @@ SecureTrans/
 └── infra/                    # 基础设施配置
     ├── deploy.sh             # 一键部署脚本（9步自动化, Linux）
     ├── deploy.ps1            # 一键部署脚本（Windows）
-    ├── verify.sh             # 部署验证脚本（172项，BASE_URL 自适应绑定地址）
+    ├── verify.sh             # 部署验证脚本（190项，BASE_URL 自适应 + 凭据自动取 .env RESET_PASSWORD）
     ├── get-offline-python.sh # 离线 Python 3.12 RPM 获取（联网 Rocky8 跑一次）
     ├── nginx-securetrans.conf        # Nginx双网卡配置
     ├── nginx-securetrans-single.conf # Nginx单网卡配置
@@ -217,7 +217,7 @@ main ────●────●────●────●────  �
 - **Commit 规范**：`<type>(<scope>): <描述>`，不强制带 Sprint 编号，可关联 Story 编号
 
 ### 当前阶段
-**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，182 项自动化测试 100%，内部人工测试启动中（内网全功能 + 办公外网下载）。
+**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，190 项自动化测试 100%，内部人工测试启动中（内网全功能 + 办公外网下载）。
 
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
@@ -225,7 +225,7 @@ main ────●────●────●────●────  �
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（172项全通过）](docs/06-test-report.md)
+- [测试报告（190项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
 - [部署指南（唯一部署文档）](docs/DEPLOY.md)
@@ -285,7 +285,7 @@ main ────●────●────●────●────  �
   - **正式发布后（RTM）**：默认不逐次发布，关键里程碑手工发布
   - **文档-only 变更**（README/AGENTS/docs/*.md）：commit + push main，不 bump、不打包、不建 Release（随仓库演进，代码发布时包内自动带入最新）
   - **调测门禁**：本地调测中间阶段保持双环境 TDD 全量回归——Windows 开发环境（testing：`python test_api.py` 182 项）
-    + WSL 测试环境（production：`infra/verify.sh` 182 项），**全部通过才允许 bump + 发布**
+    + WSL 测试环境（production：`infra/verify.sh` 190 项），**全部通过才允许 bump + 发布**
   - 版本号是发布产物属性，APP_VERSION 只在代码发布时递增；文档内部版本号独立演进
 
 ### ADR-008：端口/网络面部署选型（单/双网卡 × 单/双端口）

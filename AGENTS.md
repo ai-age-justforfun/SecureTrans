@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.2.14（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
+- **当前版本**：v2.2.17（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
@@ -180,10 +180,10 @@ main ────●────●────●────●────  �
 
 ### 自动化测试
 
-- **测试脚本**：`tests/test_api.py`，使用Python标准库urllib，无额外依赖
+- **测试脚本**：`tests/test_api.py`，使用Python标准库urllib，无额外依赖；**admin 凭据参数化**：`TEST_ADMIN_USER`/`TEST_ADMIN_PASS` 环境变量（默认 admin/Admin@123，Windows dev 场景）
 - **测试范围**：全量172项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置、i18n双语、网络面隔离）
 - **运行方式**：先启动服务（`cd src && python app.py`），再 `cd tests && python test_api.py`，预期通过率100%
-- **部署验证**：`infra/verify.sh`（172项全量，BASE_URL 自动适配 .env HOST/PORT——HOST=具体IP时自动用 http://<IP>:PORT）
+- **部署验证**：`infra/verify.sh`（190项全量，BASE_URL 自动适配 .env HOST/PORT——HOST=具体IP时自动用 http://<IP>:PORT；**admin 凭据自动取 .env RESET_PASSWORD**（部署时 admin 密码已重置为该值），admin 密码被手工修改时用 `VERIFY_ADMIN_PASS` 显式传入）
 - **新增功能**：必须在 test_api.py 中添加对应测试用例
 - **i18n 测试**：双语回归组覆盖后端 error_en/message_en、动态模板翻译、前端 I18N 字典资源检查
 
@@ -277,6 +277,7 @@ main ────●────●────●────●────  �
 8. **不要在commit message中强制带Sprint编号**：Sprint是管理节奏，不是代码的身份证。
 9. **不要以为改 .env 需要重跑部署**：v2.2.9+ 改 .env 后 `systemctl restart securetrans` 即生效（systemd 变量展开）。
 10. **verify.sh 绑定自适应**：未传参时自动从 .env HOST/PORT 构造 BASE_URL（HOST=具体IP → http://<IP>:PORT），不要在服务器上手动传 127.0.0.1。
+11. **verify 凭据取 .env RESET_PASSWORD**：每次部署 deploy.sh 会将 admin 密码重置为 .env RESET_PASSWORD（默认 Init@123456），verify.sh 自动读取；**改密测试用专用用户 testpwuser，不碰真实 admin 密码**；admin 密码手工修改后验证需 `VERIFY_ADMIN_PASS=xxx bash infra/verify.sh`。
 
 ---
 
