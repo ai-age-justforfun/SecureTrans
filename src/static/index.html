@@ -162,6 +162,7 @@
       <div class="nav-item" data-page="external"><span class="icon">📥</span><span data-i18n="nav.external">外网下载</span></div>
       <div class="nav-item admin-only" data-page="users"><span class="icon">👥</span><span data-i18n="nav.users">用户管理</span></div>
       <div class="nav-item admin-only" data-page="partners"><span class="icon">🤝</span><span data-i18n="nav.partners">合作方管理</span></div>
+<div class="nav-item admin-only" data-page="approvers"><span class="icon">🗂️</span><span data-i18n="nav.approvers">审批人配置</span></div>
       <div class="nav-item admin-only" data-page="config"><span class="icon">⚙️</span><span data-i18n="nav.config">系统配置</span></div>
       <div class="nav-item admin-only" data-page="audit"><span class="icon">📝</span><span data-i18n="nav.audit">审计日志</span></div>
       <div class="nav-item admin-only" data-page="dashboard"><span class="icon">📊</span><span data-i18n="nav.dashboard">仪表盘</span></div>
@@ -204,7 +205,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.2.14';
+const APP_VERSION = 'v2.2.15';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -216,7 +217,7 @@ const I18N = {
     'brand.subtitle': '文件审批摆渡系统',
     'nav.submit': '文件提交', 'nav.mySubmissions': '我的提交', 'nav.pending': '待我审批',
     'nav.external': '外网下载', 'nav.users': '用户管理', 'nav.partners': '合作方管理',
-    'nav.config': '系统配置', 'nav.audit': '审计日志', 'nav.dashboard': '仪表盘',
+    'nav.config': '系统配置', 'nav.approvers': '审批人配置', 'nav.audit': '审计日志', 'nav.dashboard': '仪表盘',
     'net.internal': '内网', 'net.external': '外网',
     'sidebar.logout': '退出登录', 'sidebar.changePwd': '修改密码', 'sidebar.tz': '时间=服务器系统时区',
     'pwd.title': '修改密码', 'pwd.old': '原密码', 'pwd.new': '新密码（至少6位）', 'pwd.confirm': '确认新密码', 'pwd.mismatch': '两次输入的新密码不一致', 'pwd.success': '密码修改成功', 'pwd.changeFail': '密码修改失败：',
@@ -225,7 +226,7 @@ const I18N = {
     'status.downloaded': '已下载', 'status.rejected': '已驳回', 'status.archived': '已归档', 'status.auto': '免审批',
     'page.title.dashboard': '仪表盘', 'page.title.submit': '文件提交', 'page.title.mySubmissions': '我的提交',
     'page.title.pending': '待我审批', 'page.title.external': '外网下载', 'page.title.users': '用户管理',
-    'page.title.partners': '合作方管理', 'page.title.config': '系统配置', 'page.title.audit': '审计日志',
+    'page.title.partners': '合作方管理', 'page.title.approvers': '审批人配置', 'page.title.config': '系统配置', 'page.title.audit': '审计日志',
     'common.loading': '加载中...', 'common.close': '关闭', 'common.cancel': '取消', 'common.confirm': '确认',
     'common.create': '创建', 'common.save': '保存', 'common.edit': '编辑', 'common.delete': '删除',
     'common.detail': '详情', 'common.download': '下载', 'common.enable': '启用', 'common.disable': '禁用',
@@ -273,6 +274,7 @@ const I18N = {
     'user.pwdOpt': '密码（留空自动生成）', 'user.pwdOptPh': '留空自动生成初始密码，首次登录后请修改',
     'user.displayName': '显示名', 'user.displayNamePh': '如：张三', 'user.email': '邮箱', 'user.emailPh': 'user@company.com',
     'user.role': '角色', 'user.roleInternal': '普通用户（审批权限请在审批人配置中授予）',
+    'appr.title': '审批人配置', 'appr.level': '审批级别', 'appr.level1': '一级审批', 'appr.level2': '二级审批', 'appr.username': '审批人', 'appr.scope': '适用范围', 'appr.scopeAll': '全部', 'appr.add': '新增审批人', 'appr.createTitle': '新增审批人', 'appr.selectUser': '选择用户', 'appr.confirmDelete': '确认删除该审批人配置？', 'appr.empty': '暂无审批人配置，请新增一级/二级审批人',
     'user.createdAt': '创建时间', 'user.resetPwd': '重置密码', 'user.permanent': '永久启用',
     'user.confirmReset': '确定重置用户 "{0}" 的密码？', 'user.confirmDelete': '确定删除用户 "{0}"？此操作不可恢复。',
     'user.confirmToggle': '确定{0}用户 "{1}"？',
@@ -322,7 +324,7 @@ const I18N = {
     'brand.subtitle': 'Cross-Network File Approval & Ferry System',
     'nav.submit': 'Submit Files', 'nav.mySubmissions': 'My Submissions', 'nav.pending': 'Pending Approval',
     'nav.external': 'External Download', 'nav.users': 'User Management', 'nav.partners': 'Partner Management',
-    'nav.config': 'System Config', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
+    'nav.config': 'System Config', 'nav.approvers': 'Approvers', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
     'net.internal': 'Intranet', 'net.external': 'Extranet',
     'sidebar.logout': 'Logout', 'sidebar.changePwd': 'Change Password', 'sidebar.tz': 'Times = Server System Timezone',
     'pwd.title': 'Change Password', 'pwd.old': 'Current Password', 'pwd.new': 'New Password (min 6)', 'pwd.confirm': 'Confirm New Password', 'pwd.mismatch': 'The two new passwords do not match', 'pwd.success': 'Password changed successfully', 'pwd.changeFail': 'Password change failed: ',
@@ -331,7 +333,7 @@ const I18N = {
     'status.downloaded': 'Downloaded', 'status.rejected': 'Rejected', 'status.archived': 'Archived', 'status.auto': 'Auto',
     'page.title.dashboard': 'Dashboard', 'page.title.submit': 'Submit Files', 'page.title.mySubmissions': 'My Submissions',
     'page.title.pending': 'Pending Approval', 'page.title.external': 'External Download', 'page.title.users': 'User Management',
-    'page.title.partners': 'Partner Management', 'page.title.config': 'System Config', 'page.title.audit': 'Audit Logs',
+    'page.title.partners': 'Partner Management', 'page.title.approvers': 'Approver Config', 'page.title.config': 'System Config', 'page.title.audit': 'Audit Logs',
     'common.loading': 'Loading...', 'common.close': 'Close', 'common.cancel': 'Cancel', 'common.confirm': 'Confirm',
     'common.create': 'Create', 'common.save': 'Save', 'common.edit': 'Edit', 'common.delete': 'Delete',
     'common.detail': 'Details', 'common.download': 'Download', 'common.enable': 'Enable', 'common.disable': 'Disable',
@@ -379,6 +381,7 @@ const I18N = {
     'user.pwdOpt': 'Password (blank = auto-generate)', 'user.pwdOptPh': 'Leave blank to auto-generate an initial password, change after first login',
     'user.displayName': 'Display Name', 'user.displayNamePh': 'e.g. Zhang San', 'user.email': 'Email', 'user.emailPh': 'user@company.com',
     'user.role': 'Role', 'user.roleInternal': 'Regular user (approval rights granted in approver config)',
+    'appr.title': 'Approver Config', 'appr.level': 'Level', 'appr.level1': 'Level 1', 'appr.level2': 'Level 2', 'appr.username': 'Approver', 'appr.scope': 'Scope', 'appr.scopeAll': 'All', 'appr.add': 'Add Approver', 'appr.createTitle': 'Add Approver', 'appr.selectUser': 'Select User', 'appr.confirmDelete': 'Delete this approver config?', 'appr.empty': 'No approver configured yet. Add Level 1/2 approvers.',
     'user.createdAt': 'Created At', 'user.resetPwd': 'Reset Password', 'user.permanent': 'Permanent',
     'user.confirmReset': 'Reset password for user "{0}"?', 'user.confirmDelete': 'Delete user "{0}"? This cannot be undone.',
     'user.confirmToggle': '{0} user "{1}"?',
@@ -470,6 +473,22 @@ function applyI18n() {
     }
   }
   if (ls) ls.textContent = currentLang === 'zh' ? 'EN' : '中';
+  // 页面标题随语言刷新（titles 映射见 showPage）
+  const _pt = document.getElementById('pageTitle');
+  if (_pt && currentPage) {
+    const _titles = { dashboard: 'page.title.dashboard', submit: 'page.title.submit', 'my-submissions': 'page.title.mySubmissions',
+      pending: 'page.title.pending', external: 'page.title.external', users: 'page.title.users',
+      partners: 'page.title.partners', approvers: 'page.title.approvers', config: 'page.title.config', audit: 'page.title.audit' };
+    _pt.textContent = t(_titles[currentPage] || currentPage);
+  }
+  // 上传限制提示随语言刷新（仅当已加载过配置）
+  const _uh = document.getElementById('uploadLimitHint');
+  if (_uh && window._uploadMaxMb) {
+    const _zh = currentLang === 'zh';
+    _uh.textContent = _zh
+      ? '支持单文件最大 ' + window._uploadMaxMb + 'MB，可多次上传'
+      : 'Max ' + window._uploadMaxMb + 'MB per file, multiple uploads allowed';
+  }
 }
 // 语言偏好初始化（默认中文）
 document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
@@ -565,6 +584,10 @@ async function loadUser() {
         el.style.display = (el.dataset.page === 'external') ? '' : 'none';
       });
     }
+    // 首次登录/重置密码后（must_change_password=1）自动弹出修改密码（可稍后修改）
+    if (currentUser.mustChangePassword) {
+      setTimeout(() => { showChangePwdModal(); }, 600);
+    }
   } catch (e) {
     console.error('loadUser error:', e);
     window.location.href = '/login';
@@ -624,7 +647,7 @@ function navigate(page) {
   const titles = {
     dashboard: 'page.title.dashboard', submit: 'page.title.submit', 'my-submissions': 'page.title.mySubmissions',
     pending: 'page.title.pending', external: 'page.title.external', users: 'page.title.users',
-    partners: 'page.title.partners', config: 'page.title.config', audit: 'page.title.audit'
+    partners: 'page.title.partners', approvers: 'page.title.approvers', config: 'page.title.config', audit: 'page.title.audit'
   };
   document.getElementById('pageTitle').textContent = t(titles[page] || page);
   document.getElementById('pageActions').innerHTML = '';
@@ -642,6 +665,7 @@ function renderPage(page) {
     case 'external': renderExternal(); break;
     case 'users': renderUsers(); break;
     case 'partners': renderPartners(); break;
+    case 'approvers': renderApprovers(); break;
     case 'config': renderConfig(); break;
     case 'audit': renderAudit(); break;
   }
@@ -692,7 +716,7 @@ function renderSubmit() {
       <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
         <div class="icon">📁</div>
         <p data-i18n="submit.uploadHint">点击或拖拽文件到此处上传</p>
-        <div class="hint" data-i18n="submit.uploadLimit">支持单文件最大 1GB，可多次上传</div>
+        <div class="hint" id="uploadLimitHint" data-i18n="submit.uploadLimit">支持单文件最大 1GB，可多次上传</div>
       </div>
       <input type="file" id="fileInput" multiple style="display:none">
       <div class="file-list" id="fileList"></div>
@@ -742,6 +766,20 @@ function renderSubmit() {
   zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
   zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
   input.addEventListener('change', e => handleFiles(e.target.files));
+  // 上传限制随系统配置动态显示（配置单一来源，不硬编码）
+  (async () => {
+    try {
+      const cfg = await api('/api/config/system');
+      const hint = document.getElementById('uploadLimitHint');
+      if (hint && cfg.max_file_size_mb) {
+        window._uploadMaxMb = cfg.max_file_size_mb;
+        const zh = (localStorage.getItem('lang') || 'zh') === 'zh';
+        hint.textContent = zh
+          ? '支持单文件最大 ' + cfg.max_file_size_mb + 'MB，可多次上传'
+          : 'Max ' + cfg.max_file_size_mb + 'MB per file, multiple uploads allowed';
+      }
+    } catch (e) {}
+  })();
 }
 
 async function handleFiles(files) {
@@ -804,10 +842,8 @@ async function togglePartnerSelect() {
 function onPartnerSelected() {
   const name = document.getElementById('partnerSelect').value;
   if (name) {
-    document.getElementById('receiverName').value = name;
-    // 合作方为单位，若未填单位则默认以合作方名称填充
-    const org = document.getElementById('receiverOrg').value.trim();
-    if (!org) document.getElementById('receiverOrg').value = name;
+    // 合作方为单位：接收方单位=合作方名；姓名保持用户填写（联系人）
+    document.getElementById('receiverOrg').value = name;
   }
 }
 
@@ -1116,7 +1152,7 @@ async function createUser() {
   const password = document.getElementById('newPassword').value;
   if (!username) { toast(t('err.requireUsername'), 'error'); return; }
   try {
-    await api('/api/admin/local-users', {
+    const data = await api('/api/admin/local-users', {
       method: 'POST',
       body: {
         username, password,
@@ -1257,6 +1293,79 @@ async function togglePartnerEnabled(id, enabled) {
     renderPartners();
   } catch (e) {
     toast(t('toast.toggleFail', e.message), 'error');
+  }
+}
+
+async function renderApprovers() {
+  try {
+    const list = await api('/api/admin/approvers');
+    document.getElementById('pageActions').innerHTML = '<button class="btn btn-primary" onclick="showCreateApprover()" data-i18n="appr.add">新增审批人</button>';
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        ${list.length === 0
+          ? `<div class="empty" data-i18n="appr.empty">暂无审批人配置，请新增一级/二级审批人</div>`
+          : `<table>
+            <thead><tr><th data-i18n="appr.level">审批级别</th><th data-i18n="appr.username">审批人</th><th>显示名</th><th data-i18n="appr.scope">适用范围</th><th></th></tr></thead>
+            <tbody>
+              ${list.map(a => `<tr>
+                <td><span class="badge badge-approved">${a.level == 1 ? t('appr.level1') : t('appr.level2')}</span></td>
+                <td>${a.username}</td>
+                <td>${a.display_name || '-'}</td>
+                <td>${a.scope === 'all' ? t('appr.scopeAll') : (a.scope || '-')}</td>
+                <td><button class="btn btn-sm btn-danger" onclick="deleteApprover('${a.id}')" data-i18n="common.delete">删除</button></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>`}
+      </div>
+    `;
+    applyI18n();
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
+  }
+}
+
+async function showCreateApprover() {
+  let users = [];
+  try { users = await api('/api/admin/local-users'); } catch (e) {}
+  document.getElementById('modalTitle').textContent = t('appr.createTitle');
+  document.getElementById('modalBody').innerHTML = `
+    <div class="form-group mb-8"><label data-i18n="appr.level">审批级别</label>
+      <select id="apprLevel"><option value="1" data-i18n="appr.level1">一级审批</option><option value="2" data-i18n="appr.level2">二级审批</option></select></div>
+    <div class="form-group mb-8"><label data-i18n="appr.selectUser">选择用户</label>
+      <select id="apprUser">${users.filter(u => u.username !== 'admin').map(u => `<option value="${u.username}">${u.display_name || u.username} (${u.username})</option>`).join('')}</select></div>
+    <div class="form-group"><label data-i18n="appr.scope">适用范围</label><input type="text" id="apprScope" value="all" placeholder="all / 部门名"></div>
+  `;
+  document.getElementById('modalFooter').innerHTML = `
+    <button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.cancel">取消</button>
+    <button class="btn btn-primary" onclick="createApprover()" data-i18n="common.save">保存</button>
+  `;
+  applyI18n();
+  openModal();
+}
+
+async function createApprover() {
+  const level = document.getElementById('apprLevel').value;
+  const username = document.getElementById('apprUser').value;
+  const scope = document.getElementById('apprScope').value.trim() || 'all';
+  if (!username) { toast(t('err.requireUser'), 'error'); return; }
+  try {
+    const data = await api('/api/admin/approvers', { method: 'POST', body: { level, username, scope } });
+    toast(data && data.message ? data.message : t('appr.createSuccess'), 'success');
+    closeModal();
+    renderApprovers();
+  } catch (e) {
+    toast(t('toast.saveFail', e.message), 'error');
+  }
+}
+
+async function deleteApprover(id) {
+  if (!confirm(t('appr.confirmDelete'))) return;
+  try {
+    await api(`/api/admin/approvers/${id}`, { method: 'DELETE' });
+    toast(t('toast.deleteSuccess'), 'success');
+    renderApprovers();
+  } catch (e) {
+    toast(t('toast.deleteFail', e.message), 'error');
   }
 }
 
