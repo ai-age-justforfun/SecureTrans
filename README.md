@@ -1,6 +1,6 @@
 # SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.2.10 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
+> 版本：v2.2.11 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -56,7 +56,7 @@ python test_api.py
 
 ```bash
 # 1. 上传发布包 securetrans-<版本>.tar.gz 到服务器
-tar xzf securetrans-v2.2.10.tar.gz -C /opt/securetrans --strip-components=1
+tar xzf securetrans-v2.2.11.tar.gz -C /opt/securetrans --strip-components=1
 cd /opt/securetrans
 
 # 2. 一键部署（9步自动化：Python 3.12 获取 → venv → 依赖 → .env → systemd → 启动验证）
@@ -260,4 +260,4 @@ main ────●────●────●────●────  �
 
 ---
 
-*SecureTrans v2.2.10 | 2026-09-08*
+*SecureTrans v2.2.11 | 2026-09-08*
