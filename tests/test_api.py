@@ -933,6 +933,10 @@ test("external面me放行+networkZone=external", code == 200 and data.get('netwo
 code, data = request('GET', f'/api/external/{auto_sub_id}/download/test_document.pdf', headers={"X-Network-Zone": "external"})
 test("external面文件下载放行", code == 200, f"code={code}")
 
+# 外网面：修改密码为个人账户操作（需旧密码验证），应放行（而非管理操作 403）
+code, data = request('POST', '/api/auth/change-password', json_data={"old_password": "Admin@123", "new_password": "Admin@123"}, headers={"X-Network-Zone": "external"})
+test("external面修改密码放行(个人账户操作)", code == 200, f"code={code}, data={data}")
+
 # external 面：管理/业务接口全部拒绝 403
 code, data = request('GET', '/api/submissions', headers={"X-Network-Zone": "external"})
 test("external面提交列表被拒403", code == 403, f"code={code}")
