@@ -933,9 +933,9 @@ test("external面me放行+networkZone=external", code == 200 and data.get('netwo
 code, data = request('GET', f'/api/external/{auto_sub_id}/download/test_document.pdf', headers={"X-Network-Zone": "external"})
 test("external面文件下载放行", code == 200, f"code={code}")
 
-# 外网面：修改密码为个人账户操作（需旧密码验证），应放行（而非管理操作 403）
+# 外网面：一律不允许修改密码（即使个人账户，也只能内网修改）——白名单不含 change-password，403 拒绝
 code, data = request('POST', '/api/auth/change-password', json_data={"old_password": "Admin@123", "new_password": "Admin@123"}, headers={"X-Network-Zone": "external"})
-test("external面修改密码放行(个人账户操作)", code == 200, f"code={code}, data={data}")
+test("external面修改密码被拒403(仅内网可改密)", code == 403, f"code={code}")
 
 # external 面：管理/业务接口全部拒绝 403
 code, data = request('GET', '/api/submissions', headers={"X-Network-Zone": "external"})
@@ -1186,6 +1186,8 @@ try:
     test("i18n: 主界面包含语言切换函数", 'function switchLang' in _html and 'function applyI18n' in _html)
     test("i18n: 主界面使用 data-i18n 属性", 'data-i18n=' in _html)
     test("i18n: 语言按钮跨页面重建逻辑（applyI18n 内）", 'createElement' in _html and 'langSwitch' in _html and 'insertBefore' in _html)
+    # 外网面一律不允许修改密码：前端隐藏入口 + 弹窗拦截 + i18n 提示（后端白名单不含 change-password，403 兜底）
+    test("前端外网面隐藏修改密码入口", 'btnChangePwd' in _html and 'pwd.externalOnly' in _html and 'showChangePwdModal() {' in _html and '// 外网面一律不允许修改密码' in _html)
 except Exception as e:
     test("i18n: 主界面资源检查", False, str(e))
 
