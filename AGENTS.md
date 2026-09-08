@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.2.12（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
+- **当前版本**：v2.2.13（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
@@ -87,6 +87,29 @@
 - **Sprint作为研发分解阶段**：在过程文档中体现，不用目录结构做版本管理
 
 ---
+
+## 技术决策记录（ADR）
+
+| ADR | 决策 | 位置 |
+|-----|------|------|
+| ADR-001 | os.rename 而非软链接/拷贝（0拷贝摆渡） | README / PRD v2.2 |
+| ADR-002 | Flask 而非 FastAPI（生态成熟、团队成本低） | README / PRD v2.2 |
+| ADR-003 | 主干开发 + 单分支（Sprint 只在文档体现） | README |
+| ADR-004 | Python 3.12 + venv 隔离（离线 wheel cp312 匹配） | README |
+| ADR-005 | gunicorn 绑定 systemd 变量展开（改 .env + restart 生效） | README |
+| ADR-006 | 非硬编码原则：环境变量驱动（配置/部署/运行） | README + 本文件部署规范 |
+
+### ADR-006 详述：非硬编码原则（强制）
+
+prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → 测试(WSL) → 生产(Rocky) 环境差异大，
+配置越来越复杂、环境越来越灵活，**新增代码/脚本一律不得写死地址、端口、网段、路径**：
+
+- 环境相关配置从 `.env` 环境变量读取，代码/脚本只保留合理默认值（HOST=0.0.0.0、PORT=8000）作 fallback，生产必须显式配置
+- 动态采集：deploy.sh 健康检查/防火墙端口、verify.sh BASE_URL 运行期从 .env grep，不静态编码
+- 动态部署：deploy.sh 探测环境自适应（Python 三级获取、ReadWritePaths 按 NAS 存在性渲染、防火墙按 firewalld 状态）
+- 动态运行：systemd EnvironmentFile + `${HOST}:${PORT}` 变量展开，改 .env + `systemctl restart` 即生效
+- 前端 API 相对路径（同源），不写死服务器地址
+- 已落点：v2.2.13（app.py / securetrans.service / deploy.sh / verify.sh / start-production.sh / release.ps1）
 
 ## 研发流程
 
@@ -226,4 +249,4 @@ main ────●────●────●────●────  �
 
 ---
 
-*AGENTS.md v1.4 | 2026-09-08*
+*AGENTS.md v1.5 | 2026-09-08*

@@ -1,6 +1,6 @@
 # SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.2.12 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
+> 版本：v2.2.13 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -56,7 +56,7 @@ python test_api.py
 
 ```bash
 # 1. 上传发布包 securetrans-<版本>.tar.gz 到服务器
-tar xzf securetrans-v2.2.12.tar.gz -C /opt/securetrans --strip-components=1
+tar xzf securetrans-v2.2.13.tar.gz -C /opt/securetrans --strip-components=1
 cd /opt/securetrans
 
 # 2. 一键部署（9步自动化：Python 3.12 获取 → venv → 依赖 → .env → systemd → 启动验证）
@@ -252,6 +252,20 @@ main ────●────●────●────●────  �
 ### ADR-005：gunicorn 绑定用 systemd 变量展开
 - service 中 `-b ${HOST}:${PORT}` 读 EnvironmentFile .env，改 .env + `systemctl restart` 即生效，与 INTERNAL_CIDRS 等所有配置生效机制统一
 
+### ADR-006：非硬编码原则——环境变量驱动（配置/部署/运行）
+- **背景**：prototype/MVP 阶段代码内默认值可快速验证；但环境从 Windows 本地开发 → WSL 测试 → Rocky 生产
+  逐步复杂、逐步灵活，地址/端口/网段/存储路径/密钥必须动态配置，不能写死
+- **决策**：
+  - **动态采集**：所有环境相关配置从 `.env` 环境变量读取，代码/脚本只保留合理默认值（如 HOST=0.0.0.0、PORT=8000）作 fallback，生产必须显式配置
+  - **动态部署**：deploy.sh 运行期探测环境自适应——Python 3.12 三级获取（系统→离线RPM→dnf）、ReadWritePaths 按 NAS 存在性渲染、防火墙按 firewalld 启用状态执行、健康检查目标从 .env HOST/PORT 构造
+  - **动态运行**：systemd EnvironmentFile + `${HOST}:${PORT}` 变量展开，改 .env + `systemctl restart` 即生效，无需重跑部署
+  - **动态采集（脚本）**：verify.sh BASE_URL、deploy.sh 防火墙端口均运行期从 .env grep 采集，不静态编码
+  - **前端**：API 全部相对路径（同源），不写死服务器地址；时间显示用服务器系统时区
+- **已落点（v2.2.13）**：app.py（HOST/PORT/NAS_ROOT/SECURETRANS_DATA/AD_HOST/SECRET_KEY 全 os.getenv）、
+  securetrans.service（变量展开）、deploy.sh（健康检查/防火墙/ReadWritePaths 自适应）、verify.sh（BASE_URL/防火墙检查）、
+  start-production.sh（`-b ${HOST:-127.0.0.1}:${PORT}`）、release.ps1（GITEA_BASE 环境变量覆盖）
+- **强制要求**：新增代码/脚本禁止写死地址、端口、网段、路径；必须从 `.env` 或运行环境读取，默认值仅作开发 fallback
+
 ---
 
 ## 许可证
@@ -260,4 +274,4 @@ main ────●────●────●────●────  �
 
 ---
 
-*SecureTrans v2.2.12 | 2026-09-08*
+*SecureTrans v2.2.13 | 2026-09-08*
