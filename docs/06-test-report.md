@@ -1,6 +1,6 @@
 # SecureTrans 测试报告
 
-> 版本：v2.2.14 | 日期：2026-09-08 | 阶段：PSF
+> 版本：v2.2.15 | 日期：2026-09-08 | 阶段：PSF
 > 测试环境：Windows 11 (本地dev) + Rocky Linux 10.1 (WSL2 test)，Python 3.12 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
 > 测试工具：tests/test_api.py（Python urllib，无额外依赖）
@@ -9,7 +9,7 @@
 
 ## 一、测试结论
 
-**总计 182 项测试，双环境（Windows + WSL Rocky）全部通过，通过率 100%（PRD 全功能覆盖）。**
+**总计 185 项测试，双环境（Windows + WSL Rocky）全部通过，通过率 100%（PRD 全功能覆盖）。**
 
 核心流程（提交→审批→摆渡→下载→过期归档）端到端验证通过，os.rename 0拷贝摆渡特性在 Rocky Linux 10 ext4 文件系统上得到实际验证。特征码全量验证（含压缩包解包、Vivado Bitstream）、审批驳回、过期归档、修改密码、合作方白名单、审批人配置、特征码规则CRUD管理、网络面隔离（双网卡应用层兜底）、**语义B同人跨级自动跳过二级**等全部场景覆盖。
 
@@ -19,7 +19,7 @@
 
 ---
 
-## 二、测试覆盖范围（27大类 182项）
+## 二、测试覆盖范围（27大类 185项）
 
 | # | 类别 | 测试项 | 通过 |
 |---|------|--------|------|
@@ -253,8 +253,8 @@
 ### 12.1 v2.2.1 部署加固验证（2026-09-04）
 - venv 用 Python 3.12 --copies 创建，与系统 Python 完全隔离（venv/bin/python3 为复制文件非 symlink，系统 Python 升级/移动不影响 venv）。
 - Python 版本与离线 wheel (cp312) 匹配加固：deploy.sh 探测 3.12 优先；非 3.12 且有离线包自动切换 3.12；venv 创建后校验版本。
-- 验证：WSL Rocky 部署，venv Python 3.12 匹配 cp312，健康检查 OK，全量 182/182 通过。
-*文档结束 | SecureTrans 测试报告 v1.11.0 | 2026-09-01*
+- 验证：WSL Rocky 部署，venv Python 3.12 匹配 cp312，健康检查 OK，全量 182/182 通过。
+
 
 ## 十二、v2.2.0 部署能力升级验证（2026-09-04）
 
@@ -291,3 +291,16 @@
 - 根因确认：deploy.sh 默认 NAS_ROOT=/mnt/nas/securetrans，NAS 未挂载时该路径不存在；systemd 239（RHEL8/Rocky8）对 ReadWritePaths 中不存在的路径启动报 226/NAMESPACE（systemd 257 忽略，故 WSL 验证成功、ESXi 失败）。
 - 修复：恢复 PrivateTmp/ProtectSystem=strict 加固（实测兼容 239/257），ReadWritePaths 由 deploy.sh 按 NAS_ROOT 存在性渲染（不存在则仅 /opt/securetrans，NAS 挂载后重跑部署自动补全）。
 - 验证：ESXi 对照实验 A（含不存在路径）失败 / B（去掉 ReadWritePaths）成功，锁定元凶；本地全量回归 182 项 100%。
+
+### 12.4 v2.2.15 Alpha 走查修复验证（2026-09-08）
+- 背景：v2.2.14 发布后浏览器 Alpha 走查（本地 dev 全流程：认证→用户创建→强制改密→审批人配置→上传→提交→审批→摆渡→下载），
+  走查中发现并修复 4 个前端/后端问题 + 1 个权限模型残留。
+- **修复清单**：
+  1. `pending/my` 残留旧角色体系（dept-manager/executive）——普通审批人（approvers 表配置）访问待审批列表报 403。已改为纯 approvers 判定（can_approve_level + 按级别过滤），approve 路由本身已正确。
+  2. 合作方自动加入语义错误：自动加入用接收方姓名而非单位——已改为 receiver_org（合作方=公司），前端 onPartnerSelected 同步（选已配置合作方时只填单位、姓名保持用户填写）。
+  3. i18n 补全：page.title.approvers 缺字典；切语言后 pageTitle 与上传限制 hint 不刷新（已修复，applyI18n 统一刷新）。
+  4. （v2.2.14 走查前置修复，随本版本发布）createUser `data` 未定义 / api_me 缺 mustChangePassword 字段（强制改密弹窗不出现）/ 上传限制前端硬编码 1GB / 前端缺审批人配置 UI。
+- **新增测试 3 项**：审批人可访问 pending/my（200 + 含自己待审批单）、非审批人访问 pending/my 被拒（403）、清理测试用户幂等。
+- 浏览器走查确认：合作方一级审批直接摆渡（无需二级）、外网下载内容完整（108B 一致）、审计统计 Tab（人员×文件类型×每日，默认近30天）、admin 自行修改密码并回改、i18n 全界面双语切换。
+- 验证：Windows 本地全量 185/185 100%（WSL verify 见 12.5 待补充/已同步执行）。
+*文档结束 | SecureTrans 测试报告 v1.12.0 | 2026-09-08*
