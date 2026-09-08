@@ -116,6 +116,19 @@ if [ $TEST_EXIT -ne 0 ]; then
     exit 1
 fi
 
+# 3.5 防火墙放行检查（提示项，不阻塞验证）
+echo ""
+echo "[3.5/4] 防火墙放行检查...（提示项）"
+if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld 2>/dev/null; then
+    if firewall-cmd --list-ports 2>/dev/null | grep -q "${ENV_PORT}/tcp"; then
+        echo "  端口 ${ENV_PORT}/tcp 已放行: PASS"
+    else
+        echo "  端口 ${ENV_PORT}/tcp 未放行: WARN —— 内网/办公外网无法远程访问，放行命令见 DEPLOY.md 阶段7"
+    fi
+else
+    echo "  未启用 firewalld，跳过（本机访问不受影响，远程访问需自行放行）"
+fi
+
 # 4. 总结
 echo ""
 echo "[4/4] 验证总结..."

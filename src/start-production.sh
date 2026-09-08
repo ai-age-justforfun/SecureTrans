@@ -35,7 +35,7 @@ echo ""
 echo "========================================"
 echo "  SecureTrans 生产环境启动 (gunicorn)"
 echo "  部署模式: $DEPLOY_MODE"
-echo "  监听: 127.0.0.1:${PORT}"
+echo "  监听: ${HOST:-127.0.0.1}:${PORT}"
 echo "  Worker 进程数: $WORKERS"
 echo "========================================"
 echo ""
@@ -47,7 +47,7 @@ echo ""
 # --access-logfile: 访问日志
 # --error-logfile: 错误日志
 exec gunicorn \
-    -b 127.0.0.1:${PORT} \
+    -b ${HOST:-127.0.0.1}:${PORT} \
     -w ${WORKERS} \
     --timeout 120 \
     --access-logfile - \

@@ -286,7 +286,15 @@ else
 fi
 
 sleep 2
-HEALTH=$(curl -s http://127.0.0.1:8000/api/health 2>/dev/null || echo "FAILED")
+# 健康检查目标从 .env HOST/PORT 自适应（HOST=具体IP 时 loopback 不可达）
+ENV_HOST=$(grep -E '^HOST=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r' | head -1 || true)
+ENV_PORT=$(grep -E '^PORT=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r' | head -1 || true)
+ENV_PORT="${ENV_PORT:-8000}"
+case "$ENV_HOST" in
+    ""|0.0.0.0|127.0.0.1|localhost) HEALTH_URL="http://127.0.0.1:${ENV_PORT}" ;;
+    *) HEALTH_URL="http://${ENV_HOST}:${ENV_PORT}" ;;
+esac
+HEALTH=$(curl -s "${HEALTH_URL}/api/health" 2>/dev/null || echo "FAILED")
 if echo "$HEALTH" | tr -d "\n" | grep -q '"status":"ok"'; then
     echo -e "  健康检查通过: ${HEALTH} ${GREEN}OK${NC}"
 else
@@ -325,6 +333,22 @@ fi
 fi
 
 echo ""
+# ============================================================
+# 9.6 防火墙放行 ${ENV_PORT}/tcp（内网 + 办公外网 Alpha 访问）
+# ============================================================
+echo -e "${YELLOW}[9.6/9] 防火墙放行 ${ENV_PORT}/tcp...${NC}"
+if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld 2>/dev/null; then
+    firewall-cmd --permanent --add-port=${ENV_PORT}/tcp >/dev/null 2>&1
+    firewall-cmd --reload >/dev/null 2>&1
+    if firewall-cmd --list-ports 2>/dev/null | grep -q "${ENV_PORT}/tcp"; then
+        echo -e "  已放行 ${ENV_PORT}/tcp ${GREEN}OK${NC}"
+    else
+        echo -e "  ${YELLOW}放行命令已执行但列表未确认，请检查: firewall-cmd --list-all${NC}"
+    fi
+else
+    echo -e "  ${YELLOW}未检测到 firewalld（或未启用），跳过防火墙配置；如需放行请按 DEPLOY.md 阶段7 手工执行${NC}"
+fi
+
 echo -e "${GREEN}============================================================${NC}"
 echo -e "${GREEN}  部署完成！${NC}"
 echo -e "${GREEN}============================================================${NC}"
@@ -332,7 +356,7 @@ echo ""
 echo "  安装目录:   ${INSTALL_DIR}"
 echo "  配置文件:   ${INSTALL_DIR}/.env"
 echo "  存储目录:   ${NAS_ROOT}"
-echo "  访问地址:   http://<服务器IP>:8000  (或通过 nginx 代理)"
+echo "  访问地址:   http://<服务器IP>:${ENV_PORT}  (或通过 nginx 代理)"
 echo "  初始账号:   admin / Admin@123  (首次登录强制修改密码)"
 echo ""
 echo -e "${YELLOW}  后续步骤:${NC}"

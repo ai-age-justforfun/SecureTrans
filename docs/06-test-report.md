@@ -1,6 +1,6 @@
 # SecureTrans 测试报告
 
-> 版本：v2.2.11 | 日期：2026-09-07 | 阶段：PSF
+> 版本：v2.2.12 | 日期：2026-09-07 | 阶段：PSF
 > 测试环境：Windows 11 (本地dev) + Rocky Linux 10.1 (WSL2 test)，Python 3.12 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
 > 测试工具：tests/test_api.py（Python urllib，无额外依赖）
@@ -285,7 +285,7 @@
 - 变更：securetrans.service 默认移除三行加固指令，保留 NoNewPrivileges + 独立用户（securetrans），保证真机/容器可部署；deploy.sh 同步简化；DEPLOY.md 说明。
 - 验证：本地全量回归 172 项 100%（服务器部署验证后补充）。
 
-### 12.3 v2.2.11 部署根因修复验证（2026-09-07）
+### 12.3 v2.2.12 部署根因修复验证（2026-09-07）
 - 根因确认：deploy.sh 默认 NAS_ROOT=/mnt/nas/securetrans，NAS 未挂载时该路径不存在；systemd 239（RHEL8/Rocky8）对 ReadWritePaths 中不存在的路径启动报 226/NAMESPACE（systemd 257 忽略，故 WSL 验证成功、ESXi 失败）。
 - 修复：恢复 PrivateTmp/ProtectSystem=strict 加固（实测兼容 239/257），ReadWritePaths 由 deploy.sh 按 NAS_ROOT 存在性渲染（不存在则仅 /opt/securetrans，NAS 挂载后重跑部署自动补全）。
 - 验证：ESXi 对照实验 A（含不存在路径）失败 / B（去掉 ReadWritePaths）成功，锁定元凶；本地全量回归 172 项 100%。
