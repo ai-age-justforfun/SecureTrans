@@ -1,6 +1,6 @@
 # SecureTrans 测试报告
 
-> 版本：v2.2.16 | 日期：2026-09-08 | 阶段：PSF
+> 版本：v2.2.17 | 日期：2026-09-08 | 阶段：PSF
 > 测试环境：Windows 11 (本地dev) + Rocky Linux 10.1 (WSL2 test)，Python 3.12 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
 > 测试工具：tests/test_api.py（Python urllib，无额外依赖）
@@ -9,7 +9,7 @@
 
 ## 一、测试结论
 
-**总计 186 项测试，双环境（Windows + WSL Rocky）全部通过，通过率 100%（PRD 全功能覆盖）。**
+**总计 187 项测试，双环境（Windows + WSL Rocky）全部通过，通过率 100%（PRD 全功能覆盖）。**
 
 核心流程（提交→审批→摆渡→下载→过期归档）端到端验证通过，os.rename 0拷贝摆渡特性在 Rocky Linux 10 ext4 文件系统上得到实际验证。特征码全量验证（含压缩包解包、Vivado Bitstream）、审批驳回、过期归档、修改密码、合作方白名单、审批人配置、特征码规则CRUD管理、网络面隔离（双网卡应用层兜底）、**语义B同人跨级自动跳过二级**等全部场景覆盖。
 
@@ -19,7 +19,7 @@
 
 ---
 
-## 二、测试覆盖范围（27大类 186项）
+## 二、测试覆盖范围（27大类 187项）
 
 | # | 类别 | 测试项 | 通过 |
 |---|------|--------|------|
@@ -310,4 +310,11 @@
 - 修复：`/api/auth/change-password` 加入 EXTERNAL_ALLOW_PREFIXES（个人账户操作，需旧密码验证，不属管理操作）；外网面管理接口仍 403，隔离未削弱。
 - 新增测试 1 项：external 面修改密码放行（200）；对照：external 面用户管理仍 403。
 - 验证：Windows 本地 186/186 + WSL verify 186/186，双环境 100%。
-*文档结束 | SecureTrans 测试报告 v1.13.0 | 2026-09-08*
+
+### 12.6 v2.2.17 外网面禁止修改密码（产品决策，撤销 v2.2.16 放行）（2026-09-08）
+- 决策：外网面（external）一律不允许修改密码——即使个人账户，也只能内网修改。
+- 变更：EXTERNAL_ALLOW_PREFIXES 移除 /api/auth/change-password（恢复 403 拦截）；前端外网面隐藏"修改密码"按钮（btnChangePwd），
+  showChangePwdModal 前端拦截提示；外网面 must_change_password 不弹改密框，提示回内网修改（i18n pwd.externalOnly）。
+- 测试：external 面改密 403 断言（原放行用例反转）+ 前端外网隐藏改密入口资源检查。
+- 验证：Windows 187/187 + WSL verify 187/187，双环境 100%。
+*文档结束 | SecureTrans 测试报告 v1.14.0 | 2026-09-08*
