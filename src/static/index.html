@@ -172,7 +172,7 @@
       <div class="role" id="userRole">--</div>
       <div style="margin-top:6px;"><span class="network-badge internal" id="networkBadge" data-i18n="net.internal">内网</span></div>
       <div class="sidebar-tz" data-i18n="sidebar.tz">时间=服务器系统时区</div>
-      <button class="btn-logout" style="background:rgba(37,99,235,0.3);border-color:rgba(37,99,235,0.45);" onclick="showChangePwdModal()" data-i18n="sidebar.changePwd">修改密码</button>
+      <button class="btn-logout" id="btnChangePwd" style="background:rgba(37,99,235,0.3);border-color:rgba(37,99,235,0.45);" onclick="showChangePwdModal()" data-i18n="sidebar.changePwd">修改密码</button>
       <button class="btn-logout" onclick="logout()" data-i18n="sidebar.logout">退出登录</button>
     </div>
   </div>
@@ -205,7 +205,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.2.16';
+const APP_VERSION = 'v2.2.17';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -220,7 +220,7 @@ const I18N = {
     'nav.config': '系统配置', 'nav.approvers': '审批人配置', 'nav.audit': '审计日志', 'nav.dashboard': '仪表盘',
     'net.internal': '内网', 'net.external': '外网',
     'sidebar.logout': '退出登录', 'sidebar.changePwd': '修改密码', 'sidebar.tz': '时间=服务器系统时区',
-    'pwd.title': '修改密码', 'pwd.old': '原密码', 'pwd.new': '新密码（至少6位）', 'pwd.confirm': '确认新密码', 'pwd.mismatch': '两次输入的新密码不一致', 'pwd.success': '密码修改成功', 'pwd.changeFail': '密码修改失败：',
+    'pwd.title': '修改密码', 'pwd.old': '原密码', 'pwd.new': '新密码（至少6位）', 'pwd.confirm': '确认新密码', 'pwd.mismatch': '两次输入的新密码不一致', 'pwd.success': '密码修改成功', 'pwd.changeFail': '密码修改失败：', 'pwd.externalOnly': '外网面不支持修改密码，请从内网访问后修改',
     'role.admin': '系统管理员', 'role.internalUser': '普通用户',
     'status.pending': '待一级审批', 'status.pending2': '待二级审批', 'status.approved': '已摆渡',
     'status.downloaded': '已下载', 'status.rejected': '已驳回', 'status.archived': '已归档', 'status.auto': '免审批',
@@ -327,7 +327,7 @@ const I18N = {
     'nav.config': 'System Config', 'nav.approvers': 'Approvers', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
     'net.internal': 'Intranet', 'net.external': 'Extranet',
     'sidebar.logout': 'Logout', 'sidebar.changePwd': 'Change Password', 'sidebar.tz': 'Times = Server System Timezone',
-    'pwd.title': 'Change Password', 'pwd.old': 'Current Password', 'pwd.new': 'New Password (min 6)', 'pwd.confirm': 'Confirm New Password', 'pwd.mismatch': 'The two new passwords do not match', 'pwd.success': 'Password changed successfully', 'pwd.changeFail': 'Password change failed: ',
+    'pwd.title': 'Change Password', 'pwd.old': 'Current Password', 'pwd.new': 'New Password (min 6)', 'pwd.confirm': 'Confirm New Password', 'pwd.mismatch': 'The two new passwords do not match', 'pwd.success': 'Password changed successfully', 'pwd.changeFail': 'Password change failed: ', 'pwd.externalOnly': 'Password change is not allowed on the external network; please access from the intranet',
     'role.admin': 'System Administrator', 'role.internalUser': 'Regular User',
     'status.pending': 'Pending L1', 'status.pending2': 'Pending L2', 'status.approved': 'Ferried',
     'status.downloaded': 'Downloaded', 'status.rejected': 'Rejected', 'status.archived': 'Archived', 'status.auto': 'Auto',
@@ -576,17 +576,23 @@ async function loadUser() {
       if (el.dataset.page === 'pending') el.style.display = isApprover ? '' : 'none';
       else el.style.display = isAdmin ? '' : 'none';
     });
-    // 外网面（下载面）：仅保留"外网下载"菜单，隐藏其余全部菜单
-    // （防止从网外看到/触发上传申请、审批、管理等内网功能；后端已强制隔离做兜底）
+    // 外网面（下载面）：仅保留"外网下载"菜单，隐藏其余全部菜单（含修改密码入口——
+    // 外网一律不允许修改密码，即使个人账户也只能内网修改；后端已强制隔离做兜底）
     // 注意：仅在外网面执行，内网面不得覆盖上方 admin-only 的隐藏状态
     if (networkZone === 'external') {
       document.querySelectorAll('.nav-item').forEach(el => {
         el.style.display = (el.dataset.page === 'external') ? '' : 'none';
       });
+      const _pwdBtn = document.getElementById('btnChangePwd');
+      if (_pwdBtn) _pwdBtn.style.display = 'none';
     }
-    // 首次登录/重置密码后（must_change_password=1）自动弹出修改密码（可稍后修改）
+    // 首次登录/重置密码后（must_change_password=1）：内网自动弹出修改密码；外网面不允许改密，提示回内网修改
     if (currentUser.mustChangePassword) {
-      setTimeout(() => { showChangePwdModal(); }, 600);
+      if (networkZone === 'external') {
+        toast(t('pwd.externalOnly'), 'error');
+      } else {
+        setTimeout(() => { showChangePwdModal(); }, 600);
+      }
     }
   } catch (e) {
     console.error('loadUser error:', e);
@@ -600,6 +606,8 @@ async function logout() {
 }
 
 function showChangePwdModal() {
+  // 外网面一律不允许修改密码（后端 403 兜底，前端直接拦截提示）
+  if (window._networkZone === 'external') { toast(t('pwd.externalOnly'), 'error'); return; }
   document.getElementById('modalTitle').textContent = t('pwd.title');
   document.getElementById('modalBody').innerHTML = `
     <div class="form-group mb-8"><label data-i18n="pwd.old">原密码</label><input type="password" id="pwdOld" autocomplete="current-password"></div>
