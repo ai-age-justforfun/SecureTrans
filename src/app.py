@@ -39,7 +39,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.14"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.15"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
@@ -1031,6 +1031,11 @@ def api_me():
     # 审批权限：角色判定 或 approvers 表显式配置（与后端 can_approve_level 完全一致）
     data["canApproveLevel1"] = can_approve_level(1)
     data["canApproveLevel2"] = can_approve_level(2)
+    # 强制改密标记（本地用户；admin 初始/重置密码后置 1）
+    data["mustChangePassword"] = False
+    if current_user.source == "local":
+        _r = get_db().execute("SELECT must_change_password FROM local_users WHERE username=?", (current_user.username,)).fetchone()
+        data["mustChangePassword"] = bool(_r and _r["must_change_password"])
     return jsonify(data)
 
 @app.route("/api/auth/change-password", methods=["POST"])
@@ -1152,7 +1157,7 @@ def api_create_submission():
     # receiverType: partner/non-partner/auto；auto 时按合作方白名单自动判定
     receiver_type = data.get("receiverType", "auto")
     if receiver_type == "auto":
-        receiver_type = "partner" if is_partner(receiver_name) else "non-partner"
+        receiver_type = "partner" if is_partner(receiver_org) else "non-partner"
     security_level = data.get("securityLevel", "internal")
     reason = data.get("reason", "")
     # 有效期统一由系统配置控制（唯一设置处：系统配置→默认有效期），提交时不允许指定
@@ -1169,20 +1174,20 @@ def api_create_submission():
     if not receiver_org:
         return jsonify({"error": "请填写接收方单位"}), 400
 
-    # 信任模式：普通用户选中"合作方"但名称不在清单时，自动加入合作方清单（去重：名称不区分大小写）
-    if receiver_type == "partner" and not is_partner(receiver_name):
+    # 信任模式：普通用户选中"合作方"但单位不在清单时，以接收方单位自动加入合作方清单（去重：名称不区分大小写）
+    if receiver_type == "partner" and not is_partner(receiver_org):
         db = get_db()
         exists = db.execute(
             "SELECT COUNT(*) as c FROM partners WHERE name=? COLLATE NOCASE",
-            (receiver_name.strip(),)
+            (receiver_org.strip(),)
         ).fetchone()["c"]
         if not exists:
             db.execute(
                 "INSERT INTO partners (id,name,contact,email,enabled,created_at) VALUES (?,?,?,?,1,?)",
-                (str(uuid.uuid4()), receiver_name.strip(), "", receiver_email, now_str())
+                (str(uuid.uuid4()), receiver_org.strip(), receiver_name, receiver_email, now_str())
             )
             db.commit()
-            add_audit_log(current_user.username, "create_partner", receiver_name, "提交时自动加入合作方清单", get_client_ip())
+            add_audit_log(current_user.username, "create_partner", receiver_org, "提交时自动加入合作方清单", get_client_ip())
 
     sub_id = gen_submission_id()
     final_dir = STAGING_DIR / sub_id
@@ -1299,14 +1304,19 @@ def api_get_submission(sub_id):
 
 @app.route("/api/submissions/pending/my")
 @login_required
-@role_required("dept-manager", "executive", "admin")
 def api_my_pending():
-    """待我审批的列表"""
+    """待我审批的列表（权限：admin 或 approvers 表配置的审批人，不设角色体系）"""
     db = get_db()
-    if current_user.role == "executive":
-        rows = db.execute("SELECT * FROM submissions WHERE status='pending_approval_2' ORDER BY submit_time DESC").fetchall()
-    else:
-        rows = db.execute("SELECT * FROM submissions WHERE status='pending' ORDER BY submit_time DESC").fetchall()
+    can1 = can_approve_level(1)
+    can2 = can_approve_level(2)
+    if not (can1 or can2):
+        return jsonify({"error": "权限不足"}), 403
+    conds = []
+    if can1:
+        conds.append("status='pending'")
+    if can2:
+        conds.append("status='pending_approval_2'")
+    rows = db.execute("SELECT * FROM submissions WHERE " + " OR ".join(conds) + " ORDER BY submit_time DESC").fetchall()
     return jsonify(rows_to_list(rows))
 
 # ============================================================
