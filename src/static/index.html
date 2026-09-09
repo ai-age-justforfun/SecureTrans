@@ -164,6 +164,7 @@
       <div class="nav-item admin-only" data-page="partners"><span class="icon">🤝</span><span data-i18n="nav.partners">合作方管理</span></div>
 <div class="nav-item admin-only" data-page="approvers"><span class="icon">🗂️</span><span data-i18n="nav.approvers">审批人配置</span></div>
       <div class="nav-item admin-only" data-page="config"><span class="icon">⚙️</span><span data-i18n="nav.config">系统配置</span></div>
+      <div class="nav-item admin-only" data-page="ops"><span class="icon">🛠️</span><span data-i18n="nav.ops">系统工具</span></div>
       <div class="nav-item admin-only" data-page="audit"><span class="icon">📝</span><span data-i18n="nav.audit">审计日志</span></div>
       <div class="nav-item admin-only" data-page="dashboard"><span class="icon">📊</span><span data-i18n="nav.dashboard">仪表盘</span></div>
     </div>
@@ -205,7 +206,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.2.22';
+const APP_VERSION = 'v2.2.23';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -217,7 +218,7 @@ const I18N = {
     'brand.subtitle': '文件审批摆渡系统',
     'nav.submit': '文件提交', 'nav.mySubmissions': '我的提交', 'nav.pending': '待我审批',
     'nav.external': '外网下载', 'nav.users': '用户管理', 'nav.partners': '合作方管理',
-    'nav.config': '系统配置', 'nav.approvers': '审批人配置', 'nav.audit': '审计日志', 'nav.dashboard': '仪表盘',
+    'nav.config': '系统配置', 'nav.ops': '系统工具', 'nav.approvers': '审批人配置', 'nav.audit': '审计日志', 'nav.dashboard': '仪表盘',
     'net.internal': '内网', 'net.external': '外网',
     'sidebar.logout': '退出登录', 'sidebar.changePwd': '修改密码', 'sidebar.tz': '时间=服务器系统时区',
     'pwd.title': '修改密码', 'pwd.old': '原密码', 'pwd.oldHint': '初始/重置密码 = 部署时 .env RESET_PASSWORD；如已改密请用当前密码', 'pwd.new': '新密码（至少6位）', 'pwd.confirm': '确认新密码', 'pwd.mismatch': '两次输入的新密码不一致', 'pwd.success': '密码修改成功', 'pwd.changeFail': '密码修改失败：', 'pwd.externalOnly': '外网面不支持修改密码，请从内网访问后修改',
@@ -226,7 +227,15 @@ const I18N = {
     'status.downloaded': '已下载', 'status.rejected': '已驳回', 'status.archived': '已归档', 'status.auto': '免审批',
     'page.title.dashboard': '仪表盘', 'page.title.submit': '文件提交', 'page.title.mySubmissions': '我的提交',
     'page.title.pending': '待我审批', 'page.title.external': '外网下载', 'page.title.users': '用户管理',
-    'page.title.partners': '合作方管理', 'page.title.approvers': '审批人配置', 'page.title.config': '系统配置', 'page.title.audit': '审计日志',
+    'page.title.partners': '合作方管理', 'page.title.approvers': '审批人配置', 'page.title.config': '系统配置', 'page.title.ops': '系统工具', 'page.title.audit': '审计日志',
+    'ops.backupTitle': '数据备份 / 恢复', 'ops.backupDesc': '备份数据库与业务文件（staging/external/archive）到 data/backups/，恢复将替换当前业务数据（回退=再恢复之前的备份）。',
+    'ops.backupNow': '立即备份', 'ops.backupList': '备份列表', 'ops.backupName': '备份名称', 'ops.backupTime': '备份时间', 'ops.backupSize': '大小',
+    'ops.restore': '恢复', 'ops.restoreConfirm': '恢复将替换当前全部业务数据，请输入 RESTORE 确认', 'ops.restoreConfirmPh': '输入 RESTORE',
+    'ops.resetTitle': '出厂重置', 'ops.resetDesc': '清空业务数据并恢复出厂状态（原数据自动备份），admin 密码重置为 .env RESET_PASSWORD。',
+    'ops.resetConfirm': '出厂重置将清空全部业务数据（自动先备份），请输入 RESET 确认', 'ops.resetConfirmPh': '输入 RESET',
+    'ops.mockTitle': '模拟数据（测试/开发环境）', 'ops.mockDesc': '生成测试用户/审批人/合作方/各状态提交单，供开发测试界面演示与 verify 验证闭环；生产环境禁用。',
+    'ops.mockConfirm': '生成模拟数据请输入 MOCK 确认（仅测试/开发环境）', 'ops.mockConfirmPh': '输入 MOCK',
+    'ops.done': '操作完成：', 'ops.refreshHint': '恢复/重置后页面数据已变化，请刷新浏览器查看', 'ops.empty': '暂无备份',
     'common.loading': '加载中...', 'common.close': '关闭', 'common.cancel': '取消', 'common.confirm': '确认', 'common.search': '搜索',
     'common.create': '创建', 'common.save': '保存', 'common.edit': '编辑', 'common.delete': '删除',
     'common.detail': '详情', 'common.download': '下载', 'common.enable': '启用', 'common.disable': '禁用',
@@ -248,10 +257,11 @@ const I18N = {
     'submit.receiverName': '接收方姓名 *', 'submit.receiverNamePh': '如：张三',
     'submit.receiverOrg': '接收方单位 *', 'submit.receiverOrgPh': '如：XX科技有限公司',
     'submit.receiverEmail': '接收方邮箱', 'submit.receiverEmailPh': '如：zhangsan@partner.com',
-    'submit.receiverType': '接收方类型', 'submit.nonPartner': '非合作方（需二级审批）', 'submit.partner': '合作方（一级审批即可）',
-    'submit.securityLevel': '密级', 'submit.secInternal': '内部', 'submit.secSecret': '秘密', 'submit.secConfidential': '机密',
-    'submit.partnerSelectLabel': '选择已配置合作方（未配置时可自定义填写并自动加入清单）',
+    'submit.receiverType': '接收方类型', 'submit.internal': '公司内部（仅接收人）', 'submit.nonPartner': '非合作方（需二级审批）', 'submit.partner': '合作方（一级审批即可）',
+    'submit.securityLevel': '接收密级', 'submit.secInternal': '内部', 'submit.secSecret': '秘密', 'submit.secConfidential': '机密',
+    'submit.partnerSelectLabel': '选择已配置合作方（不在清单可直接在下方的接收方单位中填写，提交后自动加入清单）',
     'submit.partnerSelectPh': '-- 选择已配置合作方 --', 'submit.partnerNone': '-- 暂无合作方，可自定义填写 --',
+    'submit.receiverEmailOpt': '接收方邮箱（可选）',
     'submit.reason': '外发事由', 'submit.reasonPh': '请说明文件外发的原因和用途',
     'submit.btnSubmit': '提交审批',
     'submit.matched': '✓ 匹配特征码', 'submit.unmatched': '✗ 需人工审批',
@@ -263,7 +273,7 @@ const I18N = {
     'list.empty': '暂无提交记录', 'list.emptyPending': '暂无待审批的提交单', 'list.emptyExternal': '暂无可下载的文件',
     'list.ferriedFiles': '已摆渡文件列表',
     'detail.title': '提交单详情 - ', 'detail.basic': '基本信息', 'detail.files': '文件清单', 'detail.approvals': '审批记录',
-    'detail.type': '接收方类型', 'detail.partner': '合作方', 'detail.nonPartner': '非合作方',
+    'detail.type': '接收方类型', 'detail.internal': '公司内部', 'detail.partner': '合作方', 'detail.nonPartner': '非合作方',
     'detail.expiry': '天（系统配置）', 'detail.autoApproved': '免审批', 'detail.yes': '是', 'detail.no': '否',
     'detail.matched': '匹配', 'detail.unmatched': '不匹配',
     'detail.submitted': '提交申请', 'detail.approved': '审批通过', 'detail.rejected': '驳回',
@@ -332,7 +342,7 @@ const I18N = {
     'brand.subtitle': 'Cross-Network File Approval & Ferry System',
     'nav.submit': 'Submit Files', 'nav.mySubmissions': 'My Submissions', 'nav.pending': 'Pending Approval',
     'nav.external': 'External Download', 'nav.users': 'User Management', 'nav.partners': 'Partner Management',
-    'nav.config': 'System Config', 'nav.approvers': 'Approvers', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
+    'nav.config': 'System Config', 'nav.ops': 'System Tools', 'nav.approvers': 'Approvers', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
     'net.internal': 'Intranet', 'net.external': 'Extranet',
     'sidebar.logout': 'Logout', 'sidebar.changePwd': 'Change Password', 'sidebar.tz': 'Times = Server System Timezone',
     'pwd.title': 'Change Password', 'pwd.old': 'Current Password', 'pwd.oldHint': 'Initial/reset password = .env RESET_PASSWORD at deploy; use current if already changed', 'pwd.new': 'New Password (min 6)', 'pwd.confirm': 'Confirm New Password', 'pwd.mismatch': 'The two new passwords do not match', 'pwd.success': 'Password changed successfully', 'pwd.changeFail': 'Password change failed: ', 'pwd.externalOnly': 'Password change is not allowed on the external network; please access from the intranet',
@@ -341,7 +351,15 @@ const I18N = {
     'status.downloaded': 'Downloaded', 'status.rejected': 'Rejected', 'status.archived': 'Archived', 'status.auto': 'Auto',
     'page.title.dashboard': 'Dashboard', 'page.title.submit': 'Submit Files', 'page.title.mySubmissions': 'My Submissions',
     'page.title.pending': 'Pending Approval', 'page.title.external': 'External Download', 'page.title.users': 'User Management',
-    'page.title.partners': 'Partner Management', 'page.title.approvers': 'Approver Config', 'page.title.config': 'System Config', 'page.title.audit': 'Audit Logs',
+    'page.title.partners': 'Partner Management', 'page.title.approvers': 'Approver Config', 'page.title.config': 'System Config', 'page.title.ops': 'System Tools', 'page.title.audit': 'Audit Logs',
+    'ops.backupTitle': 'Data Backup / Restore', 'ops.backupDesc': 'Back up database and business files (staging/external/archive) to data/backups/; restore replaces current business data (rollback = restore an earlier backup).',
+    'ops.backupNow': 'Backup Now', 'ops.backupList': 'Backup List', 'ops.backupName': 'Backup Name', 'ops.backupTime': 'Backup Time', 'ops.backupSize': 'Size',
+    'ops.restore': 'Restore', 'ops.restoreConfirm': 'Restore will replace all current business data; type RESTORE to confirm', 'ops.restoreConfirmPh': 'Type RESTORE',
+    'ops.resetTitle': 'Factory Reset', 'ops.resetDesc': 'Clears business data and restores factory state (original data auto-backed up); admin password reset to .env RESET_PASSWORD.',
+    'ops.resetConfirm': 'Factory reset will clear all business data (auto backup first); type RESET to confirm', 'ops.resetConfirmPh': 'Type RESET',
+    'ops.mockTitle': 'Mock Data (Test/Dev)', 'ops.mockDesc': 'Generates test users/approvers/partners/submissions in various states for dev/test demos and verify loop; disabled in production.',
+    'ops.mockConfirm': 'Generate mock data: type MOCK to confirm (test/dev only)', 'ops.mockConfirmPh': 'Type MOCK',
+    'ops.done': 'Done: ', 'ops.refreshHint': 'Data has changed after restore/reset; refresh the browser to view', 'ops.empty': 'No backups yet',
     'common.loading': 'Loading...', 'common.close': 'Close', 'common.cancel': 'Cancel', 'common.confirm': 'Confirm', 'common.search': 'Search',
     'common.create': 'Create', 'common.save': 'Save', 'common.edit': 'Edit', 'common.delete': 'Delete',
     'common.detail': 'Details', 'common.download': 'Download', 'common.enable': 'Enable', 'common.disable': 'Disable',
@@ -363,10 +381,11 @@ const I18N = {
     'submit.receiverName': 'Recipient Name *', 'submit.receiverNamePh': 'e.g. Zhang San',
     'submit.receiverOrg': 'Recipient Org *', 'submit.receiverOrgPh': 'e.g. XX Technology Co., Ltd.',
     'submit.receiverEmail': 'Recipient Email', 'submit.receiverEmailPh': 'e.g. zhangsan@partner.com',
-    'submit.receiverType': 'Recipient Type', 'submit.nonPartner': 'Non-partner (requires L2 approval)', 'submit.partner': 'Partner (L1 approval only)',
+    'submit.receiverType': 'Recipient Type', 'submit.internal': 'Internal (recipient name only)', 'submit.nonPartner': 'Non-partner (requires L2 approval)', 'submit.partner': 'Partner (L1 approval only)',
     'submit.securityLevel': 'Security Level', 'submit.secInternal': 'Internal', 'submit.secSecret': 'Secret', 'submit.secConfidential': 'Confidential',
-    'submit.partnerSelectLabel': 'Select a configured partner (or type custom; it will be added to the list)',
+    'submit.partnerSelectLabel': 'Select a configured partner (or type custom org below; it will be added to the list after submit)',
     'submit.partnerSelectPh': '-- Select configured partner --', 'submit.partnerNone': '-- No partner yet, you may type custom --',
+    'submit.receiverEmailOpt': 'Recipient Email (optional)',
     'submit.reason': 'Reason for Transfer', 'submit.reasonPh': 'Explain why and how the files are used',
     'submit.btnSubmit': 'Submit for Approval',
     'submit.matched': '✓ Matched signature', 'submit.unmatched': '✗ Needs manual approval',
@@ -378,7 +397,7 @@ const I18N = {
     'list.empty': 'No submissions yet', 'list.emptyPending': 'No pending approvals', 'list.emptyExternal': 'No downloadable files',
     'list.ferriedFiles': 'Ferried Files',
     'detail.title': 'Submission Detail - ', 'detail.basic': 'Basic Info', 'detail.files': 'File List', 'detail.approvals': 'Approval History',
-    'detail.type': 'Recipient Type', 'detail.partner': 'Partner', 'detail.nonPartner': 'Non-partner',
+    'detail.type': 'Recipient Type', 'detail.internal': 'Internal', 'detail.partner': 'Partner', 'detail.nonPartner': 'Non-partner',
     'detail.expiry': 'days (system config)', 'detail.autoApproved': 'Auto-Approved', 'detail.yes': 'Yes', 'detail.no': 'No',
     'detail.matched': 'Matched', 'detail.unmatched': 'Not matched',
     'detail.submitted': 'submitted', 'detail.approved': 'approved', 'detail.rejected': 'rejected',
@@ -584,6 +603,8 @@ async function loadUser() {
       badge.className = 'network-badge internal';
     }
     window._networkZone = networkZone;
+    // 部署模式（/api/health，用于系统工具页按环境显示模拟数据卡片）
+    try { const h = await api('/api/health'); window._deployMode = h.deployMode || 'testing'; } catch (e) { window._deployMode = 'testing'; }
     // Show/hide admin nav items
     const isAdmin = currentUser.role === 'admin';
     // 审批权限：角色判定 或 approvers 表配置（与后端 can_approve_level 一致，普通用户被配为审批人也显示"待我审批"）
@@ -671,7 +692,7 @@ function navigate(page) {
   const titles = {
     dashboard: 'page.title.dashboard', submit: 'page.title.submit', 'my-submissions': 'page.title.mySubmissions',
     pending: 'page.title.pending', external: 'page.title.external', users: 'page.title.users',
-    partners: 'page.title.partners', approvers: 'page.title.approvers', config: 'page.title.config', audit: 'page.title.audit'
+    partners: 'page.title.partners', approvers: 'page.title.approvers', config: 'page.title.config', ops: 'page.title.ops', audit: 'page.title.audit'
   };
   document.getElementById('pageTitle').textContent = t(titles[page] || page);
   document.getElementById('pageActions').innerHTML = '';
@@ -691,6 +712,7 @@ function renderPage(page) {
     case 'partners': renderPartners(); break;
     case 'approvers': renderApprovers(); break;
     case 'config': renderConfig(); break;
+    case 'ops': renderOps(); break;
     case 'audit': renderAudit(); break;
   }
   applyI18n();
@@ -748,18 +770,14 @@ function renderSubmit() {
     <div class="card" id="submitFormCard" style="display:none;">
       <div class="card-title" data-i18n="submit.infoTitle">提交信息</div>
       <div class="form-row">
-        <div class="form-group"><label data-i18n="submit.receiverName">接收方姓名 *</label><input type="text" id="receiverName" placeholder="${t('submit.receiverNamePh')}"></div>
-        <div class="form-group"><label data-i18n="submit.receiverOrg">接收方单位 *</label><input type="text" id="receiverOrg" placeholder="${t('submit.receiverOrgPh')}"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label data-i18n="submit.receiverEmail">接收方邮箱</label><input type="email" id="receiverEmail" placeholder="${t('submit.receiverEmailPh')}"></div>
         <div class="form-group"><label data-i18n="submit.receiverType">接收方类型</label>
-          <select id="receiverType" onchange="togglePartnerSelect()">
-            <option value="non-partner" data-i18n="submit.nonPartner">非合作方（需二级审批）</option>
+          <select id="receiverType" onchange="onReceiverTypeChange()">
+            <option value="internal" data-i18n="submit.internal">公司内部（仅接收人）</option>
             <option value="partner" data-i18n="submit.partner">合作方（一级审批即可）</option>
+            <option value="non-partner" data-i18n="submit.nonPartner">非合作方（需二级审批）</option>
           </select>
         </div>
-        <div class="form-group"><label data-i18n="submit.securityLevel">密级</label>
+        <div class="form-group"><label data-i18n="submit.securityLevel">接收密级</label>
           <select id="securityLevel">
             <option value="internal" data-i18n="submit.secInternal">内部</option>
             <option value="secret" data-i18n="submit.secSecret">秘密</option>
@@ -769,13 +787,20 @@ function renderSubmit() {
       </div>
       <div class="form-row" id="partnerSelectRow" style="display:none;">
         <div class="form-group" style="flex:1;">
-          <label data-i18n="submit.partnerSelectLabel">选择已配置合作方（未配置时可自定义填写并自动加入清单）</label>
+          <label data-i18n="submit.partnerSelectLabel">选择已配置合作方（不在清单可直接在下方的接收方单位中填写，提交后自动加入清单）</label>
           <select id="partnerSelect" onchange="onPartnerSelected()">
             <option value="" data-i18n="submit.partnerSelectPh">-- 选择已配置合作方 --</option>
           </select>
         </div>
       </div>
-      <div class="form-group"><label data-i18n="submit.reason">外发事由</label><textarea id="reason" rows="3" placeholder="${t('submit.reasonPh')}"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label data-i18n="submit.receiverName">接收方姓名 *</label><input type="text" id="receiverName" placeholder="${t('submit.receiverNamePh')}"></div>
+        <div class="form-group" id="receiverOrgWrap"><label data-i18n="submit.receiverOrg">接收方单位 *</label><input type="text" id="receiverOrg" placeholder="${t('submit.receiverOrgPh')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label data-i18n="submit.receiverEmailOpt">接收方邮箱（可选）</label><input type="email" id="receiverEmail" placeholder="${t('submit.receiverEmailPh')}"></div>
+        <div class="form-group"><label data-i18n="submit.reason">外发事由</label><textarea id="reason" rows="2" placeholder="${t('submit.reasonPh')}"></textarea></div>
+      </div>
       <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
         <button class="btn btn-primary" onclick="submitFiles()" data-i18n="submit.btnSubmit">提交审批</button>
         <span id="autoApproveHint" class="text-sm text-muted"></span>
@@ -847,11 +872,13 @@ function removeFile(index) {
   renderFileList();
 }
 
-async function togglePartnerSelect() {
+async function onReceiverTypeChange() {
   const row = document.getElementById('partnerSelectRow');
-  const isPartner = document.getElementById('receiverType').value === 'partner';
-  row.style.display = isPartner ? 'flex' : 'none';
-  if (isPartner) {
+  const orgWrap = document.getElementById('receiverOrgWrap');
+  const type = document.getElementById('receiverType').value;
+  row.style.display = type === 'partner' ? 'flex' : 'none';
+  orgWrap.style.display = type === 'internal' ? 'none' : 'block';
+  if (type === 'partner') {
     try {
       const partners = await api('/api/partners');
       const sel = document.getElementById('partnerSelect');
@@ -874,8 +901,9 @@ function onPartnerSelected() {
 async function submitFiles() {
   const receiverName = document.getElementById('receiverName').value.trim();
   const receiverOrg = document.getElementById('receiverOrg').value.trim();
+  const receiverType = document.getElementById('receiverType').value;
   if (!receiverName) { toast(t('err.requireName'), 'error'); return; }
-  if (!receiverOrg) { toast(t('err.requireOrg'), 'error'); return; }
+  if (receiverType !== 'internal' && !receiverOrg) { toast(t('err.requireOrg'), 'error'); return; }
   if (uploadedFiles.length === 0) { toast(t('err.requireFile'), 'error'); return; }
 
   try {
@@ -952,7 +980,7 @@ async function showSubmissionDetail(id) {
         <div class="detail-grid">
           <div class="key" data-i18n="common.status">状态</div><div class="val"><span class="badge ${st.cls}">${t(st.key)}</span></div>
           <div class="key" data-i18n="list.receiver">接收方</div><div class="val">${sub.receiver_name || '-'}（${sub.receiver_org || '-'}）${sub.receiver_email ? `(${sub.receiver_email})` : ''}</div>
-          <div class="key" data-i18n="detail.type">接收方类型</div><div class="val">${sub.receiver_type === 'partner' ? t('detail.partner') : t('detail.nonPartner')}</div>
+          <div class="key" data-i18n="detail.type">接收方类型</div><div class="val">${sub.receiver_type === 'partner' ? t('detail.partner') : (sub.receiver_type === 'internal' ? t('detail.internal') : t('detail.nonPartner'))}</div>
           <div class="key" data-i18n="submit.securityLevel">密级</div><div class="val">${sub.security_level || '-'}</div>
           <div class="key" data-i18n="config.defaultExpiry">默认有效期（天）</div><div class="val">${sub.expiry_days != null ? sub.expiry_days : 7} <span data-i18n="detail.expiry">天（系统配置）</span></div>
           <div class="key" data-i18n="list.submitTime">提交时间</div><div class="val">${sub.submit_time || '-'}</div>
@@ -1731,6 +1759,91 @@ async function saveRule() {
     closeRuleModal();
     renderConfig();
   } catch (e) { toast(t('toast.saveFail', e.message), 'error'); }
+}
+
+// ============================================================
+// System Ops（数据生命周期，ADR-011）：备份/恢复/出厂重置/模拟数据
+// ============================================================
+async function renderOps() {
+  try {
+    const backups = await api('/api/admin/ops/backups');
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <div class="card-title" data-i18n="ops.backupTitle">数据备份 / 恢复</div>
+        <div class="text-sm text-muted" data-i18n="ops.backupDesc">备份数据库与业务文件（staging/external/archive）到 data/backups/，恢复将替换当前业务数据（回退=再恢复之前的备份）。</div>
+        <div style="margin:12px 0;">
+          <button class="btn btn-primary" onclick="opsBackup()" data-i18n="ops.backupNow">立即备份</button>
+        </div>
+        <table class="table">
+          <thead><tr><th data-i18n="ops.backupName">备份名称</th><th data-i18n="ops.backupTime">备份时间</th><th data-i18n="ops.backupSize">大小</th><th data-i18n="common.actions">操作</th></tr></thead>
+          <tbody>
+            ${backups.length === 0 ? `<tr><td colspan="4" class="text-sm text-muted" data-i18n="ops.empty">暂无备份</td></tr>` :
+              backups.map(b => `<tr><td>${b.name}</td><td>${b.time}</td><td>${(b.size/1024).toFixed(1)} KB</td><td><button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}')" data-i18n="ops.restore">恢复</button></td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title" data-i18n="ops.resetTitle">出厂重置</div>
+        <div class="text-sm text-muted" data-i18n="ops.resetDesc">清空业务数据并恢复出厂状态（原数据自动备份），admin 密码重置为 .env RESET_PASSWORD。</div>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+          <input type="text" id="opsResetConfirm" style="flex:1;max-width:260px;" placeholder="${t('ops.resetConfirmPh')}">
+          <button class="btn btn-danger" onclick="opsReset()" data-i18n="ops.resetTitle">出厂重置</button>
+        </div>
+      </div>
+      ${window._deployMode === 'testing' ? `
+      <div class="card">
+        <div class="card-title" data-i18n="ops.mockTitle">模拟数据（测试/开发环境）</div>
+        <div class="text-sm text-muted" data-i18n="ops.mockDesc">生成测试用户/审批人/合作方/各状态提交单，供开发测试界面演示与 verify 验证闭环；生产环境禁用。</div>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+          <input type="text" id="opsMockConfirm" style="flex:1;max-width:260px;" placeholder="${t('ops.mockConfirmPh')}">
+          <button class="btn btn-secondary" onclick="opsMock()" data-i18n="ops.mockTitle">生成模拟数据</button>
+        </div>
+      </div>` : ''}
+    `;
+    applyI18n();
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="card"><div class="empty">${e.message}</div></div>`;
+  }
+}
+
+async function opsBackup() {
+  try {
+    const data = await api('/api/admin/ops/backup', { method: 'POST', body: {} });
+    toast(t('ops.done') + data.message, 'success');
+    renderOps();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function opsRestore(name) {
+  const confirm = prompt(t('ops.restoreConfirm'));
+  if (!confirm) return;
+  if (confirm.trim() !== 'RESTORE') { toast(t('ops.restoreConfirm'), 'error'); return; }
+  try {
+    const data = await api('/api/admin/ops/restore', { method: 'POST', body: { backupName: name, confirm: confirm.trim() } });
+    toast(t('ops.done') + data.message, 'success');
+    renderOps();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function opsReset() {
+  const el = document.getElementById('opsResetConfirm');
+  if (!el || el.value.trim() !== 'RESET') { toast(t('ops.resetConfirm'), 'error'); return; }
+  if (!confirm(t('ops.resetConfirm'))) return;
+  try {
+    const data = await api('/api/admin/ops/reset-factory', { method: 'POST', body: { confirm: 'RESET' } });
+    toast(t('ops.done') + data.message, 'success');
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function opsMock() {
+  const el = document.getElementById('opsMockConfirm');
+  if (!el || el.value.trim() !== 'MOCK') { toast(t('ops.mockConfirm'), 'error'); return; }
+  try {
+    const data = await api('/api/admin/ops/mock-data', { method: 'POST', body: { confirm: 'MOCK' } });
+    toast(t('ops.done') + data.message, 'success');
+    renderOps();
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 // ============================================================

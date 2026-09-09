@@ -244,6 +244,7 @@ print("\n--- 8. 用户管理（admin） ---")
 code, data = request('GET', '/api/admin/local-users')
 test("本地用户列表", code == 200 and any(u['username'] == ADMIN_USER for u in data), f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
 
+request('DELETE', '/api/admin/local-users/testuser01')  # 幂等：清理上次残留
 code, data = request('POST', '/api/admin/local-users', json_data={
     "username": "testuser01",
     "password": "Test@123456",
@@ -254,6 +255,7 @@ code, data = request('POST', '/api/admin/local-users', json_data={
 test("创建本地用户", code == 200, f"code={code}, data={data}")
 
 # 创建用户密码留空 → 自动生成初始密码
+request('DELETE', '/api/admin/local-users/randuser01')  # 幂等：清理上次残留
 code, data = request('POST', '/api/admin/local-users', json_data={
     "username": "randuser01", "password": "", "displayName": "随机密码用户", "email": "", "role": "internal-user"})
 rand_pwd = (data or {}).get('initialPassword', '')
@@ -364,16 +366,19 @@ test("删除合作方", code == 200, f"code={code}, data={data}")
 print("\n--- 10g. 审批人配置（approvers） ---")
 
 # 创建本地用户作为审批人（模拟AD账号，PSF阶段用本地账号）
+request('DELETE', '/api/admin/local-users/deptmgr1')  # 幂等：清理上次残留
 code, data = request('POST', '/api/admin/local-users', json_data={
     "username": "deptmgr1", "password": "Test@123456", "displayName": "部门主管1",
     "email": "dept1@company.com", "role": "internal-user"
 })
 test("创建本地用户-部门主管(deptmgr1)", code == 200, f"code={code}")
+request('DELETE', '/api/admin/local-users/execmgr1')  # 幂等：清理上次残留
 code, data = request('POST', '/api/admin/local-users', json_data={
     "username": "execmgr1", "password": "Test@123456", "displayName": "高管1",
     "email": "exec1@company.com", "role": "internal-user"
 })
 test("创建本地用户-高管(execmgr1)", code == 200, f"code={code}")
+request('DELETE', '/api/admin/local-users/notapprover')  # 幂等：清理上次残留
 code, data = request('POST', '/api/admin/local-users', json_data={
     "username": "notapprover", "password": "Test@123456", "displayName": "普通用户",
     "email": "na@company.com", "role": "internal-user"
@@ -483,6 +488,7 @@ test("清理测试本地用户", True, "deptmgr1/execmgr1/notapprover 已删除"
 print("\n--- 10g2. 语义B 自动跳过二级 ---")
 
 # 创建用户 dual1 并配置为一级+二级审批人（语义B场景：二级审批人被配置为一级审批人）
+request('DELETE', '/api/admin/local-users/dual1')  # 幂等：清理上次残留
 code, data = request('POST', '/api/admin/local-users', json_data={
     "username": "dual1", "password": "Test@123456", "displayName": "双级审批人",
     "role": "internal-user"
@@ -1321,6 +1327,82 @@ test("AD登录: 域\\用户名格式走AD分支(未启用→401)", code == 401, 
 # 前端：loadConfig() 未定义调用已全部修复为 renderConfig()
 test("前端: 无未定义的 loadConfig() 调用且 renderConfig 正常接线",
      'loadConfig();' not in _html and _html.count('renderConfig();') >= 3 and 'async function renderConfig' in _html)
+
+# ============================================================
+# v2.2.23 回归组：提交接收方类型重构（internal/partner/non-partner）+ 系统运维数据生命周期（ADR-011）
+# ============================================================
+# --- 提交：公司内部（internal）仅需接收人，单位可空 ---
+code, data = upload_file(test_pdf, "internal_type.pdf")
+int_temp_id = data.get('tempId')
+code, data = request('POST', '/api/submissions', json_data={
+    "tempIds": [int_temp_id],
+    "receiverName": "内部接收人",
+    "receiverType": "internal",
+    "securityLevel": "internal",
+    "reason": "内部摆渡测试"
+})
+test("提交: 公司内部类型单位可空提交成功并判定internal",
+     code == 200 and data.get('receiver_type') == 'internal', f"code={code}, receiver_type={data.get('receiver_type')}")
+# --- 非合作方：单位必填（internal 校验不影响 non-partner）---
+code, data = request('POST', '/api/submissions', json_data={
+    "tempIds": [int_temp_id],
+    "receiverName": "非合作方测试",
+    "receiverType": "non-partner",
+    "securityLevel": "internal"
+})
+test("提交: 非合作方单位仍必填（缺失返回400）", code == 400 and '单位' in str(data), f"code={code}, data={data}")
+
+# --- 系统运维 ops（ADR-011）：备份/恢复/出厂重置/模拟数据 ---
+# 非 admin 访问被拒
+code, data = request('POST', '/api/admin/local-users', json_data={
+    "username": "opsuser1", "password": "Ops@123456", "displayName": "运维权限测试", "role": "internal-user"})
+code, data = request('POST', '/api/auth/login', json_data={"username": "opsuser1", "password": "Ops@123456"})
+code, data = request('GET', '/api/admin/ops/backups')
+test("运维: 非admin访问备份列表被拒403", code == 403, f"code={code}")
+code, data = request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+request('DELETE', '/api/admin/local-users/opsuser1')
+
+# 备份创建成功 + 列表可见
+code, data = request('POST', '/api/admin/ops/backup', json_data={})
+test("运维: 创建备份成功", code == 200 and data.get('name', '').startswith('backup-'), f"code={code}, data={data}")
+code, data = request('GET', '/api/admin/ops/backups')
+test("运维: 备份列表包含刚创建的备份",
+     code == 200 and isinstance(data, list) and len(data) >= 1 and data[0].get('hasDb') is True, f"code={code}, n={len(data) if isinstance(data,list) else 'NA'}")
+
+# 恢复/重置/模拟数据必须确认码
+code, data = request('POST', '/api/admin/ops/restore', json_data={"backupName": "backup-x", "confirm": ""})
+test("运维: 恢复缺确认码返回400", code == 400, f"code={code}")
+code, data = request('POST', '/api/admin/ops/reset-factory', json_data={"confirm": ""})
+test("运维: 出厂重置缺确认码返回400", code == 400, f"code={code}")
+code, data = request('POST', '/api/admin/ops/mock-data', json_data={"confirm": ""})
+test("运维: 模拟数据缺确认码返回400", code == 400, f"code={code}")
+
+# 模拟数据：testing 模式成功生成（幂等）；production 模式拒绝（环境自适应）
+_dm = 'testing'
+_code_h, _health = request('GET', '/api/health')
+if _code_h == 200 and isinstance(_health, dict):
+    _dm = _health.get('deployMode', 'testing')
+code, data = request('POST', '/api/admin/ops/mock-data', json_data={"confirm": "MOCK"})
+if _dm == 'testing':
+    test("运维: 模拟数据生成成功(测试环境)", code == 200, f"code={code}, data={data}")
+    code, data = request('GET', '/api/admin/local-users')
+    _has_mock_users = isinstance(data, list) and any(u.get('username') == 'testuser01' for u in data)
+    test("运维: 模拟数据含测试用户(testuser01)", _has_mock_users, f"n={len(data) if isinstance(data,list) else 'NA'}")
+else:
+    test("运维: 模拟数据生成被拒(生产环境)", code == 403, f"code={code}")
+
+# 前端：提交表单 internal 选项 + 条件字段 + 系统工具菜单/页面 + i18n
+test("前端: 提交表单含公司内部类型+类型/密级前置+条件字段",
+     'id="receiverType"' in _html and 'value="internal"' in _html and 'onReceiverTypeChange' in _html
+     and 'receiverOrgWrap' in _html and 'submit.internal' in _html and 'submit.receiverEmailOpt' in _html)
+test("前端: 系统工具菜单+页面+备份/重置/模拟数据卡片",
+     'data-page="ops"' in _html and 'async function renderOps' in _html and 'function opsBackup' in _html
+     and 'function opsReset' in _html and 'function opsMock' in _html
+     and 'ops.backupTitle' in _html and 'ops.resetTitle' in _html and 'ops.mockTitle' in _html)
+test("后端: app.py 含运维数据生命周期实现(ADR-011)",
+     '_backup_now' in _app_src and '_restore_backup' in _app_src and '_reset_factory' in _app_src
+     and '_generate_mock_data' in _app_src and 'api_ops_backups' in _app_src
+     and 'receiver_type != "internal" and not receiver_org' in _app_src)
 
 # ============================================================
 # 测试报告

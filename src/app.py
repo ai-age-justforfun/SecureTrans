@@ -40,7 +40,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.22"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.23"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
@@ -135,6 +135,11 @@ I18N_ERRORS = {
     "审批人用户名不能为空": "Approver username cannot be empty",
     "提交单不存在": "Submission not found",
     "外网面仅提供文件下载服务，管理操作请从内网访问": "External network only provides file download; management operations must be accessed from internal network",
+    "请输入确认码 RESTORE": "Please enter confirmation code RESTORE",
+    "请输入确认码 RESET": "Please enter confirmation code RESET",
+    "请输入确认码 MOCK": "Please enter confirmation code MOCK",
+    "备份不存在": "Backup not found",
+    "生产/预生产环境禁止生成模拟数据（ADR-011）": "Mock data generation is forbidden in production/pre-production environments (ADR-011)",
     "文件不存在": "File not found",
     "文件不可下载": "File is not downloadable",
     "文件名不能为空": "Filename cannot be empty",
@@ -231,7 +236,7 @@ def close_db(exception):
     if db is not None:
         db.close()
 
-# 内置特征码规则模板（v2.2.22 起为模块级常量）：播种 + 升级迁移共用
+# 内置特征码规则模板（v2.2.23 起为模块级常量）：播种 + 升级迁移共用
 # 安全策略：内置=模板，默认全部禁用（enabled=0）；管理员按需启用；即使免审批总开关开启，
 # 无启用的规则则无匹配 → 全部走人工审批（默认保守）
 BUILTIN_FEATURE_RULES = [
@@ -451,7 +456,7 @@ def init_db():
                 (str(uuid.uuid4()), name, rtype, pattern, enabled, now_str())
             )
     else:
-        # 升级迁移（v2.2.22）：旧库已有规则时不重复播种，但内置模板规则强制重置为禁用。
+        # 升级迁移（v2.2.23）：旧库已有规则时不重复播种，但内置模板规则强制重置为禁用。
         # 原因：历史版本默认启用/用户曾启用，升级后应回到"模板默认禁用"安全基线；
         # 仅重置与内置模板完全一致（name+type+pattern）的规则，用户自定义规则不受影响。
         _migrated = 0
@@ -1231,7 +1236,7 @@ def api_create_submission():
     receiver_name = data.get("receiverName", "")
     receiver_email = data.get("receiverEmail", "")
     receiver_org = data.get("receiverOrg", "")
-    # receiverType: partner/non-partner/auto；auto 时按合作方白名单自动判定
+    # receiverType: internal(公司内部)/partner(合作方)/non-partner(非合作方)/auto(按白名单自动判定)
     receiver_type = data.get("receiverType", "auto")
     if receiver_type == "auto":
         receiver_type = "partner" if is_partner(receiver_org) else "non-partner"
@@ -1248,7 +1253,8 @@ def api_create_submission():
         return jsonify({"error": "请先上传文件"}), 400
     if not receiver_name:
         return jsonify({"error": "请填写接收方姓名"}), 400
-    if not receiver_org:
+    # 公司内部（internal）：仅需接收人，单位可空；合作方/非合作方必须填写单位（信任模式自填也需单位）
+    if receiver_type != "internal" and not receiver_org:
         return jsonify({"error": "请填写接收方单位"}), 400
 
     # 信任模式：普通用户选中"合作方"但单位不在清单时，以接收方单位自动加入合作方清单（去重：名称不区分大小写）
@@ -2100,6 +2106,203 @@ def api_cleanup_expired():
     return jsonify({"message": f"清理完成，共处理 {count} 个过期文件", "cleaned": count})
 
 # ============================================================
+# 路由：系统运维（数据生命周期，ADR-011）
+# 在线运维（admin 网页 + TDD 可调用）；离线场景（服务停止时）用 infra/ops-*.sh 文件级脚本
+# 覆盖：备份 / 恢复 / 出厂重置（自动先备份）/ 模拟数据（仅 testing 模式）
+# ============================================================
+BACKUP_DIR = DATA_DIR / "backups"
+
+def _backup_now():
+    """在线备份：DB（sqlite backup API，WAL 安全一致性快照）+ NAS 业务目录 → DATA_DIR/backups/backup-<ts>"""
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    dest = BACKUP_DIR / f"backup-{ts}"
+    (dest / "db").mkdir(parents=True, exist_ok=True)
+    (dest / "nas").mkdir(parents=True, exist_ok=True)
+    src_conn = sqlite3.connect(str(DB_PATH))
+    dst_conn = sqlite3.connect(str(dest / "db" / "securetrans.db"))
+    try:
+        src_conn.backup(dst_conn)
+    finally:
+        dst_conn.close()
+        src_conn.close()
+    for sub in ["staging", "external", "archive"]:
+        src = NAS_ROOT / sub
+        if src.exists():
+            shutil.copytree(str(src), str(dest / "nas" / sub))
+    return dest
+
+def _list_backups():
+    out = []
+    if BACKUP_DIR.exists():
+        for d in sorted(BACKUP_DIR.iterdir(), reverse=True):
+            if d.is_dir() and d.name.startswith("backup-"):
+                size = 0
+                for f in d.rglob("*"):
+                    if f.is_file():
+                        size += f.stat().st_size
+                out.append({
+                    "name": d.name,
+                    "time": d.name[len("backup-"):].replace("_", " "),
+                    "size": size,
+                    "hasDb": (d / "db" / "securetrans.db").exists(),
+                })
+    return out
+
+def _restore_backup(name):
+    """从备份恢复：替换 DB + NAS 业务目录（回退 = 再恢复之前的备份）"""
+    src = BACKUP_DIR / name
+    if not src.exists() or not (src / "db" / "securetrans.db").exists():
+        return False, "备份不存在"
+    if "db" in g:
+        try:
+            g.db.close()
+        except Exception:
+            pass
+        g.pop("db", None)
+    for suffix in ["", "-wal", "-shm"]:
+        p = Path(str(DB_PATH) + suffix)
+        if p.exists():
+            try:
+                p.unlink()
+            except Exception:
+                pass
+    shutil.copy2(str(src / "db" / "securetrans.db"), str(DB_PATH))
+    for sub in ["staging", "external", "archive"]:
+        dst = NAS_ROOT / sub
+        if dst.exists():
+            shutil.rmtree(str(dst), ignore_errors=True)
+        src_nas = src / "nas" / sub
+        if src_nas.exists():
+            shutil.copytree(str(src_nas), str(dst))
+        else:
+            dst.mkdir(parents=True, exist_ok=True)
+    return True, f"恢复完成：{name}；业务数据已回滚至备份时点（{name[len('backup-'):].replace('_', ' ')}），请刷新页面"
+
+def _reset_factory():
+    """出厂重置（ADR-011）：先自动备份 → 清空业务库与 NAS → init_db 重建 → admin 密码重置为 .env RESET_PASSWORD"""
+    _backup_now()
+    if "db" in g:
+        try:
+            g.db.close()
+        except Exception:
+            pass
+        g.pop("db", None)
+    for suffix in ["", "-wal", "-shm"]:
+        p = Path(str(DB_PATH) + suffix)
+        if p.exists():
+            try:
+                p.unlink()
+            except Exception:
+                pass
+    for sub in ["staging", "external", "archive"]:
+        dst = NAS_ROOT / sub
+        if dst.exists():
+            shutil.rmtree(str(dst), ignore_errors=True)
+        dst.mkdir(parents=True, exist_ok=True)
+    init_db()
+    pwd = os.getenv("RESET_PASSWORD", "Init@123456").strip()
+    db = get_db()
+    db.execute("UPDATE local_users SET password_hash=?, must_change_password=1 WHERE username='admin'",
+               (hash_password(pwd),))
+    db.commit()
+    return True, "已重置出厂状态：业务数据已清空（原数据已自动备份），admin 密码已重置为 .env RESET_PASSWORD，请刷新页面"
+
+def _generate_mock_data():
+    """测试/开发环境模拟数据（与 verify.sh 自动化验证闭环）；生产/预生产拒绝"""
+    if DEPLOY_MODE != "testing":
+        return False, "生产/预生产环境禁止生成模拟数据（ADR-011）"
+    db = get_db()
+    now = now_str()
+    created = 0
+    for uname, disp, pwd in [("testuser01", "测试用户一", "Test@123456"),
+                             ("approver1", "一级审批人", "Test@123456"),
+                             ("approver2", "二级审批人", "Test@123456")]:
+        if not db.execute("SELECT id FROM local_users WHERE username=?", (uname,)).fetchone():
+            db.execute(
+                "INSERT INTO local_users (id,username,password_hash,display_name,email,role,status,must_change_password,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), uname, hash_password(pwd), disp, f"{uname}@mock.local", "internal-user", "active", 0, now))
+            created += 1
+    for lvl, uname, disp in [(1, "approver1", "一级审批人"), (2, "approver2", "二级审批人")]:
+        if not db.execute("SELECT id FROM approvers WHERE username=? AND level=?", (uname, lvl)).fetchone():
+            db.execute("INSERT INTO approvers (id,level,username,display_name,scope) VALUES (?,?,?,?,?)",
+                       (str(uuid.uuid4()), lvl, uname, disp, "all"))
+            created += 1
+    for name, contact, email in [("示例合作方A", "张三", "a@partner.com"), ("示例合作方B", "李四", "b@partner.com")]:
+        if not db.execute("SELECT id FROM partners WHERE name=?", (name,)).fetchone():
+            db.execute("INSERT INTO partners (id,name,contact,email,enabled,created_at) VALUES (?,?,?,?,1,?)",
+                       (str(uuid.uuid4()), name, contact, email, now))
+            created += 1
+    for status, auto, rtype, reason in [("pending", 0, "non-partner", "模拟：待审批提交单"),
+                                        ("approved", 1, "partner", "模拟：合作方自动通过"),
+                                        ("archived", 1, "partner", "模拟：已归档提交单")]:
+        sub_id = gen_submission_id()
+        db.execute(
+            "INSERT INTO submissions (id,submitter,submitter_name,receiver_name,receiver_email,receiver_type,receiver_org,security_level,reason,expiry_days,status,auto_approved,current_path,submit_time,approved_time,file_count,total_size) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (sub_id, "admin", "系统管理员", "模拟接收人", "", rtype, "示例合作方A" if rtype == "partner" else "模拟外部单位",
+             "internal", reason, 7, status, auto, str(ARCHIVE_DIR / sub_id) if status == "archived" else str(EXTERNAL_DIR / sub_id),
+             now, now if status != "pending" else None, 1, 1024))
+        db.execute("INSERT INTO submission_files (id,submission_id,path,name,size,type,md5,matched,is_archive) VALUES (?,?,?,?,?,?,?,?,?)",
+                   (str(uuid.uuid4()), sub_id, "files/mock.pdf", "mock.pdf", 1024, "PDF", "mock-md5", 0, 1 if status == "archived" else 0))
+        created += 1
+    add_audit_log("admin", "mock_data", "system", "生成模拟数据（测试环境，界面演示用）", get_client_ip())
+    db.commit()
+    return True, f"模拟数据生成完成（{created} 条）：测试用户/审批人/合作方/各状态提交单，仅界面演示，请勿用于生产"
+
+@app.route("/api/admin/ops/backups")
+@login_required
+@role_required("admin")
+def api_ops_backups():
+    return jsonify(_list_backups())
+
+@app.route("/api/admin/ops/backup", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_ops_backup():
+    dest = _backup_now()
+    add_audit_log(current_user.username, "ops_backup", dest.name, "系统运维：创建数据备份", get_client_ip())
+    return jsonify({"message": "备份创建成功", "name": dest.name})
+
+@app.route("/api/admin/ops/restore", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_ops_restore():
+    data = request.get_json() or {}
+    name = data.get("backupName", "")
+    if data.get("confirm") != "RESTORE":
+        return jsonify({"error": "请输入确认码 RESTORE"}), 400
+    ok, msg = _restore_backup(name)
+    if not ok:
+        return jsonify({"error": msg}), 400
+    add_audit_log(current_user.username, "ops_restore", name, "系统运维：从备份恢复数据", get_client_ip())
+    return jsonify({"message": msg})
+
+@app.route("/api/admin/ops/reset-factory", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_ops_reset_factory():
+    data = request.get_json() or {}
+    if data.get("confirm") != "RESET":
+        return jsonify({"error": "请输入确认码 RESET"}), 400
+    ok, msg = _reset_factory()
+    if not ok:
+        return jsonify({"error": msg}), 400
+    add_audit_log("admin", "ops_reset_factory", "system", "系统运维：出厂重置（原数据已自动备份）", get_client_ip())
+    return jsonify({"message": msg})
+
+@app.route("/api/admin/ops/mock-data", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_ops_mock_data():
+    data = request.get_json() or {}
+    if data.get("confirm") != "MOCK":
+        return jsonify({"error": "请输入确认码 MOCK"}), 400
+    ok, msg = _generate_mock_data()
+    if not ok:
+        return jsonify({"error": msg}), 403
+    return jsonify({"message": msg})
+
+# ============================================================
 # 错误处理
 # ============================================================
 @app.errorhandler(413)
@@ -2148,6 +2351,18 @@ if __name__ == "__main__":
             else:
                 print("[SecureTrans] admin 用户不存在，跳过重置（首次部署 init_db 已创建 admin/Admin@123）")
                 sys.exit(0)
+    # CLI: 出厂重置（ADR-011，离线脚本 ops-reset.sh 调用；含自动备份 + init_db 重建 + admin 密码重置）
+    if "--reset-factory" in sys.argv:
+        with app.app_context():
+            ok, msg = _reset_factory()
+            print(f"[SecureTrans] {msg}")
+            sys.exit(0 if ok else 1)
+    # CLI: 生成模拟数据（ADR-011，测试/开发环境；离线脚本 ops-mock.sh 调用；生产模式拒绝）
+    if "--mock-data" in sys.argv:
+        with app.app_context():
+            ok, msg = _generate_mock_data()
+            print(f"[SecureTrans] {msg}")
+            sys.exit(0 if ok else 1)
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))
     logger.info("SecureTrans 启动: http://%s:%s", host, port)
