@@ -358,6 +358,8 @@ fi
 
 # 9.7 重置 admin 密码为 .env RESET_PASSWORD（每次部署重置，保证 verify 与首次登录凭据一致；
 #     界面"重置密码"显示值与 .env RESET_PASSWORD 同源，登录后请立即修改）
+#     fix(v2.2.21)：显式把 .env RESET_PASSWORD 传入 CLI 环境——app.py 不自动读 .env，
+#     此前用代码默认 Init@123456 重置，若 .env 配了其他值会与 verify.sh 凭据(grep .env)不一致导致 401
 echo -e "${YELLOW}[9.7/9] 重置 admin 密码为 RESET_PASSWORD（.env）...${NC}"
 ENV_RESET_PWD=$(grep -E '^RESET_PASSWORD=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r' | head -1 || true)
 ENV_RESET_PWD="${ENV_RESET_PWD:-Init@123456}"
@@ -366,7 +368,7 @@ if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
 else
     RESET_PY="$PY_CMD"
 fi
-(cd "$INSTALL_DIR/src" && "$RESET_PY" app.py --reset-admin-password 2>/dev/null | grep "admin 密码已重置" || echo "  (admin 用户不存在，跳过)")
+(cd "$INSTALL_DIR/src" && RESET_PASSWORD="$ENV_RESET_PWD" "$RESET_PY" app.py --reset-admin-password 2>/dev/null | grep "admin 密码已重置" || echo "  (admin 用户不存在，跳过)")
 echo -e "  admin 密码 = ${ENV_RESET_PWD}（.env RESET_PASSWORD），首次登录强制修改 ${GREEN}OK${NC}"
 
 echo -e "${GREEN}============================================================${NC}"

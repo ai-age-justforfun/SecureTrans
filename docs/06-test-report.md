@@ -344,4 +344,9 @@
 - 变更（前端）：系统配置页新增「AD 配置」卡片（.env 导入/保存/AD_BIND_PASSWORD 脱敏显示）与「配置总览」卡片（.env 只读 + DB 配置，来源 env/db + 更新时间）。
 - 测试：201项（+8：ad-config 读/存/持久化、import 后 source=env、config-overview、后端资源检查、前端资源检查）。
 - 验证：Windows 201/201 + WSL verify（gunicorn+systemd）201/201，双环境 100%，v2.2.20 已发布 Gitea Release（含 offline-deps 资产）。
-*文档结束 | SecureTrans 测试报告 v1.16.0 | 2026-09-09*
+### 12.10 v2.2.21 deploy.sh 密码重置凭据一致性修复（2026-09-09）
+- 问题：生产 verify.sh 第 2 步 admin 认证 401——deploy.sh 9.7 重置 admin 密码时未把 .env RESET_PASSWORD 传入 CLI 环境，
+  app.py 不自动读 .env，用了代码默认 Init@123456 重置；当 .env 配置了其他 RESET_PASSWORD 时，verify.sh（grep .env 取凭据）登录失败。
+- 变更：deploy.sh 9.7 显式 RESET_PASSWORD=\ 传给 pp.py --reset-admin-password，部署重置与 verify 凭据严格同源（ADR-009 修复闭环）。
+- 验证：WSL 重跑 deploy.sh（幂等）+ verify.sh 201/201；Windows dev 201/201；双环境 100%，v2.2.21 已发布。
+*文档结束 | SecureTrans 测试报告 v1.17.0 | 2026-09-09*
