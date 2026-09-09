@@ -371,6 +371,17 @@ fi
 (cd "$INSTALL_DIR/src" && RESET_PASSWORD="$ENV_RESET_PWD" "$RESET_PY" app.py --reset-admin-password 2>/dev/null | grep "admin 密码已重置" || echo "  (admin 用户不存在，跳过)")
 echo -e "  admin 密码 = ${ENV_RESET_PWD}（.env RESET_PASSWORD），首次登录强制修改 ${GREEN}OK${NC}"
 
+# 9.8 可选出厂重置（ADR-011）：测试环境部署时清空老库恢复出厂状态
+#     触发方式：RESET_DB=1 bash deploy.sh（生产环境默认不触发；按需重置用 infra/ops-reset.sh 或系统工具页）
+if [ "${RESET_DB:-0}" = "1" ]; then
+    echo -e "${YELLOW}[9.8/9] 出厂重置（RESET_DB=1：清空业务数据恢复出厂，原数据自动备份）...${NC}"
+    if (cd "$INSTALL_DIR/src" && RESET_PASSWORD="$ENV_RESET_PWD" "$RESET_PY" app.py --reset-factory 2>/dev/null | grep -q "已重置出厂"); then
+        echo -e "  出厂重置完成：业务数据已清空（原数据在 data/backups/），admin 密码 = ${ENV_RESET_PWD} ${GREEN}OK${NC}"
+    else
+        echo -e "  ${YELLOW}(出厂重置未执行/失败，请检查日志；不影响服务启动)${NC}"
+    fi
+fi
+
 echo -e "${GREEN}============================================================${NC}"
 echo -e "${GREEN}  部署完成！${NC}"
 echo -e "${GREEN}============================================================${NC}"
