@@ -355,4 +355,9 @@
 - ③AD 用户管理：审批人弹窗新增"AD 来源"（搜索 /api/admin/ad/search 后选人）；用户管理页新增"AD 用户搜索"（查看/确认）
 - ④强制改密体验：弹窗注明"初始密码=部署 .env RESET_PASSWORD"；AD 搜索测试按 ad_enabled 环境自适应（mock 分支非空 / 真实分支 200 即可）
 - 测试 201 → 208 项；Windows dev 208/208 + WSL production 208/208，双环境 100%，v2.2.22 已发布
-*文档结束 | SecureTrans 测试报告 v1.18.0 | 2026-09-09*
+### 12.12 v2.2.23 数据生命周期（ADR-011）+ 提交接收方类型三分类重构（2026-09-09）
+- **运维功能化（应收尽收）**：备份/恢复/出厂重置/模拟数据进系统——admin 菜单"系统工具"页 + API（确认码保护，TDD 可调）；备份=DB sqlite backup API 一致性快照+NAS 业务目录→data/backups/；出厂重置自动先备份→init_db 重建→admin 密码重置为 .env RESET_PASSWORD；模拟数据仅 DEPLOY_MODE=testing（生产 403）
+- **离线脚本（服务停止时最安全）**：infra/ops-backup.sh / ops-restore.sh / ops-reset.sh / ops-mock.sh（调 CLI --reset-factory/--mock-data）；deploy.sh 9.8 支持 RESET_DB=1 部署时出厂重置
+- **提交接收方类型三分类（表单重构，类型/密级前置）**：internal 公司内部（单位可空，不入清单）；partner 合作方（优先下拉选择，不在清单自填并自动加入清单，信任模式）；non-partner 非合作方（单位必填，不加入清单，仅下载任务+日志）
+- 测试 208 → 221 项（Windows，含 mock 成功分支）；WSL production 220 项（mock 走 403 分支，环境自适应）；双环境 100%，v2.2.23 已发布
+*文档结束 | SecureTrans 测试报告 v1.19.0 | 2026-09-09*

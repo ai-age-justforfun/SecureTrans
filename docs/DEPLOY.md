@@ -123,6 +123,18 @@ cd ~/securetrans/tests && python3 test_api.py   # 201项全通过
 - [ ] 外网下载文件成功
 - [ ] os.rename 0拷贝验证：staging → external 毫秒级完成
 - [ ] 用户管理、特征码规则、审计日志正常
+- [ ] 系统工具：备份/恢复/出厂重置/模拟数据（ADR-011；模拟数据仅 testing 环境）
+
+**测试环境数据闭环（ADR-011）**：dev/test 数据策略 = 模拟数据 + 全量验证——
+```bash
+# 部署时直接出厂重置（清空老库恢复初始状态，自动备份）
+RESET_DB=1 sudo bash infra/deploy.sh
+# 或运行期：系统工具页点"模拟数据"（确认码 MOCK），或离线脚本
+sudo bash infra/ops-mock.sh
+# 全量自动化验证（221项，凭据自动取 .env RESET_PASSWORD）
+sudo bash infra/verify.sh
+```
+
 
 ---
 
@@ -146,7 +158,7 @@ cd ~/securetrans/tests && python3 test_api.py   # 201项全通过
 
 **部署注意（防再次踩坑）**：
 - 不要从 Windows 工作区直接运行 `deploy.sh`（`src/` 含本地开发产物 `.env`/`data`/`nas`/`venv`）；deploy.sh 已用 tar 排除这些目录并保护生产 `.env`
-- 全量测试前必须**重置干净基线**：删除 `data/securetrans.db` + 清空 NAS 下 `staging/external/archive`（admin 密码由 deploy.sh 自动重置为 .env `RESET_PASSWORD`，无需手工重置）
+- 全量测试前必须**重置干净基线**：删除 `data/securetrans.db` + 清空 NAS 下 `staging/external/archive`（admin 密码由 deploy.sh 自动重置为 .env `RESET_PASSWORD`，无需手工重置）；**推荐用 `RESET_DB=1 bash infra/deploy.sh`（ADR-011 自动备份+出厂重置）**
 - `.env` 用 LF 保存（Windows 记事本会写 CRLF，VSCode 右下角可切换）
 
 ## 三、生产环境部署（封闭数据中心）—— Rocky 8.10
@@ -564,6 +576,33 @@ tail -f /opt/securetrans/data/securetrans.log  # 应用日志
 sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$(date +%Y%m%d).db"  # SQLite 热备份
 ```
 
+### 5.3 数据生命周期（ADR-011）：备份 / 恢复 / 出厂重置 / 模拟数据
+
+**三环境一套代码配置数据脚本**：dev(Windows) / test(WSL) / prod(Rocky) 程序与配置完全一致（DEPLOY_MODE 开关 + .env），
+差异只在数据策略——dev/test 用 **模拟数据 + verify.sh 全量验证**闭环，prod 用 **备份/恢复/出厂重置**；
+代码、配置、数据三者分离，可自由组合。运维期内有用的功能已收进系统（admin 菜单"系统工具"），脚本仅保留离线场景。
+
+**方式 A：系统工具页（在线，推荐日常使用）**——admin 登录 → 系统工具：
+- 立即备份 / 备份列表 / 恢复（确认码 RESTORE）
+- 出厂重置（确认码 RESET；**自动先备份** → 清空 → 出厂状态，admin 密码重置为 .env RESET_PASSWORD）
+- 模拟数据（确认码 MOCK；**仅 DEPLOY_MODE=testing**，生产 403）
+
+**方式 B：离线脚本（服务停止时最安全；生产手工运维首选）**：
+```bash
+sudo systemctl stop securetrans                       # 可选，文件级操作更安全
+sudo bash infra/ops-backup.sh                         # 备份 → data/backups/backup-<时间戳>
+sudo bash infra/ops-restore.sh backup-20260909_120000 # 恢复（先 ls data/backups/ 看名称）
+sudo bash infra/ops-reset.sh                          # 备份+清理 → 出厂重置（admin 密码= .env RESET_PASSWORD）
+sudo bash infra/ops-mock.sh                           # 模拟数据（仅 testing 环境；配 verify.sh 做验证闭环）
+```
+
+**部署时出厂重置（测试环境）**：`RESET_DB=1 sudo bash infra/deploy.sh`（deploy.sh 9.8 步：清空老库恢复出厂，原数据自动备份）。
+
+**注意**：
+- 恢复/出厂重置会替换当前全部业务数据，回退 = 再恢复之前的备份；审计日志回到备份/出厂时点。
+- 恢复应在同一部署路径执行（提交单 current_path 为绝对路径，跨机器恢复会断链）。
+- 备份位置 `data/backups/` 建议定期归档到备份存储，不随业务 NAS 混放。
+
 ---
 
 ## 六、文件清单
@@ -577,11 +616,12 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 │   ├── .env.production       # 生产环境配置模板
 │   └── static/               # 前端SPA（index.html，单页应用）
 ├── tests/
-│   └── test_api.py           # 201项全量测试
+│   └── test_api.py           # 221项全量测试
 ├── infra/                    # 部署脚本和配置
-│   ├── deploy.sh             # 一键部署 (Linux)
+│   ├── deploy.sh             # 一键部署 (Linux，RESET_DB=1 部署时出厂重置)
 │   ├── deploy.ps1            # 一键部署 (Windows)
-│   ├── verify.sh             # 部署验证（201项全量测试，凭据自动取 .env RESET_PASSWORD）
+│   ├── verify.sh             # 部署验证（221项全量测试，凭据自动取 .env RESET_PASSWORD）
+│   ├── ops-backup.sh / ops-restore.sh / ops-reset.sh / ops-mock.sh  # 数据生命周期离线脚本（ADR-011）
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式
 │   ├── nginx-securetrans-single.conf # Nginx 单网卡模式
 │   ├── securetrans.service   # systemd 服务
@@ -595,4 +635,4 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 
 ---
 
-*部署指南 v2.2.14 | 2026-09-07*
+*部署指南 v2.2.23 | 2026-09-09*

@@ -217,7 +217,7 @@ main ────●────●────●────●────  �
 - **Commit 规范**：`<type>(<scope>): <描述>`，不强制带 Sprint 编号，可关联 Story 编号
 
 ### 当前阶段
-**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，201项自动化测试 100%，内部人工测试启动中（内网全功能 + 办公外网下载）。
+**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，221项自动化测试 100%，内部人工测试启动中（内网全功能 + 办公外网下载）。
 
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
@@ -225,7 +225,7 @@ main ────●────●────●────●────  �
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（201项全通过）](docs/06-test-report.md)
+- [测试报告（221项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
 - [部署指南（唯一部署文档）](docs/DEPLOY.md)
@@ -332,6 +332,14 @@ main ────●────●────●────●────  �
 - **边界**：部署级配置不迁 DB（systemd EnvironmentFile 机制依赖 .env）；AD_BIND_PASSWORD 脱敏显示（前2位+****），重新输入才覆盖；.env 仅负责部署级参数与首次播种，运行期不再参与业务判断。
 - **已落点**：v2.2.20（app.py：ad_config 表/AD_ENV_MAP/get_ad_config_value/mask_secret/authenticate_ad·api_login·api_search_ad 运行时读取/api_update_system_config 去回写 + 3 个管理 API：GET·PUT /api/admin/ad-config、POST /api/admin/ad-config/import、GET /api/admin/config-overview + 前端 AD 配置卡片与配置总览卡片 + test_api.py 201 项全量回归）
 
+### ADR-011：数据生命周期与运维功能化（强制）
+- **背景**：测试环境部署时需要清空老库/恢复初始配置，生产环境原则上不能动数据但需要按需备份+清理、备份、恢复；开发/测试/生产环境代码配置数据不分离导致验证不可靠。业界最佳实践：运维期内有用的功能应收尽收进系统（Web API + 界面 + TDD 可调），脚本只保留首部署与离线场景。
+- **决策（三环境一套代码配置数据脚本）**：dev(Windows) / test(WSL) / prod(Rocky) 程序与配置完全一致（DEPLOY_MODE 开关 + .env）；差异只在数据策略——dev/test 用**模拟数据 + verify.sh 全量验证**闭环，prod 用**备份/恢复/出厂重置**；代码、配置、数据三者分离可自由组合。
+- **系统功能（admin 菜单"系统工具"，确认码保护）**：备份 `POST /api/admin/ops/backup` + 列表 `GET /api/admin/ops/backups`（DB sqlite backup API 一致性快照 + NAS 业务目录 → data/backups/backup-<ts>）；恢复 `POST /api/admin/ops/restore`（确认码 RESTORE，回退=再恢复之前的备份）；出厂重置 `POST /api/admin/ops/reset-factory`（确认码 RESET，**自动先备份** → 清空 → init_db 重建 → admin 密码重置为 .env RESET_PASSWORD）；模拟数据 `POST /api/admin/ops/mock-data`（确认码 MOCK，**仅 testing 模式**，生产 403）。
+- **离线脚本（infra/，服务停止时最安全）**：`ops-backup.sh` / `ops-restore.sh <name>` / `ops-reset.sh`（备份+清理，调 CLI `--reset-factory`）/ `ops-mock.sh`（调 CLI `--mock-data`）；deploy.sh 支持 `RESET_DB=1` 部署时出厂重置（测试环境用）。
+- **与 ADR-010 不重叠**：ADR-010 管配置权威（静态三档），ADR-011 管数据生命周期与运维操作（动态）；mock+verify 构成 ADR-007 调测门禁的执行闭环。
+- **已落点**：v2.2.23（app.py ops 路由 + CLI --reset-factory/--mock-data + 前端系统工具页 + test_api.py 221 项 + infra/ops-*.sh + deploy.sh 9.8 RESET_DB）
+
 ---
 
 ## 许可证
@@ -340,5 +348,5 @@ main ────●────●────●────●────  �
 
 ---
 
-*SecureTrans v2.2.22 | 2026-09-09*
+*SecureTrans v2.2.23 | 2026-09-09*
 
