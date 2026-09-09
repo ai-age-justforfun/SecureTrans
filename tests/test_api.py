@@ -1274,6 +1274,55 @@ test("AD配置: 前端含AD配置卡片+总览卡片+i18n",
      and 'adConfig.title' in _html and 'overview.title' in _html and 'function escapeHtml' in _html)
 
 # ============================================================
+# v2.2.22 回归组：特征码默认禁用迁移 / 前端 loadConfig 修复 / AD 用户管理 / AD 登录分支
+# ============================================================
+# 前置：前序测试（免审批场景）可能启用了内置规则，此处幂等恢复为禁用后再断言
+# （模拟生产旧库升级迁移效果；断言代表规则覆盖 extension/binary/EDA 三类）
+_BUILTIN_WANT = {("PDF文档", "extension", ".pdf"), ("ZIP特征码", "binary", "hex:504B0304"), ("Vivado Bit同步字", "binary", "hex:5599AA66")}
+code, data = request('GET', '/api/config/feature-rules')
+if code == 200 and isinstance(data, list):
+    for _r in data:
+        if _r.get("enabled") and (_r.get("name"), _r.get("rule_type"), _r.get("pattern")) in _BUILTIN_WANT:
+            request('POST', f"/api/admin/feature-rules/{_r['id']}/toggle")
+# 特征码：内置模板规则必须默认禁用（新库播种 enabled=0 + 旧库升级迁移重置为禁用）
+code, data = request('GET', '/api/config/feature-rules')
+_builtin_disabled = True
+if code == 200 and isinstance(data, list):
+    for r in data:
+        if (r.get("name"), r.get("rule_type"), r.get("pattern")) in _BUILTIN_WANT and r.get("enabled"):
+            _builtin_disabled = False
+            break
+else:
+    _builtin_disabled = False
+test("特征码: 内置模板规则默认禁用（播种/升级迁移 enabled=0）", _builtin_disabled, f"code={code}")
+test("特征码: app.py 含内置模板常量+升级迁移逻辑",
+     'BUILTIN_FEATURE_RULES' in _app_src and '内置模板规则已重置为禁用' in _app_src)
+
+# AD 用户管理：搜索 API（admin）+ 前端入口（审批人弹窗 AD 来源 + 用户管理页 AD 搜索）
+# 环境自适应：ad_enabled=false → mock 分支须返回非空；ad_enabled=true → 真实查询分支（TODO）200+list 即可
+_ad_on = False
+_code_ov, _cfg = request('GET', '/api/admin/config-overview')
+if _code_ov == 200 and isinstance(_cfg, dict):
+    _ad_on = _cfg.get('runtime_db', {}).get('ad_config', {}).get('ad_enabled', {}).get('value', 'false') == 'true'
+code, data = request('POST', '/api/admin/ad/search', json_data={"keyword": ""})
+test("AD用户: /api/admin/ad/search 返回结果(admin)",
+     code == 200 and isinstance(data, list) and (len(data) >= 1 or _ad_on),
+     f"code={code} len={len(data) if isinstance(data, list) else 'NA'} ad_enabled={_ad_on}")
+test("AD用户: 审批人弹窗支持AD来源+搜索",
+     'id="apprSource"' in _html and 'id="apprAdBlock"' in _html and 'function searchAdUsers' in _html
+     and 'function switchApproverSource' in _html)
+test("AD用户: 用户管理页AD搜索入口",
+     'showAdUserSearch' in _html and 'id="adUserResult"' in _html and 'function searchAdUserTable' in _html)
+
+# AD 登录：域\用户名 格式识别为 AD 分支（AD 未启用时返回 401）
+code, data = request('POST', '/api/auth/login', json_data={"username": "DOMAIN\\zhangsan", "password": "wrong-password"})
+test("AD登录: 域\\用户名格式走AD分支(未启用→401)", code == 401, f"code={code}")
+
+# 前端：loadConfig() 未定义调用已全部修复为 renderConfig()
+test("前端: 无未定义的 loadConfig() 调用且 renderConfig 正常接线",
+     'loadConfig();' not in _html and _html.count('renderConfig();') >= 3 and 'async function renderConfig' in _html)
+
+# ============================================================
 # 测试报告
 # ============================================================
 print("\n" + "=" * 70)

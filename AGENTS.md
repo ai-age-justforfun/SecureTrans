@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.2.21（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
+- **当前版本**：v2.2.22（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main

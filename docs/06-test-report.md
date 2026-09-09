@@ -349,4 +349,10 @@
   app.py 不自动读 .env，用了代码默认 Init@123456 重置；当 .env 配置了其他 RESET_PASSWORD 时，verify.sh（grep .env 取凭据）登录失败。
 - 变更：deploy.sh 9.7 显式 RESET_PASSWORD=\ 传给 pp.py --reset-admin-password，部署重置与 verify 凭据严格同源（ADR-009 修复闭环）。
 - 验证：WSL 重跑 deploy.sh（幂等）+ verify.sh 201/201；Windows dev 201/201；双环境 100%，v2.2.21 已发布。
-*文档结束 | SecureTrans 测试报告 v1.17.0 | 2026-09-09*
+### 12.11 v2.2.22 生产反馈四问题修复（2026-09-09）
+- ①特征码默认禁用未生效：播种仅空表执行，旧库内置规则残留启用 → 新增升级迁移（BUILTIN_FEATURE_RULES 常量，升级时内置模板强制重置 enabled=0，自定义规则不受影响）
+- ②前端 loadConfig is not defined：toggleRule/deleteRule/saveRule 调用未定义函数 → 修正为 renderConfig()（3 处）
+- ③AD 用户管理：审批人弹窗新增"AD 来源"（搜索 /api/admin/ad/search 后选人）；用户管理页新增"AD 用户搜索"（查看/确认）
+- ④强制改密体验：弹窗注明"初始密码=部署 .env RESET_PASSWORD"；AD 搜索测试按 ad_enabled 环境自适应（mock 分支非空 / 真实分支 200 即可）
+- 测试 201 → 208 项；Windows dev 208/208 + WSL production 208/208，双环境 100%，v2.2.22 已发布
+*文档结束 | SecureTrans 测试报告 v1.18.0 | 2026-09-09*

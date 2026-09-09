@@ -40,7 +40,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.21"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.22"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
@@ -231,6 +231,36 @@ def close_db(exception):
     if db is not None:
         db.close()
 
+# 内置特征码规则模板（v2.2.22 起为模块级常量）：播种 + 升级迁移共用
+# 安全策略：内置=模板，默认全部禁用（enabled=0）；管理员按需启用；即使免审批总开关开启，
+# 无启用的规则则无匹配 → 全部走人工审批（默认保守）
+BUILTIN_FEATURE_RULES = [
+    # === 文档类（extension）===
+    ("PDF文档", "extension", ".pdf", 0),
+    ("Word文档", "extension", ".doc,.docx", 0),
+    ("Excel表格", "extension", ".xls,.xlsx", 0),
+    ("PPT演示", "extension", ".ppt,.pptx", 0),
+    ("图片文件", "extension", ".png,.jpg,.jpeg,.gif,.bmp,.svg", 0),
+    ("文本文件", "extension", ".txt,.csv,.md,.log,.json,.xml,.yaml,.yml", 0),
+    # === 压缩包类（extension）- Linux 默认支持 ===
+    ("ZIP压缩包", "extension", ".zip", 0),
+    ("TAR归档", "extension", ".tar", 0),
+    ("GZIP压缩", "extension", ".gz,.tgz", 0),
+    ("BZIP2压缩", "extension", ".bz2,.tbz2", 0),
+    ("XZ压缩", "extension", ".xz,.txz", 0),
+    ("ZSTD压缩", "extension", ".zst", 0),
+    # === 压缩包类（binary 特征码 / Magic Number）===
+    ("ZIP特征码", "binary", "hex:504B0304", 0),
+    ("GZIP特征码", "binary", "hex:1F8B", 0),
+    ("BZIP2特征码", "binary", "hex:425A68", 0),
+    ("XZ特征码", "binary", "hex:FD377A585A00", 0),
+    ("ZSTD特征码", "binary", "hex:28B52FFD", 0),
+    ("TAR特征码(ustar)", "binary", "ustar", 0),
+    # === FPGA / EDA ===
+    ("Vivado Bitstream(.bit)", "extension", ".bit", 0),
+    ("Vivado Bit同步字", "binary", "hex:5599AA66", 0),
+]
+
 def init_db():
     """初始化数据库表和初始数据"""
     conn = sqlite3.connect(str(DB_PATH))
@@ -415,38 +445,23 @@ def init_db():
     cursor = conn.execute("SELECT COUNT(*) as c FROM feature_rules")
     if cursor.fetchone()["c"] == 0:
         # 内置特征码规则作为【模板】，默认全部禁用（enabled=0），由管理员按需启用。
-        # 安全策略：即使免审批总开关开启，无启用的规则则无匹配 → 全部走人工审批（默认保守）。
-        rules = [
-            # === 文档类（extension）===
-            ("PDF文档", "extension", ".pdf", 0),
-            ("Word文档", "extension", ".doc,.docx", 0),
-            ("Excel表格", "extension", ".xls,.xlsx", 0),
-            ("PPT演示", "extension", ".ppt,.pptx", 0),
-            ("图片文件", "extension", ".png,.jpg,.jpeg,.gif,.bmp,.svg", 0),
-            ("文本文件", "extension", ".txt,.csv,.md,.log,.json,.xml,.yaml,.yml", 0),
-            # === 压缩包类（extension）- Linux 默认支持 ===
-            ("ZIP压缩包", "extension", ".zip", 0),
-            ("TAR归档", "extension", ".tar", 0),
-            ("GZIP压缩", "extension", ".gz,.tgz", 0),
-            ("BZIP2压缩", "extension", ".bz2,.tbz2", 0),
-            ("XZ压缩", "extension", ".xz,.txz", 0),
-            ("ZSTD压缩", "extension", ".zst", 0),
-            # === 压缩包类（binary 特征码 / Magic Number）===
-            ("ZIP特征码", "binary", "hex:504B0304", 0),
-            ("GZIP特征码", "binary", "hex:1F8B", 0),
-            ("BZIP2特征码", "binary", "hex:425A68", 0),
-            ("XZ特征码", "binary", "hex:FD377A585A00", 0),
-            ("ZSTD特征码", "binary", "hex:28B52FFD", 0),
-            ("TAR特征码(ustar)", "binary", "ustar", 0),
-            # === FPGA / EDA ===
-            ("Vivado Bitstream(.bit)", "extension", ".bit", 0),
-            ("Vivado Bit同步字", "binary", "hex:5599AA66", 0),
-        ]
-        for name, rtype, pattern, enabled in rules:
+        for name, rtype, pattern, enabled in BUILTIN_FEATURE_RULES:
             conn.execute(
                 "INSERT INTO feature_rules (id,name,rule_type,pattern,enabled,created_at) VALUES (?,?,?,?,?,?)",
                 (str(uuid.uuid4()), name, rtype, pattern, enabled, now_str())
             )
+    else:
+        # 升级迁移（v2.2.22）：旧库已有规则时不重复播种，但内置模板规则强制重置为禁用。
+        # 原因：历史版本默认启用/用户曾启用，升级后应回到"模板默认禁用"安全基线；
+        # 仅重置与内置模板完全一致（name+type+pattern）的规则，用户自定义规则不受影响。
+        _migrated = 0
+        for _name, _rtype, _pattern, _enabled in BUILTIN_FEATURE_RULES:
+            _cur = conn.execute(
+                "UPDATE feature_rules SET enabled=0 WHERE name=? AND rule_type=? AND pattern=? AND enabled=1",
+                (_name, _rtype, _pattern))
+            _migrated += _cur.rowcount
+        if _migrated:
+            logger.info("feature_rules 迁移：%d 条内置模板规则已重置为禁用（enabled=0），自定义规则未受影响", _migrated)
 
     # 播种 ad_config（ADR-010）：表空时从 .env 读入一次（source=env），此后以管理页保存值（source=db）为准
     seed_rows = conn.execute("SELECT COUNT(*) as c FROM ad_config").fetchone()
