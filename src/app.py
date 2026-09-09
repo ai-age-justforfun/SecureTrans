@@ -40,7 +40,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.18"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.19"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
@@ -59,6 +59,11 @@ AD_DOMAIN = os.getenv("AD_DOMAIN", "")
 AD_BASE_DN = os.getenv("AD_BASE_DN", "")
 AD_BIND_DN = os.getenv("AD_BIND_DN", "")
 AD_BIND_PASSWORD = os.getenv("AD_BIND_PASSWORD", "")
+# AD 属性字段（可配置，默认值与 AD 标准属性一致；如企业 AD 用其他字段可在此调整）
+AD_USER_FIELD = os.getenv("AD_USER_FIELD", "sAMAccountName").strip()  # 登录名查询字段
+AD_DISPLAY_FIELD = os.getenv("AD_DISPLAY_FIELD", "displayName").strip()  # 显示名属性
+AD_MAIL_FIELD = os.getenv("AD_MAIL_FIELD", "mail").strip()  # 邮箱属性
+AD_GROUP_FIELD = os.getenv("AD_GROUP_FIELD", "memberOf").strip()  # 组属性
 
 # 过期清理配置
 EXTERNAL_EXPIRY_DAYS = int(os.getenv("EXTERNAL_EXPIRY_DAYS", "7"))  # external 文件默认 7 天过期
@@ -780,14 +785,14 @@ def authenticate_ad(username: str, password: str):
     - AD_BIND_PASSWORD=xxxxxx                 (可选，服务账户密码)
     """
     if not AD_ENABLED:
-        return None
+        return None, "AD_ENABLED=false（未启用AD认证）"
     if not password:
-        return None
+        return None, "密码为空"
     try:
         import ldap3
     except ImportError:
         logger.warning("ldap3 未安装，AD认证不可用。请 pip install ldap3")
-        return None
+        return None, "ldap3 未安装（pip install ldap3）"
 
     try:
         # 解析 AD_HOST，支持 ldap:// / ldaps:// 前缀
@@ -814,24 +819,24 @@ def authenticate_ad(username: str, password: str):
                                  auto_bind=ldap3.AUTO_BIND_NO_TLS, receive_timeout=5,
                                  raise_exceptions=True)
         if not conn.bound:
-            return None
+            return None, "LDAP 绑定未成功（返回未绑定状态）"
 
-        # 绑定成功，查询用户信息
+        # 绑定成功，查询用户信息（属性字段可配置，默认 AD 标准属性）
         display_name = username
         email = ""
         groups = []
         if AD_BASE_DN:
             try:
-                conn.search(AD_BASE_DN, f"(sAMAccountName={username})",
-                             attributes=["displayName", "mail", "memberOf", "department", "userPrincipalName"])
+                conn.search(AD_BASE_DN, f"({AD_USER_FIELD}={username})",
+                             attributes=[AD_DISPLAY_FIELD, AD_MAIL_FIELD, AD_GROUP_FIELD, "department", "userPrincipalName"])
                 if conn.entries:
                     entry = conn.entries[0]
-                    if hasattr(entry, "displayName") and entry.displayName:
-                        display_name = str(entry.displayName)
-                    if hasattr(entry, "mail") and entry.mail:
-                        email = str(entry.mail)
-                    if hasattr(entry, "memberOf") and entry.memberOf:
-                        groups = [str(g) for g in entry.memberOf]
+                    if hasattr(entry, AD_DISPLAY_FIELD) and getattr(entry, AD_DISPLAY_FIELD):
+                        display_name = str(getattr(entry, AD_DISPLAY_FIELD))
+                    if hasattr(entry, AD_MAIL_FIELD) and getattr(entry, AD_MAIL_FIELD):
+                        email = str(getattr(entry, AD_MAIL_FIELD))
+                    if hasattr(entry, AD_GROUP_FIELD) and getattr(entry, AD_GROUP_FIELD):
+                        groups = [str(g) for g in getattr(entry, AD_GROUP_FIELD)]
             except Exception as e:
                 logger.warning("AD用户信息查询失败 %s: %s", username, e)
 
@@ -842,13 +847,16 @@ def authenticate_ad(username: str, password: str):
             "display_name": display_name,
             "email": email,
             "groups": groups,
-        }
+        }, None
     except ldap3.core.exceptions.LDAPBindError:
         logger.info("AD认证失败(密码错误): %s", username)
-        return None
+        return None, "AD 账号或密码错误（LDAP 绑定被拒）"
+    except ldap3.core.exceptions.LDAPException as e:
+        logger.warning("AD连接异常 %s: %s", username, e)
+        return None, f"AD 连接异常: {e}"
     except Exception as e:
         logger.warning("AD认证异常 %s: %s", username, e)
-        return None
+        return None, f"AD 认证异常: {e}"
 
 def get_user_role(username: str, source: str) -> str:
     """获取用户角色：本地用户从 local_users 取，AD 用户从 role_mappings 查，默认普通用户"""
@@ -994,19 +1002,21 @@ def api_login():
         return redirect(url_for("index"))
 
     # 再尝试 AD
+    ad_reason = ""
     if source in ("ad", "auto"):
-        user = authenticate_ad(username, password)
+        user, ad_reason = authenticate_ad(username, password)
         if user:
             role = get_user_role(username, "ad")
             user_obj = User(str(uuid.uuid4()), username, user.get("display_name", username), role, "ad")
             login_user(user_obj)
             session["user_data"] = user_obj.to_dict()
-            add_audit_log(username, "login", "", "AD用户登录成功", ip)
+            add_audit_log(username, "login", "",
+                          f"AD用户登录成功 display={user.get('display_name', username)} groups={len(user.get('groups') or [])}", ip)
             if request.is_json:
                 return jsonify({"message": "登录成功", "user": user_obj.to_dict()})
             return redirect(url_for("index"))
 
-    add_audit_log(username, "login_failed", "", "登录失败", ip)
+    add_audit_log(username, "login_failed", "ad", ad_reason or "用户名或密码错误", ip)
     if request.is_json:
         return jsonify({"error": "用户名或密码错误"}), 401
     return redirect(url_for("login_page"))

@@ -1225,15 +1225,26 @@ test("版本: health 返回版本号", code == 200 and isinstance(data.get('vers
 
 # 网络面识别（app.py 源码检查：INTERNAL_CIDRS + ipaddress 网段兜底）
 import os as _os
-_src_app = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'app.py')
-if not _os.path.exists(_src_app):
-    _src_app = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'src', 'app.py')
+_src_app = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'src', 'app.py')
+if not _os.path.exists(_src_app):  # 兼容旧部署（根目录 app.py 已弃用）
+    _src_app = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'app.py')
 try:
     with open(_src_app, encoding='utf-8') as _f:
         _app_src = _f.read()
     test("网络: app.py 含网段识别配置(INTERNAL_CIDRS+ipaddress)", 'INTERNAL_CIDRS' in _app_src and 'import ipaddress' in _app_src)
     test("网络: app.py 含 CIDR 兜底识别(_ip_in_cidrs)", '_ip_in_cidrs' in _app_src and 'X-Network-Zone' in _app_src)
     test("网络: loopback(127.0.0.1/::1)恒为内网管理面", 'is_loopback' in _app_src)
+    # AD 属性字段可配置（默认值非硬编码）：AD_USER_FIELD/AD_DISPLAY_FIELD/AD_MAIL_FIELD/AD_GROUP_FIELD
+    test("AD: 属性字段可配置(环境变量+默认值非硬编码)",
+         'AD_USER_FIELD = os.getenv("AD_USER_FIELD", "sAMAccountName")' in _app_src
+         and 'AD_DISPLAY_FIELD = os.getenv("AD_DISPLAY_FIELD", "displayName")' in _app_src
+         and 'AD_MAIL_FIELD = os.getenv("AD_MAIL_FIELD", "mail")' in _app_src
+         and 'AD_GROUP_FIELD = os.getenv("AD_GROUP_FIELD", "memberOf")' in _app_src)
+    test("AD: 查询 filter 使用可配置字段(非硬编码 sAMAccountName)",
+         '(sAMAccountName={username})' not in _app_src and 'f"({AD_USER_FIELD}={username})"' in _app_src)
+    test("AD: 失败原因返回并写入审计日志(login_failed detail)",
+         'authenticate_ad(username, password)' in _app_src and 'ad_reason or "用户名或密码错误"' in _app_src
+         and 'login_failed", "ad", ad_reason' in _app_src)
 except Exception as e:
     test("网络: app.py 源码检查", False, str(e))
 

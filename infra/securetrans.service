@@ -7,7 +7,7 @@ Wants=network.target
 Type=simple
 User=securetrans
 Group=securetrans
-WorkingDirectory=/opt/securetrans
+WorkingDirectory=/opt/securetrans/src
 EnvironmentFile=/opt/securetrans/.env
 ExecStart=/opt/securetrans/venv/bin/gunicorn \
     -w 2 \

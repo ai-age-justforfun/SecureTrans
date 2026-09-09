@@ -366,7 +366,7 @@ if [ -x "$INSTALL_DIR/venv/bin/python" ]; then
 else
     RESET_PY="$PY_CMD"
 fi
-(cd "$INSTALL_DIR" && "$RESET_PY" app.py --reset-admin-password 2>/dev/null | grep "admin 密码已重置" || echo "  (admin 用户不存在，跳过)")
+(cd "$INSTALL_DIR/src" && "$RESET_PY" app.py --reset-admin-password 2>/dev/null | grep "admin 密码已重置" || echo "  (admin 用户不存在，跳过)")
 echo -e "  admin 密码 = ${ENV_RESET_PWD}（.env RESET_PASSWORD），首次登录强制修改 ${GREEN}OK${NC}"
 
 echo -e "${GREEN}============================================================${NC}"
@@ -382,6 +382,6 @@ echo ""
 echo -e "${YELLOW}  后续步骤:${NC}"
 echo "  1. 编辑 .env 确认 NAS_ROOT / INTERNAL_CIDRS（单网卡按网段隔离时）"
 echo "  2. 配置 nginx 反向代理（单/双网卡模板见 infra/nginx-securetrans-*.conf）"
-echo "  3. 全量验证: sudo bash infra/verify.sh  (187项，自动使用 RESET_PASSWORD 凭据)"
+echo "  3. 全量验证: sudo bash infra/verify.sh  (193项，自动使用 RESET_PASSWORD 凭据)"
 echo "  4. 登录系统修改 admin 初始密码（修改后 verify 需 VERIFY_ADMIN_PASS 显式传参，见 DEPLOY.md）"
 echo ""
