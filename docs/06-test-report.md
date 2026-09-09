@@ -9,7 +9,7 @@
 
 ## 一、测试结论
 
-**总计 190 项测试，双环境（Windows + WSL Rocky）全部通过，通过率 100%（PRD 全功能覆盖）。**
+**总计 193项测试，双环境（Windows + WSL Rocky）全部通过，通过率 100%（PRD 全功能覆盖）。**
 
 核心流程（提交→审批→摆渡→下载→过期归档）端到端验证通过，os.rename 0拷贝摆渡特性在 Rocky Linux 10 ext4 文件系统上得到实际验证。特征码全量验证（含压缩包解包、Vivado Bitstream）、审批驳回、过期归档、修改密码、合作方白名单、审批人配置、特征码规则CRUD管理、网络面隔离（双网卡应用层兜底）、**语义B同人跨级自动跳过二级**等全部场景覆盖。
 
@@ -19,7 +19,7 @@
 
 ---
 
-## 二、测试覆盖范围（27大类 190项）
+## 二、测试覆盖范围（27大类 193项）
 
 | # | 类别 | 测试项 | 通过 |
 |---|------|--------|------|
@@ -237,7 +237,7 @@
 - **后端**：40 条静态错误 + 13 条静态成功 + 6 条动态模板消息，经 `after_request` 自动附加 `error_en`/`message_en`，未命中保持中文
 - **前端**：index.html（单页应用全部文案）+ login.html 字典化（`I18N` 字典 + `t()` + `data-i18n` + `applyI18n()`），切换语言即时重渲染
 - **验证**：浏览器实测登录页与主界面中英文切换正常（菜单/按钮/占位符/仪表盘/提交表单/角色标签）；新增 13 项 i18n 测试
-- **结果**：全量 182 项测试 100% 通过
+- **结果**：全量 193项测试 100% 通过
 
 ## 十一、国际化检视（2026-09-01）
 - **范围**：在 i18n 文字双语基础上，检视数字/日期/时区/单位/复数维度
@@ -246,7 +246,7 @@
   - ✅ 时区（P0）：程序不做时区转换，统一使用操作系统时区时间；前端侧边栏标注“时间=服务器系统时区”，.env 不加时间配置
   - ✅ 英文单复数（P1）：前端统计卡数值/单位分离无拼接问题；修复后端清理消息动态模板英文单复数（1 expired file / N expired files）；文件清单硬编码“个”改为 i18n 键（zh {N} 个 / en {N}）
   - ⏸ 数字千分位（P2）：按用户决策忽略
-- **变更**：新增 3 项 i18n 测试（清理消息英文模板 + 单复数一致 + 语言按钮跨页面重建逻辑），全量 182 项 100% 通过
+- **变更**：新增 3 项 i18n 测试（清理消息英文模板 + 单复数一致 + 语言按钮跨页面重建逻辑），全量 193项 100% 通过
 
 
 
@@ -258,7 +258,7 @@
 
 ## 十二、v2.2.0 部署能力升级验证（2026-09-04）
 
-**总计 182 项测试，Windows 本地 + WSL Rocky 双环境全部通过，通过率 100%。**
+**总计 193项测试，Windows 本地 + WSL Rocky 双环境全部通过，通过率 100%。**
 
 ### 一键式部署（方案 B）落地
 
@@ -278,19 +278,19 @@
 
 ### 验证方式
 
-- WSL Rocky 10.1（systemd）：解压发布包 → `deploy.sh` 一键部署 → `verify.sh` 全量 **182 项 100%** 通过。
+- WSL Rocky 10.1（systemd）：解压发布包 → `deploy.sh` 一键部署 → `verify.sh` 全量 **193项 100%** 通过。
 - Windows：deploy.ps1 离线链路实测（Python 3.12 venv + 离线 wheel 安装 + .env 生成）。
-- 新增测试：`网络: loopback(127.0.0.1/::1)恒为内网管理面`（182 项之一）。
+- 新增测试：`网络: loopback(127.0.0.1/::1)恒为内网管理面`（193项之一）。
 
 ### 12.2 v2.2.2 部署修复验证（2026-09-08）
 - 修复：systemd 服务启动失败 status=226/NAMESPACE——mount namespace 加固指令（PrivateTmp/ProtectSystem=strict/ReadWritePaths）在部分虚拟化/挂载组合下（如 ESXi VM + NAS 未挂载路径）无法建立命名空间。
 - 变更：securetrans.service 默认移除三行加固指令，保留 NoNewPrivileges + 独立用户（securetrans），保证真机/容器可部署；deploy.sh 同步简化；DEPLOY.md 说明。
-- 验证：本地全量回归 182 项 100%（服务器部署验证后补充）。
+- 验证：本地全量回归 193项 100%（服务器部署验证后补充）。
 
 ### 12.3 v2.2.14 部署根因修复验证（2026-09-08）
 - 根因确认：deploy.sh 默认 NAS_ROOT=/mnt/nas/securetrans，NAS 未挂载时该路径不存在；systemd 239（RHEL8/Rocky8）对 ReadWritePaths 中不存在的路径启动报 226/NAMESPACE（systemd 257 忽略，故 WSL 验证成功、ESXi 失败）。
 - 修复：恢复 PrivateTmp/ProtectSystem=strict 加固（实测兼容 239/257），ReadWritePaths 由 deploy.sh 按 NAS_ROOT 存在性渲染（不存在则仅 /opt/securetrans，NAS 挂载后重跑部署自动补全）。
-- 验证：ESXi 对照实验 A（含不存在路径）失败 / B（去掉 ReadWritePaths）成功，锁定元凶；本地全量回归 182 项 100%。
+- 验证：ESXi 对照实验 A（含不存在路径）失败 / B（去掉 ReadWritePaths）成功，锁定元凶；本地全量回归 193项 100%。
 
 ### 12.4 v2.2.15 Alpha 走查修复验证（2026-09-08）
 - 背景：v2.2.14 发布后浏览器 Alpha 走查（本地 dev 全流程：认证→用户创建→强制改密→审批人配置→上传→提交→审批→摆渡→下载），
@@ -324,6 +324,6 @@
 - 变更：app.py 新增 `--reset-admin-password` CLI（app_context 内更新密码+强制改密标记）；deploy.sh 9.7 步自动重置 + 确保 .env 含 RESET_PASSWORD 行；
   verify.sh 凭据从 .env RESET_PASSWORD 读取（VERIFY_ADMIN_USER/VERIFY_ADMIN_PASS 可显式覆盖）；test_api.py 凭据参数化（TEST_ADMIN_USER/TEST_ADMIN_PASS），
   改密测试改用专用用户 testpwuser（不碰真实 admin 密码，生产安全）。
-- 测试：190 项（改密测试重构 +5 项，外部改密 403 保留）。
+- 测试：193项（改密测试重构 +5 项，外部改密 403 保留）。
 - 验证：Windows 190/190 + WSL verify 190/190，双环境 100%。
 *文档结束 | SecureTrans 测试报告 v1.15.0 | 2026-09-08*

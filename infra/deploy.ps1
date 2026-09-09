@@ -159,7 +159,7 @@ if ($Start) {
 # 5. 验证说明
 Write-Host "[5/5] 验证指引："
 Write-Host "  1) 访问 http://localhost:8000，admin / Admin@123 登录（首次强制改密）"
-Write-Host "  2) 运行全量测试（另一终端）: cd tests; python test_api.py  (172项)"
+Write-Host "  2) 运行全量测试（另一终端）: cd tests; python test_api.py  (193项)"
 Write-Host "  3) 生产 waitress: cd $InstallDir; .\venv\Scripts\waitress-serve.exe --host=0.0.0.0 --port=8000 app:app"
 Write-Host "  4) 服务化(开机自启): nssm install SecureTrans 指向 venv\Scripts\python.exe + app.py，或用计划任务"
 
