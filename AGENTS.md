@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.2.18（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
+- **当前版本**：v2.2.20（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
@@ -26,7 +26,8 @@
 - **数据库**：SQLite，使用 `sqlite3` 标准库，不使用 ORM（保持轻量）
 - **认证**：Flask-Login，本地用户 + AD用户（LDAP直连，UPN 绑定与 sssd 兼容）统一会话管理；
   AD 属性字段可配置（AD_USER_FIELD/AD_DISPLAY_FIELD/AD_MAIL_FIELD/AD_GROUP_FIELD，默认 AD 标准属性，非硬编码）；
-  AD 登录失败原因写入审计日志 detail（未启用/密码错误/连接异常/ldap3未装）
+  AD 登录失败原因写入审计日志 detail（未启用/密码错误/连接异常/ldap3未装）；
+  **AD 连接配置运行期以 SQLite ad_config 为权威（ADR-010）**：首次从 .env 播种/导入，管理页"系统配置→AD 配置"可查看、导入、保存（source=env/db，空值回退 .env/默认），保存即时生效无需重启
 - **文件操作**：必须使用 `os.rename` 实现0拷贝摆渡，禁止使用 `shutil.move`（会退化为复制）
 - **大文件上传**：流式读取（`file.stream.read(65536)`），边读边算MD5，不加载整个文件到内存
 - **日志**：使用 `logging` 模块，同时输出到文件和控制台
@@ -103,6 +104,7 @@
 | ADR-007 | 发布策略与调测门禁（调测期密集发布 / RTM 后手工发布 / 文档-only 不发布 / 双环境 TDD 全量回归门禁） | README + 本文件发布流程 |
 | ADR-008 | 端口/网络面部署选型（单/双网卡 × 单/双端口三方案对比；当前封闭内网保持方案1 单网卡单端口，PMF 按需升级方案2 双端口，互联网暴露才用方案3 双网卡） | README + 本文件网络面语义 |
 | ADR-009 | 部署凭据策略：每次部署重置 admin 密码为 .env RESET_PASSWORD（单一来源/verify 凭据自适应/测试不碰真实密码） | README + 本文件部署规范 |
+| ADR-010 | .env 与 SQLite 配置一致性：配置权威矩阵（部署级 .env 唯一 / 运行时 SQLite 唯一不再回写 / AD 配置迁 SQLite+管理页+配置总览，播种一次、DB 优先、来源标记防遗忘） | README + 本文件部署规范 + DEPLOY.md |
 
 ### ADR-005 详述：非硬编码原则（强制）
 
@@ -129,8 +131,8 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
 - **调测期（PSF Alpha/Beta）**：代码/脚本/配置模板每次变更即发布（密集发布，便于服务器验证）
 - **RTM 后**：默认不逐次发布，关键里程碑手工发布
 - **文档-only 变更**：commit + push main，不 bump、不打包、不建 Release（随仓库演进，代码发布时包内自动带入最新）
-- **调测门禁（双环境 TDD 全量回归）**：本地调测中间阶段——Windows 开发环境（testing：`python test_api.py` 193项）
-  + WSL 测试环境（production：`infra/verify.sh` 193项），**全部通过才允许 bump + 发布**
+- **调测门禁（双环境 TDD 全量回归）**：本地调测中间阶段——Windows 开发环境（testing：`python test_api.py` 201项）
+  + WSL 测试环境（production：`infra/verify.sh` 201项），**全部通过才允许 bump + 发布**
 - 版本号是发布产物属性，APP_VERSION 只在代码发布时递增
 
 
@@ -146,6 +148,15 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
 - **verify 凭据自适应**：verify.sh 从 .env RESET_PASSWORD 取凭据；`VERIFY_ADMIN_USER`/`VERIFY_ADMIN_PASS` 环境变量可显式覆盖（admin 密码手工修改后：`VERIFY_ADMIN_PASS=xxx bash infra/verify.sh`）
 - **测试安全**：test_api.py 凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS；改密测试用专用用户 testpwuser，不碰真实 admin 密码
 - **已落点**：v2.2.18（app.py / deploy.sh / verify.sh / test_api.py）
+
+### ADR-010 详述：.env 与 SQLite 配置一致性——配置权威矩阵（强制）
+- **三档配置，各档唯一权威，禁止双重配置**：
+  - **部署级配置（.env 唯一，进程启动读取，改后 restart 生效）**：DEPLOY_MODE / HOST / PORT / INTERNAL_CIDRS / NAS_ROOT / SECURETRANS_DATA / SECRET_KEY / RESET_PASSWORD；由 systemd EnvironmentFile 机制加载，界面只读展示
+  - **运行时配置（SQLite 唯一，界面可改、即时生效，不再回写 .env）**：system_config（app_name / auto_approval_enabled / default_expiry_days / max_file_size_mb）；api_update_system_config 已删除 .env 回写，防两处漂移
+  - **AD 连接配置（SQLite ad_config 权威，管理页可配）**：10 键 ad_enabled/ad_host/ad_domain/ad_base_dn/ad_bind_dn/ad_bind_password/ad_user_field/ad_display_field/ad_mail_field/ad_group_field；首次部署表空从 .env 播种（source=env）→ 管理页可"从 .env 导入"/保存（source=db，即时生效）→ 空值回退 .env/默认；authenticate_ad / api_login 域判断 / api_search_ad 全部运行时读取
+- **一致性机制**：①播种一次（空表从 .env 导入）；②**配置总览页**（系统配置页卡片：.env 部署级只读 + DB 运行时配置，逐项标来源 env/db 与更新时间）；③**冲突规则 DB 优先**（界面保存即权威，.env 不回写）；④文档化（README/AGENTS/DEPLOY 三处同步）
+- **边界**：部署级配置不迁 DB；AD_BIND_PASSWORD 脱敏显示（前2位+****），重新输入才覆盖；.env 仅部署级参数与首次播种
+- **已落点**：v2.2.20（app.py ad_config 表/AD_ENV_MAP/get_ad_config_value/mask_secret/运行时读取改造 + GET·PUT /api/admin/ad-config + POST /api/admin/ad-config/import + GET /api/admin/config-overview + 前端 AD 配置/配置总览卡片 + test_api.py 201 项）
 ## 研发流程
 
 ### 阶段划分（Lean Startup）
@@ -171,7 +182,7 @@ main ────●────●────●────●────  �
 1. **需求**：Sprint Planning，拆分Story，确认验收标准
 2. **设计**：复杂功能技术方案，API定义，ADR记录
 3. **开发**：编码 + 单元测试 + 每日站会
-4. **测试**：全量回归（`tests/test_api.py` 193项）+ Bug修复
+4. **测试**：全量回归（`tests/test_api.py` 201项）+ Bug修复
 5. **验证**：Sprint Review，PO验收，收集反馈
 6. **复盘**：Retrospective，输出迭代小结文档（`docs/07-psf-sprintN-retrospective.md`）
 
@@ -191,9 +202,9 @@ main ────●────●────●────●────  �
 ### 自动化测试
 
 - **测试脚本**：`tests/test_api.py`，使用Python标准库urllib，无额外依赖；**admin 凭据参数化**：`TEST_ADMIN_USER`/`TEST_ADMIN_PASS` 环境变量（默认 admin/Admin@123，Windows dev 场景）
-- **测试范围**：全量193项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置、i18n双语、网络面隔离、部署凭据策略）
+- **测试范围**：全量201项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置、i18n双语、网络面隔离、部署凭据策略、AD 配置管理/配置总览）
 - **运行方式**：先启动服务（`cd src && python app.py`），再 `cd tests && python test_api.py`，预期通过率100%
-- **部署验证**：`infra/verify.sh`（193项全量，BASE_URL 自动适配 .env HOST/PORT——HOST=具体IP时自动用 http://<IP>:PORT；**admin 凭据自动取 .env RESET_PASSWORD**（部署时 admin 密码已重置为该值），admin 密码被手工修改时用 `VERIFY_ADMIN_PASS` 显式传入）
+- **部署验证**：`infra/verify.sh`（201项全量，BASE_URL 自动适配 .env HOST/PORT——HOST=具体IP时自动用 http://<IP>:PORT；**admin 凭据自动取 .env RESET_PASSWORD**（部署时 admin 密码已重置为该值），admin 密码被手工修改时用 `VERIFY_ADMIN_PASS` 显式传入）
 - **新增功能**：必须在 test_api.py 中添加对应测试用例
 - **i18n 测试**：双语回归组覆盖后端 error_en/message_en、动态模板翻译、前端 I18N 字典资源检查
 
@@ -223,6 +234,20 @@ main ────●────●────●────●────  �
 - **改 .env 后 `sudo systemctl restart securetrans` 即生效，无需重跑部署**（HOST/PORT/INTERNAL_CIDRS 等全部一致）
 - `.env` 由 deploy.sh 保护：已存在则不覆盖（.env.deploybak 备份），需要重置时手工删除后重跑
 
+### 配置权威矩阵（ADR-010，强制）
+
+**三档配置，各档唯一权威，禁止双重配置**：
+
+| 档位 | 权威位置 | 操作方式 | 生效方式 | 内容 |
+|------|---------|---------|---------|------|
+| 部署级配置 | `.env` 唯一 | 编辑 .env | restart 生效（systemd EnvironmentFile） | DEPLOY_MODE/HOST/PORT/INTERNAL_CIDRS/NAS_ROOT/SECURETRANS_DATA/SECRET_KEY/RESET_PASSWORD |
+| 运行时配置 | SQLite system_config | 系统配置页 | 即时生效，**不再回写 .env** | app_name/auto_approval_enabled/default_expiry_days/max_file_size_mb |
+| AD 连接配置 | SQLite ad_config | 系统配置页→AD 配置（导入 .env/保存） | 即时生效（空值回退 .env/默认） | ad_enabled/ad_host/ad_domain/ad_base_dn/ad_bind_dn/ad_bind_password/ad_user_field/ad_display_field/ad_mail_field/ad_group_field |
+
+- **一致性机制**：①首次部署表空从 .env 播种（source=env）；②配置总览页（.env 只读 + DB 配置，逐项标来源 env/db + 更新时间）；③**DB 优先**（界面保存即权威）；④README/AGENTS/DEPLOY 三处文档同步
+- **AD 配置首次启用**：系统配置页→AD 配置卡片→"从 .env 导入"把 .env 当前值读入 DB（source=env）→ 按需修改保存（source=db）→ 即时生效；AD_BIND_PASSWORD 脱敏显示（前2位+****），重新输入才覆盖
+- **改 .env 里的 AD 参数不再生效**（运行期读 DB）；如需重置为 .env 值，管理页"从 .env 导入"
+
 ### 网络面业务语义（重要）
 
 - 内/外网**均属公司内部网络分区**：内网=提交/审批区，外网=接收/下载区
@@ -235,7 +260,7 @@ main ────●────●────●────●────  �
 
 - `infra/deploy.sh`：一键式部署（root运行；Python 3.12 获取优先级：系统已有 → offline-python/ 离线RPM → dnf AppStream/EPEL；离线 wheel 优先；NAS_ROOT 可环境变量覆盖并写回 .env；systemd ReadWritePaths 模板渲染——NAS 不存在时只保留 /opt/securetrans，避免 systemd 226/NAMESPACE）
 - `infra/get-offline-python.sh`：离线 Python 3.12 RPM 获取（联网 Rocky8 运行一次，产出 offline-python/ 随包离线携带）
-- `infra/verify.sh`：部署验证（193项全量测试，BASE_URL 自适应绑定地址，admin 凭据自动取 .env RESET_PASSWORD）
+- `infra/verify.sh`：部署验证（201项全量测试，BASE_URL 自适应绑定地址，admin 凭据自动取 .env RESET_PASSWORD）
 - `infra/nginx-securetrans.conf` / `nginx-securetrans-single.conf`：Nginx 双/单网卡反向代理配置
 - `infra/securetrans.service`：systemd服务配置（gunicorn，${HOST}:${PORT} 变量展开）
 - 脚本必须使用LF换行，不能有CRLF；修改后必须 `bash -n` 语法检查
@@ -291,4 +316,4 @@ main ────●────●────●────●────  �
 
 ---
 
-*AGENTS.md v1.8 | 2026-09-08*
+*AGENTS.md v1.9 | 2026-09-09*

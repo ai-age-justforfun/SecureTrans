@@ -40,7 +40,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.19"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.20"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
@@ -64,6 +64,13 @@ AD_USER_FIELD = os.getenv("AD_USER_FIELD", "sAMAccountName").strip()  # 登录�
 AD_DISPLAY_FIELD = os.getenv("AD_DISPLAY_FIELD", "displayName").strip()  # 显示名属性
 AD_MAIL_FIELD = os.getenv("AD_MAIL_FIELD", "mail").strip()  # 邮箱属性
 AD_GROUP_FIELD = os.getenv("AD_GROUP_FIELD", "memberOf").strip()  # 组属性
+# AD 配置键映射（ADR-010：运行期以 SQLite ad_config 优先，.env 为 fallback/部署种子；管理页可配置）
+AD_ENV_MAP = {
+    "ad_enabled": "AD_ENABLED", "ad_host": "AD_HOST", "ad_domain": "AD_DOMAIN",
+    "ad_base_dn": "AD_BASE_DN", "ad_bind_dn": "AD_BIND_DN", "ad_bind_password": "AD_BIND_PASSWORD",
+    "ad_user_field": "AD_USER_FIELD", "ad_display_field": "AD_DISPLAY_FIELD",
+    "ad_mail_field": "AD_MAIL_FIELD", "ad_group_field": "AD_GROUP_FIELD",
+}
 
 # 过期清理配置
 EXTERNAL_EXPIRY_DAYS = int(os.getenv("EXTERNAL_EXPIRY_DAYS", "7"))  # external 文件默认 7 天过期
@@ -348,6 +355,13 @@ def init_db():
         download_time TEXT,
         ip TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS ad_config (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        source TEXT DEFAULT 'db',
+        updated_at TEXT
+    );
     """)
 
     # ---- 数据库迁移（兼容已存在的旧库，补列）----
@@ -434,6 +448,19 @@ def init_db():
                 (str(uuid.uuid4()), name, rtype, pattern, enabled, now_str())
             )
 
+    # 播种 ad_config（ADR-010）：表空时从 .env 读入一次（source=env），此后以管理页保存值（source=db）为准
+    seed_rows = conn.execute("SELECT COUNT(*) as c FROM ad_config").fetchone()
+    if seed_rows["c"] == 0:
+        for k, envk in AD_ENV_MAP.items():
+            envv = os.getenv(envk, "")
+            if envv:
+                conn.execute(
+                    "INSERT INTO ad_config (key,value,source,updated_at) VALUES (?,?,?,?)",
+                    (k, envv.strip(), "env", now_str())
+                )
+        conn.commit()
+        logger.info("ad_config 已从 .env 播种（source=env），管理页可查看/导入/保存")
+
     conn.commit()
     conn.close()
     logger.info("数据库初始化完成: %s", DB_PATH)
@@ -505,6 +532,21 @@ def get_config_value(key: str, default: str = None) -> str:
     db = get_db()
     row = db.execute("SELECT value FROM system_config WHERE key=?", (key,)).fetchone()
     return row["value"] if row else default
+
+def get_ad_config_value(key: str, default: str = None) -> str:
+    """读取 AD 配置：SQLite ad_config 优先（ADR-010，管理页可配、即时生效），
+    未配置/为空时 fallback 默认值（.env 或代码默认）。"""
+    db = get_db()
+    row = db.execute("SELECT value FROM ad_config WHERE key=?", (key,)).fetchone()
+    if row is not None and row["value"] != "":
+        return row["value"]
+    return default
+
+def mask_secret(v: str) -> str:
+    """脱敏显示（密钥类配置只显示前 2 位 + ****）"""
+    if not v:
+        return ""
+    return v[:2] + "****" if len(v) > 4 else "****"
 
 ENV_FILE = BASE_DIR / ".env"
 
@@ -784,8 +826,9 @@ def authenticate_ad(username: str, password: str):
     - AD_BIND_DN=CN=svc-securetrans,OU=Service,DC=company,DC=com  (可选，服务账户)
     - AD_BIND_PASSWORD=xxxxxx                 (可选，服务账户密码)
     """
-    if not AD_ENABLED:
-        return None, "AD_ENABLED=false（未启用AD认证）"
+    ad_enabled = get_ad_config_value("ad_enabled", "false").lower() == "true"
+    if not ad_enabled:
+        return None, "AD_ENABLED=false（未启用AD认证，可在系统管理-AD配置开启）"
     if not password:
         return None, "密码为空"
     try:
@@ -795,8 +838,8 @@ def authenticate_ad(username: str, password: str):
         return None, "ldap3 未安装（pip install ldap3）"
 
     try:
-        # 解析 AD_HOST，支持 ldap:// / ldaps:// 前缀
-        host = AD_HOST
+        # 解析 AD_HOST（运行期以 DB 配置优先，fallback .env），支持 ldap:// / ldaps:// 前缀
+        host = get_ad_config_value("ad_host", AD_HOST)
         use_ssl = host.startswith("ldaps://")
         if "://" in host:
             host = host.split("://", 1)[1]
@@ -809,9 +852,10 @@ def authenticate_ad(username: str, password: str):
 
         server = ldap3.Server(host, port=port, use_ssl=use_ssl, get_info=ldap3.NONE, connect_timeout=5)
 
-        # 方式1：用户直接绑定（UPN 格式）
-        if AD_DOMAIN:
-            user_upn = f"{username}@{AD_DOMAIN}"
+        # 方式1：用户直接绑定（UPN 格式，AD_DOMAIN 运行期读取）
+        ad_domain = get_ad_config_value("ad_domain", AD_DOMAIN)
+        if ad_domain:
+            user_upn = f"{username}@{ad_domain}"
         else:
             user_upn = username
 
@@ -825,18 +869,23 @@ def authenticate_ad(username: str, password: str):
         display_name = username
         email = ""
         groups = []
-        if AD_BASE_DN:
+        ad_base_dn = get_ad_config_value("ad_base_dn", AD_BASE_DN)
+        ad_user_field = get_ad_config_value("ad_user_field", AD_USER_FIELD)
+        ad_display_field = get_ad_config_value("ad_display_field", AD_DISPLAY_FIELD)
+        ad_mail_field = get_ad_config_value("ad_mail_field", AD_MAIL_FIELD)
+        ad_group_field = get_ad_config_value("ad_group_field", AD_GROUP_FIELD)
+        if ad_base_dn:
             try:
-                conn.search(AD_BASE_DN, f"({AD_USER_FIELD}={username})",
-                             attributes=[AD_DISPLAY_FIELD, AD_MAIL_FIELD, AD_GROUP_FIELD, "department", "userPrincipalName"])
+                conn.search(ad_base_dn, f"({ad_user_field}={username})",
+                             attributes=[ad_display_field, ad_mail_field, ad_group_field, "department", "userPrincipalName"])
                 if conn.entries:
                     entry = conn.entries[0]
-                    if hasattr(entry, AD_DISPLAY_FIELD) and getattr(entry, AD_DISPLAY_FIELD):
-                        display_name = str(getattr(entry, AD_DISPLAY_FIELD))
-                    if hasattr(entry, AD_MAIL_FIELD) and getattr(entry, AD_MAIL_FIELD):
-                        email = str(getattr(entry, AD_MAIL_FIELD))
-                    if hasattr(entry, AD_GROUP_FIELD) and getattr(entry, AD_GROUP_FIELD):
-                        groups = [str(g) for g in getattr(entry, AD_GROUP_FIELD)]
+                    if hasattr(entry, ad_display_field) and getattr(entry, ad_display_field):
+                        display_name = str(getattr(entry, ad_display_field))
+                    if hasattr(entry, ad_mail_field) and getattr(entry, ad_mail_field):
+                        email = str(getattr(entry, ad_mail_field))
+                    if hasattr(entry, ad_group_field) and getattr(entry, ad_group_field):
+                        groups = [str(g) for g in getattr(entry, ad_group_field)]
             except Exception as e:
                 logger.warning("AD用户信息查询失败 %s: %s", username, e)
 
@@ -983,9 +1032,11 @@ def api_login():
     if "\\" in username:
         username = username.split("\\", 1)[1]
         source = "ad"
-    elif "@" in username and username.endswith(("@nexskysemi.com", "@company.com")):
-        username = username.split("@", 1)[0]
-        source = "ad"
+    elif "@" in username:
+        _ad_domain = get_ad_config_value("ad_domain", AD_DOMAIN)
+        if _ad_domain and username.endswith("@" + _ad_domain):
+            username = username.split("@", 1)[0]
+            source = "ad"
 
     ip = get_client_ip()
 
@@ -1592,7 +1643,7 @@ def api_delete_role_mapping(mapping_id):
 def api_search_ad():
     """搜索 AD 用户（PMF 阶段模拟，生产接入真实 LDAP 查询）"""
     keyword = request.form.get("keyword", "") if request.form else (request.get_json() or {}).get("keyword", "")
-    if not AD_ENABLED:
+    if get_ad_config_value("ad_enabled", "false").lower() != "true":
         # 模拟返回
         mock = [
             {"username": "zhangsan", "displayName": "张三", "email": "zhangsan@nexskysemi.com", "department": "研发部"},
@@ -1604,6 +1655,77 @@ def api_search_ad():
         return jsonify(result)
     # TODO: 生产环境真实 AD 查询
     return jsonify([])
+
+# ============================================================
+# 路由：AD 配置管理 + 配置总览（ADR-010，仅 admin）
+# ============================================================
+@app.route("/api/admin/ad-config")
+@login_required
+@role_required("admin")
+def api_get_ad_config():
+    """返回 DB 中 AD 配置（含来源/时间）+ .env 当前值（只读展示 / 导入源）"""
+    db = get_db()
+    rows = db.execute("SELECT key,value,source,updated_at FROM ad_config").fetchall()
+    db_map = {r["key"]: {"value": r["value"], "source": r["source"], "updated_at": r["updated_at"]} for r in rows}
+    env_map = {envk: os.getenv(envk, "") for envk in AD_ENV_MAP.values()}
+    return jsonify({"db": db_map, "env": env_map})
+
+@app.route("/api/admin/ad-config/import", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_import_ad_config():
+    """将 .env 当前 AD 值导入 DB（source=env）；用于首次查看 .env 配置导入到页面"""
+    db = get_db()
+    now = now_str()
+    for k, envk in AD_ENV_MAP.items():
+        envv = os.getenv(envk, "")
+        db.execute("INSERT OR REPLACE INTO ad_config (key,value,source,updated_at) VALUES (?,?,?,?)",
+                   (k, envv.strip(), "env", now))
+    db.commit()
+    add_audit_log(current_user.username, "import_ad_config", "", "从 .env 导入 AD 配置", get_client_ip())
+    return jsonify({"message": "已从 .env 导入 AD 配置（source=env）"})
+
+@app.route("/api/admin/ad-config", methods=["PUT"])
+@login_required
+@role_required("admin")
+def api_update_ad_config():
+    """保存 AD 配置到 DB（source=db，即时生效）；空值写入后读取时回退 .env/默认"""
+    data = request.get_json() or {}
+    db = get_db()
+    now = now_str()
+    for k, v in data.items():
+        if k not in AD_ENV_MAP:
+            continue
+        db.execute("INSERT OR REPLACE INTO ad_config (key,value,source,updated_at) VALUES (?,?,?,?)",
+                   (k, str(v).strip(), "db", now))
+    db.commit()
+    audit_detail = json.dumps(
+        {k: (mask_secret(str(v)) if k == "ad_bind_password" else v) for k, v in data.items() if k in AD_ENV_MAP},
+        ensure_ascii=False)
+    add_audit_log(current_user.username, "update_ad_config", "", audit_detail, get_client_ip())
+    return jsonify({"message": "AD 配置已保存（数据库权威，即时生效）"})
+
+@app.route("/api/admin/config-overview")
+@login_required
+@role_required("admin")
+def api_config_overview():
+    """配置总览：部署级 .env（只读）+ 运行时 DB（可编辑），来源标记，防遗忘"""
+    db = get_db()
+    deploy_env = {
+        "DEPLOY_MODE": os.getenv("DEPLOY_MODE", ""),
+        "HOST": os.getenv("HOST", ""),
+        "PORT": os.getenv("PORT", ""),
+        "INTERNAL_CIDRS": os.getenv("INTERNAL_CIDRS", ""),
+        "NAS_ROOT": os.getenv("NAS_ROOT", ""),
+        "SECURETRANS_DATA": os.getenv("SECURETRANS_DATA", ""),
+        "SECRET_KEY": mask_secret(os.getenv("SECRET_KEY", "")),
+        "RESET_PASSWORD": mask_secret(os.getenv("RESET_PASSWORD", "")),
+    }
+    sys_rows = db.execute("SELECT key,value FROM system_config").fetchall()
+    sys_cfg = {r["key"]: r["value"] for r in sys_rows}
+    ad_rows = db.execute("SELECT key,value,source,updated_at FROM ad_config").fetchall()
+    ad_cfg = {r["key"]: {"value": r["value"], "source": r["source"], "updated_at": r["updated_at"]} for r in ad_rows}
+    return jsonify({"deploy_env": deploy_env, "runtime_db": {"system_config": sys_cfg, "ad_config": ad_cfg}})
 
 # ============================================================
 # 路由：合作方白名单（admin）
@@ -1834,29 +1956,12 @@ def api_get_system_config():
 def api_update_system_config():
     config = request.get_json()
     db = get_db()
-    env_updates = {}
     for k, v in config.items():
         db.execute("INSERT OR REPLACE INTO system_config (key,value) VALUES (?,?)", (k, str(v)))
-        # 同步映射回 .env（单一配置源）：max_file_size_mb→MAX_CONTENT_LENGTH 等
-        if k == "max_file_size_mb":
-            try:
-                env_updates["MAX_CONTENT_LENGTH"] = str(int(float(v)) * 1024 * 1024)
-            except (ValueError, TypeError):
-                pass
-        elif k == "default_expiry_days":
-            try:
-                env_updates["EXTERNAL_EXPIRY_DAYS"] = str(int(float(v)))
-            except (ValueError, TypeError):
-                pass
-        elif k == "auto_approval_enabled":
-            env_updates["AUTO_APPROVAL_ENABLED"] = "true" if str(v).lower() == "true" else "false"
     db.commit()
-    synced = False
-    if env_updates:
-        synced = write_env_config(env_updates)
     add_audit_log(current_user.username, "update_system_config", "", json.dumps(config, ensure_ascii=False), get_client_ip())
-    msg = "配置已保存" + ("，并同步到 .env（重启后由 systemd 加载）" if synced else "（未同步 .env，仅存数据库）")
-    return jsonify({"message": msg})
+    # ADR-010：运行时配置以 SQLite 为唯一权威（.env 仅部署级与首次播种），不再回写 .env
+    return jsonify({"message": "配置已保存（数据库权威，即时生效）"})
 
 # ============================================================
 # 路由：审计日志与统计

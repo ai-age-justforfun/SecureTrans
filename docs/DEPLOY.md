@@ -18,23 +18,30 @@
 | AD 认证 | 默认关闭，用本地 admin | 按需开启 |
 | 适用场景 | 开发 / 功能验证 / PSF 原型 | PMF 试点 / 正式部署 |
 
-**AD 认证配置（.env，v2.2.19+）**：
+**AD 认证配置（.env 模板 + 管理页可配，v2.2.20+）**：
 
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| `AD_ENABLED` | `false` | 开启 AD 认证 |
-| `AD_HOST` | 空 | `ldap://<DC>:389` 或 `ldaps://<DC>:636` |
-| `AD_DOMAIN` | 空 | 构造 UPN `用户名@域`（与 sssd 同协议，兼容） |
-| `AD_BASE_DN` | 空 | 用户搜索基准，如 `DC=company,DC=com` |
-| `AD_BIND_DN` / `AD_BIND_PASSWORD` | 空 | 可选服务账户（未配置则用 UPN 直绑） |
-| `AD_USER_FIELD` | `sAMAccountName` | 登录名查询属性（企业 AD 定制字段时调整，非硬编码） |
-| `AD_DISPLAY_FIELD` | `displayName` | 显示名属性 |
-| `AD_MAIL_FIELD` | `mail` | 邮箱属性 |
-| `AD_GROUP_FIELD` | `memberOf` | 组属性 |
+> **配置权威（ADR-010）**：AD 连接参数运行期以 SQLite `ad_config` 为唯一权威，`.env` 仅作部署模板与首次播种。
+> 首次启用 AD：部署完成后登录 admin →「系统配置 → AD 配置」→ 点 **从 .env 导入**（把下方 .env 值读入数据库）→ 按需修改 → **保存**（即时生效，无需重启）。
+> 之后改 AD 参数在管理页操作，**改 .env 不再生效**；如需重置回 .env 值，再次点"从 .env 导入"。
+
+| 配置项（.env 键） | 管理页键 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `AD_ENABLED` | ad_enabled | `false` | 开启 AD 认证（总开关） |
+| `AD_HOST` | ad_host | 空 | `ldap://<DC>:389` 或 `ldaps://<DC>:636` |
+| `AD_DOMAIN` | ad_domain | 空 | 构造 UPN `用户名@域`（与 sssd 同协议，兼容） |
+| `AD_BASE_DN` | ad_base_dn | 空 | 用户搜索基准，如 `DC=company,DC=com` |
+| `AD_BIND_DN` / `AD_BIND_PASSWORD` | ad_bind_dn / ad_bind_password | 空 | 可选服务账户（未配置则用 UPN 直绑）；管理页密码脱敏显示（前2位+****），重新输入才覆盖 |
+| `AD_USER_FIELD` | ad_user_field | `sAMAccountName` | 登录名查询属性（企业 AD 定制字段时调整，非硬编码） |
+| `AD_DISPLAY_FIELD` | ad_display_field | `displayName` | 显示名属性 |
+| `AD_MAIL_FIELD` | ad_mail_field | `mail` | 邮箱属性 |
+| `AD_GROUP_FIELD` | ad_group_field | `memberOf` | 组属性 |
 
 **AD 登录验证**：支持 `用户名`（先本地后 AD）/ `域\用户名` / `用户名@AD_DOMAIN` 三种格式；
 登录结果与失败原因（未启用/密码错误/连接异常/ldap3 未装）写入审计日志可查；AD 用户登录不落库，
 角色默认普通用户，审批权限由 admin 在「审批人配置」按用户名直接配置。
+
+**配置总览（防遗忘）**：「系统配置 → 配置总览」卡片同时展示 `.env` 部署级参数（只读）与数据库运行时配置
+（system_config + ad_config，逐项标来源 env/db 与更新时间），一眼识别配置差异与权威位置。
 
 **切换方式**：修改 `.env` 中的 `DEPLOY_MODE` 和 `NAS_ROOT`，换启动命令。代码不变。
 
@@ -77,7 +84,7 @@ powershell -ExecutionPolicy Bypass -File infra/deploy.ps1 -InstallDir C:\SecureT
 运行测试（另一个终端）：
 ```bash
 cd tests
-python test_api.py    # 193项全通过
+python test_api.py    # 201项全通过
 ```
 
 ### 2.3 方式 B：WSL Rocky Linux（模拟生产环境）
@@ -100,7 +107,7 @@ python app.py    # 部署模式: testing
 
 Windows 浏览器访问 http://localhost:8000（WSL2 自动端口转发）。运行测试：
 ```bash
-cd ~/securetrans/tests && python3 test_api.py   # 193项全通过
+cd ~/securetrans/tests && python3 test_api.py   # 201项全通过
 ```
 
 ### 2.4 测试验证清单
@@ -155,7 +162,7 @@ cd ~/securetrans/tests && python3 test_api.py   # 193项全通过
 tar xzf securetrans-<版本>.tar.gz -C /opt/securetrans --strip-components=1
 # 2. 一键部署（root 运行）
 sudo bash /opt/securetrans/infra/deploy.sh
-# 3. 全量验证（193项，admin 凭据自动取 .env RESET_PASSWORD）
+# 3. 全量验证（201项，admin 凭据自动取 .env RESET_PASSWORD）
 sudo bash /opt/securetrans/infra/verify.sh
 ```
 
@@ -241,7 +248,7 @@ python3 -m venv venv
 
 ### 阶段2：测试环境部署 + 自动化测试（DEPLOY_MODE=testing）
 
-> 目的：先用最简模式（本地文件系统 + Flask 自带服务器）确认程序在服务器上能跑、193项全过。
+> 目的：先用最简模式（本地文件系统 + Flask 自带服务器）确认程序在服务器上能跑、201项全过。
 
 ```bash
 cd /opt/securetrans/src
@@ -260,7 +267,7 @@ python3 test_api.py
 
 **通过标准**
 - [ ] 健康检查返回 `deployMode":"testing"`
-- [ ] 193项测试 100% 通过
+- [ ] 201项测试 100% 通过
 - [ ] 浏览器访问 `http://<内网IP>:8000`，admin 登录（密码 = .env `RESET_PASSWORD`，首次强制改密）
 
 ### 阶段3：生产环境部署 + 自动化测试（DEPLOY_MODE=production）
@@ -308,7 +315,7 @@ python3 test_api.py    # 自动读取 /opt/securetrans/.env 的 NAS_ROOT，无�
 
 **通过标准**
 - [ ] systemd 服务 active，`deployMode":"production"`
-- [ ] 193项测试 100% 通过（生产模式）
+- [ ] 201项测试 100% 通过（生产模式）
 - [ ] 确认 gunicorn 多 worker 无并发初始化报错
 - [ ] 首次访问初始化正常：`/opt/securetrans/data/securetrans.db`、`/opt/securetrans/nas/{staging,external,archive}` 自动创建
 
@@ -340,7 +347,7 @@ df -h /mnt/nas/securetrans/staging /mnt/nas/securetrans/external /mnt/nas/secure
 
 **通过标准**
 - [ ] NAS 三个目录同一文件系统
-- [ ] 生产模式在 NAS 上再跑 193项自动化测试 100%
+- [ ] 生产模式在 NAS 上再跑 201项自动化测试 100%
 - [ ] os.rename 0拷贝：上传→审批→摆渡 毫秒级
 
 > **说明：测试/内网试用阶段不需要 Nginx**——gunicorn 已是生产 WSGI 服务器，直接监听 8000 即可完整服务。
@@ -446,7 +453,7 @@ systemctl start securetrans
 **网络面隔离（无 Nginx 时仍生效）**：
 应用层 `get_network_zone()` 两级识别——① 优先读 Nginx 注入的 `X-Network-Zone` 头；② 未注入时按
 客户端 IP + `INTERNAL_CIDRS` 网段兜底（直连/无代理场景）。因此不启动 Nginx 时，外网 IP 访问管理接口
-仍返回 403，隔离能力不丢失（193项测试含网络面用例）。
+仍返回 403，隔离能力不丢失（201项测试含网络面用例）。
 
 **Alpha 测试访问路径**：数据中心内网与办公外网用户访问**同一网址** `http://10.10.30.8:8000`，
 应用层按源 IP 自动分面——内网网段（10.10.10.0/24、10.10.30.0/24）→ internal 全功能（提交/审批/管理）；
@@ -481,7 +488,7 @@ ss -tlnp | grep 8000        # 期望 0.0.0.0:8000 或 <内网IP>:8000（非仅 1
 # 办公外网如需经防火墙 DNAT/路由转发，须保留原始源 IP（不 SNAT），应用层才能正确分面
 
 # 5. 回归确认
-cd /opt/securetrans/tests && python3 test_api.py   # 193项全通过
+cd /opt/securetrans/tests && python3 test_api.py   # 201项全通过
 ```
 
 **何时再引入 Nginx**（Alpha 验证结束、正式发布前）：
@@ -522,7 +529,7 @@ Windows 服务化（开机自启）可用 NSSM：`nssm install SecureTrans` 指�
 | 1 | `python --version` ≥ 3.10（deploy.ps1 自动检测） | ☐ |
 | 2 | 一键部署成功，`C:\SecureTrans\.env` 生成 | ☐ |
 | 3 | 访问 http://localhost:8000，admin 登录（密码 = .env RESET_PASSWORD） | ☐ |
-| 4 | 运行全量测试：`cd tests; python test_api.py`（193项） | ☐ |
+| 4 | 运行全量测试：`cd tests; python test_api.py`（201项） | ☐ |
 | 5 | waitress 生产启动健康检查通过 | ☐ |
 | 6 | 单网卡隔离：内网段全功能，非内网段仅登录+下载（管理接口403） | ☐ |
 | 7 | NSSM/计划任务服务化（可选） | ☐ |
@@ -530,6 +537,24 @@ Windows 服务化（开机自启）可用 NSSM：`nssm install SecureTrans` 指�
 ---
 
 ## 五、日常运维
+
+### 5.1 配置权威矩阵（ADR-010，改配置前先看这里）
+
+**三档配置，各档唯一权威，禁止双重配置**：
+
+| 档位 | 权威位置 | 怎么改 | 生效方式 |
+|------|---------|-------|---------|
+| 部署级配置 | `.env` | 编辑 `.env` | 改后 `systemctl restart securetrans` |
+| 运行时配置 | 数据库 system_config | 系统配置页（界面） | 即时生效，**不再回写 .env** |
+| AD 连接配置 | 数据库 ad_config | 系统配置页 → AD 配置（导入 .env / 保存） | 即时生效，空值回退 .env/默认 |
+
+- 部署级配置 = DEPLOY_MODE / HOST / PORT / INTERNAL_CIDRS / NAS_ROOT / SECURETRANS_DATA / SECRET_KEY / RESET_PASSWORD
+- 运行时配置 = app_name / auto_approval_enabled / default_expiry_days / max_file_size_mb（界面保存即权威，.env 同步回写已删除，防两处漂移）
+- AD 连接配置 = 上方 AD 表 10 键；首次部署表空自动从 .env 播种（source=env），管理页可"从 .env 导入"/保存（source=db）
+- **防遗忘机制**：系统配置页「配置总览」卡片左右对照——左 `.env` 只读、右 DB 配置，逐项标来源 env/db 与更新时间
+- **冲突规则**：DB 优先（运行时/AD 配置界面保存即权威；.env 仅部署级参数与首次播种，不参与运行期业务判断）
+
+### 5.2 常用运维命令
 
 ```bash
 sudo systemctl status securetrans       # 查看状态
@@ -552,11 +577,11 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 │   ├── .env.production       # 生产环境配置模板
 │   └── static/               # 前端SPA（index.html，单页应用）
 ├── tests/
-│   └── test_api.py           # 193项全量测试
+│   └── test_api.py           # 201项全量测试
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署 (Linux)
 │   ├── deploy.ps1            # 一键部署 (Windows)
-│   ├── verify.sh             # 部署验证（193项全量测试，凭据自动取 .env RESET_PASSWORD）
+│   ├── verify.sh             # 部署验证（201项全量测试，凭据自动取 .env RESET_PASSWORD）
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式
 │   ├── nginx-securetrans-single.conf # Nginx 单网卡模式
 │   ├── securetrans.service   # systemd 服务

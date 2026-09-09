@@ -1241,12 +1241,37 @@ try:
          and 'AD_MAIL_FIELD = os.getenv("AD_MAIL_FIELD", "mail")' in _app_src
          and 'AD_GROUP_FIELD = os.getenv("AD_GROUP_FIELD", "memberOf")' in _app_src)
     test("AD: 查询 filter 使用可配置字段(非硬编码 sAMAccountName)",
-         '(sAMAccountName={username})' not in _app_src and 'f"({AD_USER_FIELD}={username})"' in _app_src)
+         'f"({AD_USER_FIELD}={username})"' not in _app_src and 'f"({ad_user_field}={username})"' in _app_src)
     test("AD: 失败原因返回并写入审计日志(login_failed detail)",
          'authenticate_ad(username, password)' in _app_src and 'ad_reason or "用户名或密码错误"' in _app_src
          and 'login_failed", "ad", ad_reason' in _app_src)
 except Exception as e:
     test("网络: app.py 源码检查", False, str(e))
+
+# ============================================================
+# AD 配置管理 + 配置总览（ADR-010：DB 权威 / .env 导入 / 来源标记）
+# ============================================================
+code, data = request('GET', '/api/admin/ad-config')
+test("AD配置: 管理API可读(admin)", code == 200 and 'db' in data and 'env' in data, f"code={code}")
+code, data = request('PUT', '/api/admin/ad-config', json_data={"ad_host": "ldap://t.example.com:389", "ad_enabled": "false"})
+test("AD配置: 保存到DB(source=db)", code == 200, f"code={code}")
+code, data = request('GET', '/api/admin/ad-config')
+test("AD配置: 保存后持久化读取",
+     code == 200 and data.get('db', {}).get('ad_host', {}).get('value') == 'ldap://t.example.com:389'
+     and data['db']['ad_host']['source'] == 'db', f"code={code}")
+code, data = request('POST', '/api/admin/ad-config/import')
+test("AD配置: 从.env导入(source=env)", code == 200, f"code={code}")
+code, data = request('GET', '/api/admin/ad-config')
+test("AD配置: 导入后source=env", code == 200 and data.get('db', {}).get('ad_host', {}).get('source') == 'env', f"code={code}")
+request('PUT', '/api/admin/ad-config', json_data={"ad_host": ""})  # 清空恢复（回退 .env）
+code, data = request('GET', '/api/admin/config-overview')
+test("AD配置: 配置总览API(admin)", code == 200 and 'deploy_env' in data and 'runtime_db' in data and 'ad_config' in data['runtime_db'], f"code={code}")
+test("AD配置: app.py 含 ad_config 表/DB优先读取/AD_ENV_MAP/去.env回写",
+     'CREATE TABLE IF NOT EXISTS ad_config' in _app_src and 'def get_ad_config_value' in _app_src
+     and 'AD_ENV_MAP' in _app_src and '不再回写 .env' in _app_src)
+test("AD配置: 前端含AD配置卡片+总览卡片+i18n",
+     'id="ad_enabled"' in _html and 'id="ov_deploy"' in _html and 'id="ov_runtime"' in _html
+     and 'adConfig.title' in _html and 'overview.title' in _html and 'function escapeHtml' in _html)
 
 # ============================================================
 # 测试报告

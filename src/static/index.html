@@ -205,7 +205,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.2.19';
+const APP_VERSION = 'v2.2.20';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -294,6 +294,14 @@ const I18N = {
     'config.ruleModalNew': '新增特征码规则', 'config.ruleModalEdit': '编辑特征码规则',
     'config.ruleNameLbl': '规则名称', 'config.ruleNamePh': '如：PDF文档', 'config.ruleTypeLbl': '规则类型',
     'config.rulePattern': '匹配模式', 'config.rulePatternPh': '如：.pdf 或 hex:504B0304', 'config.ruleEnabled': ' 启用',
+    'adConfig.title': 'AD 配置（数据库权威，可导入 .env）', 'adConfig.import': '从 .env 导入', 'adConfig.save': '保存 AD 配置',
+    'adConfig.enabled': '启用 AD', 'adConfig.host': 'AD_HOST', 'adConfig.domain': 'AD_DOMAIN', 'adConfig.baseDn': 'AD_BASE_DN',
+    'adConfig.bindDn': 'AD_BIND_DN（可选）', 'adConfig.bindPwd': 'AD_BIND_PASSWORD（可选）',
+    'adConfig.userField': 'AD_USER_FIELD', 'adConfig.displayField': 'AD_DISPLAY_FIELD', 'adConfig.mailField': 'AD_MAIL_FIELD', 'adConfig.groupField': 'AD_GROUP_FIELD',
+    'adConfig.hint': '保存后即时生效（无需重启）；留空回退 .env 值；AD 登录成功/失败原因见审计日志。',
+    'adConfig.imported': '已从 .env 导入 AD 配置', 'adConfig.saved': 'AD 配置已保存（即时生效）',
+    'overview.title': '配置总览（来源标记，防遗忘）', 'overview.deploy': '部署级配置（.env，只读，改后需重启）', 'overview.runtime': '运行时配置（数据库，界面可改，即时生效）',
+    'overview.key': '配置项', 'overview.value': '值', 'overview.source': '来源', 'overview.env': 'env', 'overview.db': 'db', 'overview.updated': '更新时间',
     'audit.titleDetail': '📋 明细', 'audit.titleStats': '📊 统计',
     'audit.detailTitle': '审计日志明细 (最近 {0} 条)', 'audit.user': '用户', 'audit.action': '操作', 'audit.target': '目标', 'audit.detail': '详情',
     'audit.statsTitle': '审计统计（人员 × 文件类型 × 每日）',
@@ -401,6 +409,14 @@ const I18N = {
     'config.ruleModalNew': 'New Signature Rule', 'config.ruleModalEdit': 'Edit Signature Rule',
     'config.ruleNameLbl': 'Rule Name', 'config.ruleNamePh': 'e.g. PDF Documents', 'config.ruleTypeLbl': 'Rule Type',
     'config.rulePattern': 'Pattern', 'config.rulePatternPh': 'e.g. .pdf or hex:504B0304', 'config.ruleEnabled': ' Enable',
+    'adConfig.title': 'AD Config (DB authority, import from .env)', 'adConfig.import': 'Import from .env', 'adConfig.save': 'Save AD Config',
+    'adConfig.enabled': 'Enable AD', 'adConfig.host': 'AD_HOST', 'adConfig.domain': 'AD_DOMAIN', 'adConfig.baseDn': 'AD_BASE_DN',
+    'adConfig.bindDn': 'AD_BIND_DN (optional)', 'adConfig.bindPwd': 'AD_BIND_PASSWORD (optional)',
+    'adConfig.userField': 'AD_USER_FIELD', 'adConfig.displayField': 'AD_DISPLAY_FIELD', 'adConfig.mailField': 'AD_MAIL_FIELD', 'adConfig.groupField': 'AD_GROUP_FIELD',
+    'adConfig.hint': 'Saved values take effect immediately (no restart); empty falls back to .env; AD login success/failure reasons are in audit logs.',
+    'adConfig.imported': 'Imported AD config from .env', 'adConfig.saved': 'AD config saved (effective now)',
+    'overview.title': 'Config Overview (source-tagged, anti-forgetting)', 'overview.deploy': 'Deploy-level config (.env, read-only, restart required)', 'overview.runtime': 'Runtime config (database, editable, immediate)',
+    'overview.key': 'Key', 'overview.value': 'Value', 'overview.source': 'Source', 'overview.env': 'env', 'overview.db': 'db', 'overview.updated': 'Updated',
     'audit.titleDetail': '📋 Details', 'audit.titleStats': '📊 Statistics',
     'audit.detailTitle': 'Audit Log Details (last {0})', 'audit.user': 'User', 'audit.action': 'Action', 'audit.target': 'Target', 'audit.detail': 'Detail',
     'audit.statsTitle': 'Audit Statistics (User × File Type × Daily)',
@@ -1438,6 +1454,44 @@ async function renderConfig() {
         <p class="text-sm text-muted mt-8" data-i18n="config.ruleHint">总开关在上方"免审批总开关"控制；每个规则可单独启用/禁用。匹配逻辑：总开关开启 + 规则启用 + 文件匹配规则 → 可免审批。</p>
       </div>
 
+      <!-- AD 配置卡片（ADR-010：数据库权威，可导入 .env，保存即时生效） -->
+      <div class="card">
+        <div class="card-title"><span data-i18n="adConfig.title">AD 配置（数据库权威，可导入 .env）</span>
+          <button class="btn btn-secondary btn-sm" style="float:right;" onclick="importAdConfig()" data-i18n="adConfig.import">从 .env 导入</button>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label data-i18n="adConfig.enabled">启用 AD</label>
+            <select id="ad_enabled"><option value="false">关闭</option><option value="true">开启</option></select>
+          </div>
+          <div class="form-group"><label data-i18n="adConfig.host">AD_HOST</label><input type="text" id="ad_host" placeholder="ldap://dc01.company.com:389"></div>
+          <div class="form-group"><label data-i18n="adConfig.domain">AD_DOMAIN</label><input type="text" id="ad_domain" placeholder="company.com"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label data-i18n="adConfig.baseDn">AD_BASE_DN</label><input type="text" id="ad_base_dn" placeholder="DC=company,DC=com"></div>
+          <div class="form-group"><label data-i18n="adConfig.bindDn">AD_BIND_DN（可选）</label><input type="text" id="ad_bind_dn"></div>
+          <div class="form-group"><label data-i18n="adConfig.bindPwd">AD_BIND_PASSWORD（可选）</label><input type="password" id="ad_bind_password"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label data-i18n="adConfig.userField">AD_USER_FIELD</label><input type="text" id="ad_user_field" placeholder="sAMAccountName"></div>
+          <div class="form-group"><label data-i18n="adConfig.displayField">AD_DISPLAY_FIELD</label><input type="text" id="ad_display_field" placeholder="displayName"></div>
+          <div class="form-group"><label data-i18n="adConfig.mailField">AD_MAIL_FIELD</label><input type="text" id="ad_mail_field" placeholder="mail"></div>
+          <div class="form-group"><label data-i18n="adConfig.groupField">AD_GROUP_FIELD</label><input type="text" id="ad_group_field" placeholder="memberOf"></div>
+        </div>
+        <button class="btn btn-primary" onclick="saveAdConfig()" data-i18n="adConfig.save">保存 AD 配置</button>
+        <p class="text-sm text-muted mt-8" data-i18n="adConfig.hint">保存后即时生效（无需重启）；留空回退 .env 值；AD 登录成功/失败原因见审计日志。</p>
+      </div>
+
+      <!-- 配置总览卡片（ADR-010：来源标记，防遗忘） -->
+      <div class="card">
+        <div class="card-title" data-i18n="overview.title">配置总览（来源标记，防遗忘）</div>
+        <div style="margin-top:8px;">
+          <div style="font-weight:600;margin:8px 0 4px;" data-i18n="overview.deploy">部署级配置（.env，只读，改后需重启）</div>
+          <table><thead><tr><th data-i18n="overview.key">配置项</th><th data-i18n="overview.value">值</th></tr></thead><tbody id="ov_deploy"></tbody></table>
+          <div style="font-weight:600;margin:12px 0 4px;" data-i18n="overview.runtime">运行时配置（数据库，界面可改，即时生效）</div>
+          <table><thead><tr><th data-i18n="overview.key">配置项</th><th data-i18n="overview.value">值</th><th data-i18n="overview.source">来源</th><th data-i18n="overview.updated">更新时间</th></tr></thead><tbody id="ov_runtime"></tbody></table>
+        </div>
+      </div>
+
       <!-- 特征码规则编辑弹窗 -->
       <div id="ruleModal" class="modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
         <div class="modal-content" style="background:#fff;padding:24px;border-radius:12px;width:480px;max-width:90%;">
@@ -1461,6 +1515,8 @@ async function renderConfig() {
       </div>
     `;
     applyI18n();
+    loadAdConfig();
+    loadConfigOverview();
   } catch (e) {
     document.getElementById('content').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
   }
@@ -1490,6 +1546,60 @@ async function triggerCleanup() {
   } catch (e) {
     toast(t('toast.cleanupFail', e.message), 'error');
   }
+}
+
+// AD 配置管理（ADR-010：DB 权威，导入 .env，保存即时生效）
+const _AD_ENV_KEY = { ad_enabled: 'AD_ENABLED', ad_host: 'AD_HOST', ad_domain: 'AD_DOMAIN', ad_base_dn: 'AD_BASE_DN', ad_bind_dn: 'AD_BIND_DN', ad_bind_password: 'AD_BIND_PASSWORD', ad_user_field: 'AD_USER_FIELD', ad_display_field: 'AD_DISPLAY_FIELD', ad_mail_field: 'AD_MAIL_FIELD', ad_group_field: 'AD_GROUP_FIELD' };
+async function loadAdConfig() {
+  try {
+    const d = await api('/api/admin/ad-config');
+    const dbv = d.db || {}, envv = d.env || {};
+    for (const k of Object.keys(_AD_ENV_KEY)) {
+      const el = document.getElementById(k);
+      if (!el) continue;
+      const db = dbv[k];
+      let v = (db && db.value !== '') ? db.value : (envv[_AD_ENV_KEY[k]] || '');
+      if (k === 'ad_enabled') { el.value = String(v).toLowerCase() === 'true' ? 'true' : 'false'; }
+      else { el.value = v; }
+    }
+  } catch (e) { toast(t('toast.loadFail', e.message), 'error'); }
+}
+async function saveAdConfig() {
+  try {
+    const body = {};
+    for (const k of Object.keys(_AD_ENV_KEY)) {
+      const el = document.getElementById(k);
+      if (el) body[k] = el.value;
+    }
+    await api('/api/admin/ad-config', { method: 'PUT', body });
+    toast(t('adConfig.saved'), 'success');
+    loadAdConfig(); loadConfigOverview();
+  } catch (e) { toast(t('toast.saveFail', e.message), 'error'); }
+}
+async function importAdConfig() {
+  if (!confirm(t('adConfig.import'))) return;
+  try {
+    await api('/api/admin/ad-config/import', { method: 'POST' });
+    toast(t('adConfig.imported'), 'success');
+    loadAdConfig(); loadConfigOverview();
+  } catch (e) { toast(t('toast.saveFail', e.message), 'error'); }
+}
+async function loadConfigOverview() {
+  try {
+    const d = await api('/api/admin/config-overview');
+    const deploy = document.getElementById('ov_deploy');
+    const runtime = document.getElementById('ov_runtime');
+    if (!deploy || !runtime) return;
+    deploy.innerHTML = Object.entries(d.deploy_env || {}).map(([k, v]) => `<tr><td class="text-sm">${k}</td><td class="text-sm">${escapeHtml(String(v))}</td></tr>`).join('');
+    const sys = Object.entries(d.runtime_db?.system_config || {}).map(([k, v]) => ({ k, v, src: 'db' }));
+    const ad = Object.entries(d.runtime_db?.ad_config || {}).map(([k, o]) => ({ k, v: o.value, src: o.source || 'db', upd: o.updated_at || '' }));
+    const all = [...sys, ...ad];
+    runtime.innerHTML = all.map(r => `<tr><td class="text-sm">${r.k}</td><td class="text-sm">${escapeHtml(String(r.v))}</td><td class="text-sm">${r.src}</td><td class="text-sm">${escapeHtml(r.upd || '')}</td></tr>`).join('');
+  } catch (e) { toast(t('toast.loadFail', e.message), 'error'); }
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 // 特征码规则管理
