@@ -253,7 +253,7 @@
 ### 12.1 v2.2.1 部署加固验证（2026-09-04）
 - venv 用 Python 3.12 --copies 创建，与系统 Python 完全隔离（venv/bin/python3 为复制文件非 symlink，系统 Python 升级/移动不影响 venv）。
 - Python 版本与离线 wheel (cp312) 匹配加固：deploy.sh 探测 3.12 优先；非 3.12 且有离线包自动切换 3.12；venv 创建后校验版本。
-- 验证：WSL Rocky 部署，venv Python 3.12 匹配 cp312，健康检查 OK，全量 182/182 通过。
+- 验证：WSL Rocky 部署，venv Python 3.12 匹配 cp312，健康检查 OK，全量 182/182 通过。
 
 
 ## 十二、v2.2.0 部署能力升级验证（2026-09-04）
@@ -326,4 +326,22 @@
   改密测试改用专用用户 testpwuser（不碰真实 admin 密码，生产安全）。
 - 测试：193项（改密测试重构 +5 项，外部改密 403 保留）。
 - 验证：Windows 190/190 + WSL verify 190/190，双环境 100%。
-*文档结束 | SecureTrans 测试报告 v1.15.0 | 2026-09-08*
+
+### 12.8 v2.2.19 AD 字段可配置 + 审计原因 + 部署一致性修复（2026-09-09）
+- 需求来源：Alpha 走查 4 问（初始密码 / 特征码持久化 / 本地用户存储 / AD 启用）——AD 属性字段可配置化、AD 登录失败原因可查、部署凭据一致性。
+- 变更：AD_USER_FIELD/AD_DISPLAY_FIELD/AD_MAIL_FIELD/AD_GROUP_FIELD 4 字段 .env 可配（默认 AD 标准属性，非硬编码）；
+  authenticate_ad 失败原因返回 tuple 并写入审计日志 detail（未启用/密码错误/连接异常/ldap3 未装）；修复部署一致性 bug
+  （systemd WorkingDirectory 指向 src/，此前实际加载根目录旧 app.py 导致 WSL 验证失败）。
+- 测试：193项（+4：AD 字段可配资源检查、查询 filter 非硬编码、失败原因写审计、filter 用运行时变量）。
+- 验证：Windows 193/193 + WSL verify 193/193，双环境 100%。
+
+### 12.9 v2.2.20 ADR-010 配置权威矩阵（2026-09-09）
+- 决策：.env 与 SQLite 配置一致性——三档配置各档唯一权威（部署级 .env / 运行时 SQLite 不再回写 / AD 连接迁 SQLite+管理页+配置总览），
+  播种一次 + 冲突规则 DB 优先 + 来源标记防遗忘，README/AGENTS/DEPLOY 三处同步。
+- 变更（后端）：新增 ad_config 表（首次表空从 .env 播种 source=env）；get_ad_config_value/mask_secret 助手；
+  authenticate_ad / api_login 域后缀判断 / api_search_ad 改运行时读取；api_update_system_config 删除 .env 回写；
+  新增 GET·PUT /api/admin/ad-config、POST /api/admin/ad-config/import、GET /api/admin/config-overview（均仅 admin）。
+- 变更（前端）：系统配置页新增「AD 配置」卡片（.env 导入/保存/AD_BIND_PASSWORD 脱敏显示）与「配置总览」卡片（.env 只读 + DB 配置，来源 env/db + 更新时间）。
+- 测试：201项（+8：ad-config 读/存/持久化、import 后 source=env、config-overview、后端资源检查、前端资源检查）。
+- 验证：Windows 201/201 + WSL verify（gunicorn+systemd）201/201，双环境 100%，v2.2.20 已发布 Gitea Release（含 offline-deps 资产）。
+*文档结束 | SecureTrans 测试报告 v1.16.0 | 2026-09-09*
