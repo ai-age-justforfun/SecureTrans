@@ -5,7 +5,7 @@ name: CI-TDD
 # 前置：
 #   1. Gitea 启用 Actions（站点配置 → Actions → 启用）
 #   2. 注册本地 runner：见 infra/ci-runner.md（labels=securetrans-wsl）
-#   3. 仓库 Settings → Actions Secrets 配置 GITEA_TOKEN（有仓库读权限的访问令牌）
+#   3. 仓库为 public 时 clone 无需凭据；private 化后在 Settings → Actions Secrets 配置 GITEA_TOKEN
 # 说明：测试环境 = 生产配置镜像（systemd + gunicorn），数据为 mock（AD_MOCK_MODE=true，不触网）；
 #       生产环境不做写数据自动化测试，仅冒烟 + 人工验收（RTM，见 docs/07-requirements-traceability.md）。
 
@@ -17,11 +17,11 @@ jobs:
   tdd-verify:
     runs-on: securetrans-wsl
     steps:
-      - name: Clone latest code (private repo via secret token)
+      - name: Clone latest code (public repo, local Gitea)
         run: |
           set -euo pipefail
           sudo rm -rf /opt/securetrans-ci
-          sudo git clone "http://oauth2:${{ secrets.GITEA_TOKEN }}@localhost:3000/openwrtadmin/SecureTrans.git" /opt/securetrans-ci
+          sudo git clone "http://localhost:3000/openwrtadmin/SecureTrans.git" /opt/securetrans-ci
           sudo chmod -R a+rX /opt/securetrans-ci
 
       - name: Sync to running instance (preserve .env/data/nas/venv)
