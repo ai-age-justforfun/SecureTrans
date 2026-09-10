@@ -206,7 +206,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.2.23';
+const APP_VERSION = 'v2.2.24';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -278,6 +278,7 @@ const I18N = {
     'detail.matched': '匹配', 'detail.unmatched': '不匹配',
     'detail.submitted': '提交申请', 'detail.approved': '审批通过', 'detail.rejected': '驳回',
     'detail.systemAuto': '系统自动', 'detail.level': '第{0}级', 'detail.comment': '备注: ', 'detail.fileCount': '{0} 个',
+    'detail.deleteSubmission': '删除提交单', 'detail.deleteConfirm': '请输入确认码 DEL 以删除（不可恢复，建议先备份）',
     'detail.ferryInfo': '接收方: {0} | 摆渡时间: {1}',
     'user.newBtn': '+ 新建用户', 'user.createTitle': '新建本地用户',
     'user.username': '用户名', 'user.usernamePh': '登录用户名', 'user.password': '密码 *', 'user.passwordPh': '至少6位',
@@ -402,6 +403,7 @@ const I18N = {
     'detail.matched': 'Matched', 'detail.unmatched': 'Not matched',
     'detail.submitted': 'submitted', 'detail.approved': 'approved', 'detail.rejected': 'rejected',
     'detail.systemAuto': 'System auto', 'detail.level': 'L{0}', 'detail.comment': 'Comment: ', 'detail.fileCount': '{0}',
+    'detail.deleteSubmission': 'Delete Submission', 'detail.deleteConfirm': 'Enter code DEL to delete (irreversible; backup first is recommended)',
     'detail.ferryInfo': 'Recipient: {0} | Ferried At: {1}',
     'user.newBtn': '+ New User', 'user.createTitle': 'Create Local User',
     'user.username': 'Username', 'user.usernamePh': 'Login username', 'user.password': 'Password *', 'user.passwordPh': 'At least 6 chars',
@@ -590,6 +592,7 @@ function formatSize(bytes) {
 async function loadUser() {
   try {
     currentUser = await api('/api/auth/me');
+    window._cu = currentUser;  // 详情弹窗等渲染判断角色用
     document.getElementById('userName').textContent = currentUser.displayName || currentUser.username;
     document.getElementById('userRole').textContent = t(ROLE_LABELS[currentUser.role] || currentUser.role);
     // 网络面标识（内网管理面 / 外网下载面）
@@ -859,6 +862,7 @@ function renderFileList() {
       <span class="size">${formatSize(f.size)}</span>
       <span class="${f.matched ? 'matched' : 'unmatched'}">${f.matched ? t('submit.matched') : t('submit.unmatched')}</span>
       <span class="remove" onclick="removeFile(${i})">✕</span>
+      ${f.md5 ? `<div class="text-sm text-muted" style="word-break:break-all;margin-top:2px;">MD5: ${f.md5}</div>` : ''}
     </div>
   `).join('');
   document.getElementById('submitFormCard').style.display = 'block';
@@ -998,7 +1002,7 @@ async function showSubmissionDetail(id) {
               <td class="text-sm">${f.name}</td>
               <td>${formatSize(f.size)}</td>
               <td>${f.type || '-'}</td>
-              <td class="text-sm text-muted">${(f.md5 || '').substring(0, 16)}...</td>
+              <td class="text-sm text-muted" style="word-break:break-all;max-width:280px;" title="${f.md5 || ''}">${f.md5 || '-'}</td>
               <td>${f.matched ? `<span class="badge badge-approved" data-i18n="detail.matched">匹配</span>` : `<span class="badge badge-rejected" data-i18n="detail.unmatched">不匹配</span>`}</td>
             </tr>`).join('')}
           </tbody>
@@ -1016,11 +1020,31 @@ async function showSubmissionDetail(id) {
         </div>
       </div>
     `;
-    document.getElementById('modalFooter').innerHTML = `<button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.close">关闭</button>`;
+    document.getElementById('modalFooter').innerHTML = `
+      ${(window._cu && window._cu.role === 'admin') ? `<button class="btn btn-danger" onclick="askDeleteSubmission('${sub.id}')" data-i18n="detail.deleteSubmission">删除提交单</button>` : ''}
+      <button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.close">关闭</button>`;
     applyI18n();
     openModal();
   } catch (e) {
     toast(t('toast.loadDetailFail', e.message), 'error');
+  }
+}
+
+async function askDeleteSubmission(subId) {
+  if (!subId) return;
+  const code = prompt(t('detail.deleteConfirm'));
+  if (code === null) return;  // 取消
+  try {
+    const res = await api(`/api/admin/submissions/${subId}`, { method: 'DELETE', body: JSON.stringify({ confirm: code }) });
+    toast(res.message || t('detail.deleteSubmission'));
+    closeModal();
+    // 刷新当前列表
+    const page = currentPage || 'my';
+    if (page === 'pending') renderPending();
+    else if (page === 'audit') renderAudit();
+    else renderMySubmissions();
+  } catch (e) {
+    toast(e.message || t('toast.loadDetailFail', ''), 'error');
   }
 }
 
@@ -1133,7 +1157,9 @@ async function showDownloadFiles(id) {
         </tbody>
       </table>
     `;
-    document.getElementById('modalFooter').innerHTML = `<button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.close">关闭</button>`;
+    document.getElementById('modalFooter').innerHTML = `
+      ${(window._cu && window._cu.role === 'admin') ? `<button class="btn btn-danger" onclick="askDeleteSubmission('${sub.id}')" data-i18n="detail.deleteSubmission">删除提交单</button>` : ''}
+      <button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.close">关闭</button>`;
     applyI18n();
     openModal();
   } catch (e) {

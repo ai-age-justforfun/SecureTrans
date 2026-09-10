@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.2.23（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
+- **当前版本**：v2.2.24（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
@@ -106,6 +106,7 @@
 | ADR-009 | 部署凭据策略：每次部署重置 admin 密码为 .env RESET_PASSWORD（单一来源/verify 凭据自适应/测试不碰真实密码） | README + 本文件部署规范 |
 | ADR-010 | .env 与 SQLite 配置一致性：配置权威矩阵（部署级 .env 唯一 / 运行时 SQLite 唯一不再回写 / AD 配置迁 SQLite+管理页+配置总览，播种一次、DB 优先、来源标记防遗忘） | README + 本文件部署规范 + DEPLOY.md |
 | ADR-011 | 数据生命周期与运维功能化：备份/恢复/出厂重置/模拟数据进系统（菜单"系统工具" + API + TDD 可调）；三环境一套代码配置数据脚本（dev/test 模拟数据+verify 闭环，prod 备份/恢复/重置）；脚本仅保留首部署与离线场景（ops-backup/restore/reset/mock）；部署级 .env RESET_DB=1 可触发出厂重置 | README + 本文件部署规范 + DEPLOY.md |
+| ADR-012 | 性能与文件完整性：800MB 全链路压力测试（tests/perf_test.py，TDD 可调）+ MD5 端到端四方一致（上传=DB=响应头X-File-MD5=下载内容）；上传上限统一口径 MAX_FILE_SIZE_MB（MAX_CONTENT_LENGTH 自动+1MB 封装余量）；删除提交单（admin+确认码 DEL） | README + 本文件部署规范 + DEPLOY.md |
 
 ### ADR-005 详述：非硬编码原则（强制）
 
@@ -132,8 +133,8 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
 - **调测期（PSF Alpha/Beta）**：代码/脚本/配置模板每次变更即发布（密集发布，便于服务器验证）
 - **RTM 后**：默认不逐次发布，关键里程碑手工发布
 - **文档-only 变更**：commit + push main，不 bump、不打包、不建 Release（随仓库演进，代码发布时包内自动带入最新）
-- **调测门禁（双环境 TDD 全量回归）**：本地调测中间阶段——Windows 开发环境（testing：`python test_api.py` 221项）
-  + WSL 测试环境（production：`infra/verify.sh` 221项），**全部通过才允许 bump + 发布**
+- **调测门禁（双环境 TDD 全量回归）**：本地调测中间阶段——Windows 开发环境（testing：`python test_api.py` 233项）
+  + WSL 测试环境（production：`infra/verify.sh` 232项），**全部通过才允许 bump + 发布**
 - 版本号是发布产物属性，APP_VERSION 只在代码发布时递增
 
 
@@ -170,6 +171,14 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
 - **恢复/重置注意**：恢复/重置后审计日志回到备份/出厂时点；恢复应在同一部署路径（提交单 current_path 为绝对路径）
 - **与 ADR-010 关系**：不重叠——ADR-010 管配置权威（静态三档），ADR-011 管数据生命周期与运维操作（动态）；mock+verify 构成 ADR-007 调测门禁的执行闭环
 - **已落点**：v2.2.23（app.py ops 路由 + CLI --reset-factory/--mock-data + 前端系统工具页 + test_api.py 221 项 + infra/ops-*.sh + deploy.sh 9.8 RESET_DB）
+
+### ADR-012 详述：性能与文件完整性（强制）
+- **MD5 端到端四方一致（强制）**：上传流式计算 MD5 存入 submission_files.md5 → 下载时从 DB 取 MD5 写入 download_records.md5（新列，含旧库迁移）并回传响应头 `X-File-MD5` → 下载内容本地再算 MD5 比对；上传值 = DB 值 = 响应头 = 下载内容；下载审计日志 detail 带 MD5；前端上传列表/详情显示完整 MD5（title 悬浮完整值）
+- **性能压力测试 tests/perf_test.py（系统级能力，TDD 可调）**：流式生成大文件（边写边算 MD5）→ 流式 multipart 上传 → 合作方提交单一级审批（计时含 os.rename 摆渡）→ 流式下载（取 X-File-MD5 头）→ MD5 四方比对 → JSON 报告 + 阈值断言 + 自动清理；`PERF_SIZE_MB`（默认 800）/ `PERF_ADMIN_USER` / `PERF_ADMIN_PASS`（或 VERIFY_ADMIN_PASS）/ `PERF_MAX_UPLOAD_S` / `PERF_MAX_DOWNLOAD_S` / `PERF_MAX_TOTAL_S` / `PERF_KEEP=1`；退出码 0=通过 / 2=失败；BASE_URL 为第一参数
+- **上传上限统一口径**：`.env MAX_FILE_SIZE_MB`（单文件大小上限，默认 800）唯一配置源；`MAX_CONTENT_LENGTH` 自动 = 文件上限 + 1MB（multipart 封装余量），**禁止手工配置**（800MB 文件 + boundary 封装会 413）；兼容旧 .env（仅配 MAX_CONTENT_LENGTH 时文件上限=该值-1MB，建议迁移）；运行时界面"系统配置→最大文件大小"（DB 权威，ADR-010）仍可调整
+- **删除提交单（admin，确认码 DEL）**：`DELETE /api/admin/submissions/<sub_id>`（body confirm=DEL）；清 DB 三关联表 + STAGING/EXTERNAL/ARCHIVE 三目录；前端详情页对 admin 显示删除按钮
+- **与 ADR-011 关系**：不重叠——ADR-011 管数据生命周期（备份/恢复/重置），ADR-012 管性能验证与文件完整性；删除提交单为运维项，确认码机制与 ADR-011 一致
+- **已落点**：v2.2.24（app.py：download_records.md5 迁移/下载 X-File-MD5/删除提交单 API/MAX_FILE_SIZE_MB 分离；前端完整 MD5 + 删除按钮 + i18n；tests/perf_test.py；test_api.py 233 项；800MB 实测：上传 338.4 MB/s / 摆渡 34ms / 下载 350.5 MB/s / 全链路 5.94s / MD5 四方一致 e67ea69b…）
 ## 研发流程
 
 ### 阶段划分（Lean Startup）
@@ -195,7 +204,7 @@ main ────●────●────●────●────  �
 1. **需求**：Sprint Planning，拆分Story，确认验收标准
 2. **设计**：复杂功能技术方案，API定义，ADR记录
 3. **开发**：编码 + 单元测试 + 每日站会
-4. **测试**：全量回归（`tests/test_api.py` 221项）+ Bug修复
+4. **测试**：全量回归（`tests/test_api.py` 233项）+ Bug修复
 5. **验证**：Sprint Review，PO验收，收集反馈
 6. **复盘**：Retrospective，输出迭代小结文档（`docs/07-psf-sprintN-retrospective.md`）
 
@@ -215,9 +224,9 @@ main ────●────●────●────●────  �
 ### 自动化测试
 
 - **测试脚本**：`tests/test_api.py`，使用Python标准库urllib，无额外依赖；**admin 凭据参数化**：`TEST_ADMIN_USER`/`TEST_ADMIN_PASS` 环境变量（默认 admin/Admin@123，Windows dev 场景）
-- **测试范围**：全量221项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置、i18n双语、网络面隔离、部署凭据策略、AD 配置管理/配置总览）
+- **测试范围**：全量233项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置、i18n双语、网络面隔离、部署凭据策略、AD 配置管理/配置总览、MD5 端到端完整性、删除提交单、性能压力测试工具）
 - **运行方式**：先启动服务（`cd src && python app.py`），再 `cd tests && python test_api.py`，预期通过率100%
-- **部署验证**：`infra/verify.sh`（221项全量，BASE_URL 自动适配 .env HOST/PORT——HOST=具体IP时自动用 http://<IP>:PORT；**admin 凭据自动取 .env RESET_PASSWORD**（部署时 admin 密码已重置为该值），admin 密码被手工修改时用 `VERIFY_ADMIN_PASS` 显式传入）
+- **部署验证**：`infra/verify.sh`（232项全量，BASE_URL 自动适配 .env HOST/PORT——HOST=具体IP时自动用 http://<IP>:PORT；**admin 凭据自动取 .env RESET_PASSWORD**（部署时 admin 密码已重置为该值），admin 密码被手工修改时用 `VERIFY_ADMIN_PASS` 显式传入）
 - **新增功能**：必须在 test_api.py 中添加对应测试用例
 - **i18n 测试**：双语回归组覆盖后端 error_en/message_en、动态模板翻译、前端 I18N 字典资源检查
 
@@ -281,7 +290,7 @@ main ────●────●────●────●────  �
 
 - `infra/deploy.sh`：一键式部署（root运行；Python 3.12 获取优先级：系统已有 → offline-python/ 离线RPM → dnf AppStream/EPEL；离线 wheel 优先；NAS_ROOT 可环境变量覆盖并写回 .env；systemd ReadWritePaths 模板渲染——NAS 不存在时只保留 /opt/securetrans，避免 systemd 226/NAMESPACE）
 - `infra/get-offline-python.sh`：离线 Python 3.12 RPM 获取（联网 Rocky8 运行一次，产出 offline-python/ 随包离线携带）
-- `infra/verify.sh`：部署验证（221项全量测试，BASE_URL 自适应绑定地址，admin 凭据自动取 .env RESET_PASSWORD）
+- `infra/verify.sh`：部署验证（232项全量测试，BASE_URL 自适应绑定地址，admin 凭据自动取 .env RESET_PASSWORD）
 - `infra/nginx-securetrans.conf` / `nginx-securetrans-single.conf`：Nginx 双/单网卡反向代理配置
 - `infra/securetrans.service`：systemd服务配置（gunicorn，${HOST}:${PORT} 变量展开）
 - `infra/ops-backup.sh` / `ops-restore.sh <name>` / `ops-reset.sh` / `ops-mock.sh`：数据生命周期离线脚本（ADR-011；服务停止时最安全；ops-mock 仅 testing 环境）
@@ -339,4 +348,4 @@ main ────●────●────●────●────  �
 
 ---
 
-*AGENTS.md v1.9 | 2026-09-09*
+*AGENTS.md v1.10 | 2026-09-10*

@@ -1,6 +1,6 @@
 # SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.2.14 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
+> 版本：v2.2.24 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -217,7 +217,7 @@ main ────●────●────●────●────  �
 - **Commit 规范**：`<type>(<scope>): <描述>`，不强制带 Sprint 编号，可关联 Story 编号
 
 ### 当前阶段
-**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，221项自动化测试 100%，内部人工测试启动中（内网全功能 + 办公外网下载）。
+**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，233项自动化测试 100% + 800MB 性能压力测试通过（MD5 端到端一致），内部人工测试启动中（内网全功能 + 办公外网下载）。
 
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
@@ -225,7 +225,7 @@ main ────●────●────●────●────  �
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（221项全通过）](docs/06-test-report.md)
+- [测试报告（233项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
 - [部署指南（唯一部署文档）](docs/DEPLOY.md)
@@ -284,8 +284,8 @@ main ────●────●────●────●────  �
   - **调测期（PSF Alpha/Beta）**：代码/脚本/配置模板每次变更即发布（密集发布，便于服务器及时验证）
   - **正式发布后（RTM）**：默认不逐次发布，关键里程碑手工发布
   - **文档-only 变更**（README/AGENTS/docs/*.md）：commit + push main，不 bump、不打包、不建 Release（随仓库演进，代码发布时包内自动带入最新）
-  - **调测门禁**：本地调测中间阶段保持双环境 TDD 全量回归——Windows 开发环境（testing：`python test_api.py` 193项）
-    + WSL 测试环境（production：`infra/verify.sh` 193项），**全部通过才允许 bump + 发布**
+  - **调测门禁**：本地调测中间阶段保持双环境 TDD 全量回归——Windows 开发环境（testing：`python test_api.py` 233项）
+    + WSL 测试环境（production：`infra/verify.sh` 232项），**全部通过才允许 bump + 发布**
   - 版本号是发布产物属性，APP_VERSION 只在代码发布时递增；文档内部版本号独立演进
 
 ### ADR-008：端口/网络面部署选型（单/双网卡 × 单/双端口）
@@ -340,6 +340,16 @@ main ────●────●────●────●────  �
 - **与 ADR-010 不重叠**：ADR-010 管配置权威（静态三档），ADR-011 管数据生命周期与运维操作（动态）；mock+verify 构成 ADR-007 调测门禁的执行闭环。
 - **已落点**：v2.2.23（app.py ops 路由 + CLI --reset-factory/--mock-data + 前端系统工具页 + test_api.py 221 项 + infra/ops-*.sh + deploy.sh 9.8 RESET_DB）
 
+### ADR-012：性能与文件完整性——800MB 全链路压力测试 + MD5 端到端四方一致（强制）
+- **背景**：生产部署前需要正式的性能与完整性验证——800MB 大文件 上传→审批摆渡→下载 全链路性能；文件完整性（MD5）端到端保证，防止传输/摆渡过程损坏。
+- **决策**：
+  - **MD5 四方一致（强制）**：上传流式计算 MD5 存入 submission_files → 下载时从 DB 取 MD5 写入 download_records.md5 并回传响应头 `X-File-MD5` → 下载内容本地再算 MD5 比对（上传值 = DB 值 = 响应头 = 下载内容）；审计日志 download 记录带 MD5；前端上传列表/详情显示完整 MD5
+  - **性能压力测试工具 tests/perf_test.py（系统级能力，TDD 可调）**：流式生成大文件（边写边算 MD5）→ 流式 multipart 上传 → 合作方提交单一级审批（计时含 os.rename 摆渡）→ 流式下载 → MD5 四方比对 → JSON 报告 + 阈值断言 + 自动清理；`PERF_SIZE_MB`（默认 800）/`PERF_ADMIN_*`/`PERF_MAX_*_S` 环境变量，退出码 0/2
+  - **上传上限统一口径**：`.env MAX_FILE_SIZE_MB`（单文件上限，默认 800）唯一配置；`MAX_CONTENT_LENGTH` 自动 = 文件上限 + 1MB（multipart 封装余量），禁止手工配置——否则 800MB 文件 + boundary 封装会 413（v2.2.24 实测命中并修复）
+  - **删除提交单（运维功能，admin + 确认码 DEL）**：清 DB 三关联表 + STAGING/EXTERNAL/ARCHIVE 三目录，防误触；对 admin 前端可见
+- **与 ADR-011 不重叠**：ADR-011 管数据生命周期（备份/恢复/重置），ADR-012 管性能验证与文件完整性（删除提交单是其中运维项，确认码机制一致）
+- **已落点**：v2.2.24（app.py：download_records.md5 迁移/下载 X-File-MD5/删除提交单 API/MAX_FILE_SIZE_MB；前端完整 MD5 + 删除按钮；tests/perf_test.py；test_api.py 233 项；800MB 实测：上传 338 MB/s / 摆渡 34ms / 下载 350 MB/s / 全链路 5.94s / MD5 四方一致）
+
 ---
 
 ## 许可证
@@ -348,5 +358,5 @@ main ────●────●────●────●────  �
 
 ---
 
-*SecureTrans v2.2.23 | 2026-09-09*
+*SecureTrans v2.2.24 | 2026-09-10*
 

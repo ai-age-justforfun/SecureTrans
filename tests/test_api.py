@@ -161,6 +161,7 @@ with open(test_exe, 'wb') as f:
 
 code, data = upload_file(test_pdf, "test_document.pdf")
 test("上传 PDF 文件（匹配特征码）", code == 200 and data.get('matched') == True, f"code={code}, md5={data.get('md5','')[:16]}...")
+pdf_md5 = data.get('md5') or ''
 pdf_temp_id = data.get('tempId')
 
 code, data = upload_file(test_exe, "test_program.exe")
@@ -1403,6 +1404,68 @@ test("后端: app.py 含运维数据生命周期实现(ADR-011)",
      '_backup_now' in _app_src and '_restore_backup' in _app_src and '_reset_factory' in _app_src
      and '_generate_mock_data' in _app_src and 'api_ops_backups' in _app_src
      and 'receiver_type != "internal" and not receiver_org' in _app_src)
+
+# ============================================================
+# v2.2.24 回归组：MD5 端到端完整性 + 删除提交单（admin，确认码 DEL）
+# ============================================================
+import hashlib as _hashlib
+
+# --- MD5 完整性：上传计算 → DB 存储 → 下载响应头 → 下载内容 四方一致 ---
+print("\n--- 12. MD5 端到端完整性 ---")
+code, data = request('GET', f'/api/submissions/{auto_sub_id}')
+_db_md5 = ''
+if isinstance(data, dict) and data.get('files'):
+    _db_md5 = data['files'][0].get('md5', '')
+test("完整性: 提交单详情DB文件MD5与上传一致",
+     bool(_db_md5) and _db_md5 == pdf_md5, f"db={str(_db_md5)[:16]}... up={str(pdf_md5)[:16]}...")
+# 下载响应头 X-File-MD5 + 下载内容本地 MD5（端到端）
+_dl_resp = opener.open(urllib.request.Request(BASE_URL + f'/api/external/{auto_sub_id}/download/test_document.pdf'))
+_dl_bytes = _dl_resp.read()
+_dl_md5 = _hashlib.md5(_dl_bytes).hexdigest()
+_dl_xmd5 = _dl_resp.headers.get('X-File-MD5')
+test("完整性: 下载响应头 X-File-MD5 与上传一致", _dl_xmd5 == pdf_md5, f"header={str(_dl_xmd5)[:16]}... up={str(pdf_md5)[:16]}...")
+test("完整性: 下载内容本地MD5与上传一致（端到端）",
+     _dl_md5 == pdf_md5, f"dl={_dl_md5[:16]}... up={str(pdf_md5)[:16]}...")
+# 审计日志下载记录含 MD5
+code, data = request('GET', '/api/audit-logs')
+_dl_audits = [a for a in (data if isinstance(data, list) else [])
+              if a.get('action') == 'download' and str(pdf_md5) in str(a.get('detail', ''))]
+test("完整性: 下载审计日志记录MD5", len(_dl_audits) >= 1, f"n={len(_dl_audits)}")
+# 前端显示完整 MD5
+test("前端: 上传列表与详情显示完整MD5", 'MD5: ${f.md5}' in _html and 'title="${f.md5 || \'\'}"' in _html)
+
+# --- 删除提交单（admin，确认码 DEL）---
+print("\n--- 13. 删除提交单（admin） ---")
+code, data = upload_file(test_pdf, "del_test.pdf")
+_del_temp = data.get('tempId')
+code, data = request('POST', '/api/submissions', json_data={
+    "tempIds": [_del_temp], "receiverName": "删除测试", "receiverType": "internal",
+    "securityLevel": "internal", "reason": "删除提交单测试"})
+_del_sub = data.get('id')
+# 非 admin 被拒（创建专用用户，幂等）
+request('DELETE', '/api/admin/local-users/deluser1')
+request('POST', '/api/admin/local-users', json_data={
+    "username": "deluser1", "password": "Del@123456", "displayName": "删除权限测试", "role": "internal-user"})
+request('POST', '/api/auth/login', json_data={"username": "deluser1", "password": "Del@123456"})
+code, data = request('DELETE', f'/api/admin/submissions/{_del_sub}', json_data={"confirm": "DEL"})
+test("删除提交单: 非admin被拒403", code == 403, f"code={code}")
+request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+request('DELETE', '/api/admin/local-users/deluser1')
+# 错误确认码 400
+code, data = request('DELETE', f'/api/admin/submissions/{_del_sub}', json_data={"confirm": "wrong"})
+test("删除提交单: 错误确认码返回400", code == 400, f"code={code}")
+# 正确确认码 200 → 详情 404
+code, data = request('DELETE', f'/api/admin/submissions/{_del_sub}', json_data={"confirm": "DEL"})
+test("删除提交单: 确认码正确删除成功", code == 200, f"code={code}, data={data}")
+code, data = request('GET', f'/api/submissions/{_del_sub}')
+test("删除提交单: 删除后详情返回404", code == 404, f"code={code}")
+# 源码/前端检查
+test("后端: app.py 含删除提交单API(确认码DEL)+下载返回X-File-MD5",
+     'api_delete_submission' in _app_src and '"DEL"' in _app_src and 'X-File-MD5' in _app_src
+     and 'delete_submission' in _app_src)
+test("前端: 详情含删除提交单按钮+i18n", 'askDeleteSubmission' in _html and 'detail.deleteSubmission' in _html)
+test("工具: 性能压力测试脚本存在(800MB 上传/摆渡/下载+MD5)",
+     os.path.exists(os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'perf_test.py')))
 
 # ============================================================
 # 测试报告

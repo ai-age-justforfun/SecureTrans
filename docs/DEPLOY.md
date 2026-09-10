@@ -439,6 +439,22 @@ systemctl start securetrans
 | 9 | 审计日志 + 统计 Tab（人员/文件类型/每日） | ☐ |
 | 10 | os.rename 0拷贝：摆渡毫秒级 | ☐ |
 | 11 | 大文件（>100MB）上传/下载正常 | ☐ |
+| 12 | 大文件端到端完整性：下载内容 MD5 = 响应头 X-File-MD5 = 上传时 MD5 | ☐ |
+
+**6.3.1 性能与完整性验证（v2.2.24 起）**：
+
+| 项 | 命令 | 说明 |
+|----|------|------|
+| 800MB 全链路性能 + MD5 完整性 | `python tests/perf_test.py http://<服务器IP>:8000` | 上传→审批摆渡→下载全链路计时 + MD5 四方一致；退出码 0=通过 |
+| 生产凭据 | `PERF_ADMIN_USER` / `PERF_ADMIN_PASS`（或 `VERIFY_ADMIN_PASS` 同源） | 生产 admin 已被改密时必填 |
+| 测试文件大小 | `PERF_SIZE_MB`（默认 800） | 按需调整（如 100/500） |
+| 阈值 | `PERF_MAX_UPLOAD_S` / `PERF_MAX_DOWNLOAD_S` / `PERF_MAX_TOTAL_S` | 默认 600/600/900 秒 |
+| 保留数据 | `PERF_KEEP=1`（默认自动清理） | 测试完成后自动删除提交单与临时文件 |
+
+**6.3.2 上传大小配置（v2.2.24 起统一口径）**：
+- `.env` 新增 `MAX_FILE_SIZE_MB`（单文件大小上限，默认 800）；请求体限制 `MAX_CONTENT_LENGTH` 自动 = 文件上限 + 1MB（multipart 封装余量），**不要手工配置 MAX_CONTENT_LENGTH**。
+- 兼容旧 .env：若仍配置了 `MAX_CONTENT_LENGTH` 且未配置 `MAX_FILE_SIZE_MB`，文件上限自动取该值-1MB（迁移建议：改配 MAX_FILE_SIZE_MB）。
+- 运行时界面"系统配置→最大文件大小"保存后生效（来源=DB，见 5.1 配置权威矩阵）。
 
 **6.4 内部试用发布**：
 - [ ] 通知试用用户（内网地址）
@@ -635,4 +651,4 @@ sudo bash infra/ops-mock.sh                           # 模拟数据（仅 testi
 
 ---
 
-*部署指南 v2.2.23 | 2026-09-09*
+*部署指南 v2.2.24 | 2026-09-10*

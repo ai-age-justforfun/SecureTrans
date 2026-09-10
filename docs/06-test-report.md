@@ -360,4 +360,14 @@
 - **离线脚本（服务停止时最安全）**：infra/ops-backup.sh / ops-restore.sh / ops-reset.sh / ops-mock.sh（调 CLI --reset-factory/--mock-data）；deploy.sh 9.8 支持 RESET_DB=1 部署时出厂重置
 - **提交接收方类型三分类（表单重构，类型/密级前置）**：internal 公司内部（单位可空，不入清单）；partner 合作方（优先下拉选择，不在清单自填并自动加入清单，信任模式）；non-partner 非合作方（单位必填，不加入清单，仅下载任务+日志）
 - 测试 208 → 221 项（Windows，含 mock 成功分支）；WSL production 220 项（mock 走 403 分支，环境自适应）；双环境 100%，v2.2.23 已发布
-*文档结束 | SecureTrans 测试报告 v1.19.0 | 2026-09-09*
+### 12.13 v2.2.24 性能压力测试 + MD5 端到端完整性（2026-09-10）
+- **需求来源**：用户要求补 800MB 大文件 上传→审批摆渡→下载 全链路性能测试 + 文件完整性（MD5）保障，作为正式性能与完整性验证，为生产部署准备。
+- **MD5 端到端四方一致（上传计算 → DB 存储 → 下载响应头 → 下载内容）**：
+  - 上传时流式计算 MD5 存入 submission_files.md5（既有）；下载 API 从 DB 取 MD5 → 写入 download_records.md5（新列，含旧库 ALTER TABLE 迁移）→ 审计日志 download detail 带 MD5 → 响应头 `X-File-MD5`；
+  - 前端：上传列表与详情页改为显示完整 MD5（title 悬浮完整值）。
+- **删除提交单（admin，确认码 DEL，防误触）**：`DELETE /api/admin/submissions/<sub_id>`（body `{"confirm":"DEL"}`）；清 DB 三关联表 + STAGING/EXTERNAL/ARCHIVE 三目录；详情页对 admin 显示删除按钮（i18n zh/en）。
+- **性能测试工具 tests/perf_test.py（新建，纯标准库）**：流式生成指定大小文件（边写边算 MD5）→ 流式 multipart 上传 → 合作方提交单 → 一级审批（计时含 os.rename 摆渡）→ 流式下载（取 X-File-MD5 头）→ 本地 MD5 四方比对 → JSON 报告 + 阈值断言 + 自动清理；支持 BASE_URL 参数与 PERF_* 环境变量；退出码 0=通过/2=失败。
+- **实测 Bug 修复（800MB 文件 413）**：MAX_CONTENT_LENGTH 原严格等于 800MB，multipart 封装（boundary+头部）使请求体 > 限制被 Flask 拒绝。修复：新增 `MAX_FILE_SIZE_MB`（.env 新键，默认 800，单文件上限），请求体限制 `MAX_CONTENT_LENGTH = MAX_FILE_SIZE + 1MB`（multipart 封装余量）；兼容旧 .env（仅配 MAX_CONTENT_LENGTH 时，文件上限=该值-1MB）；上传校验/413 文案/系统配置 max_file_size_mb 全部改用 MAX_FILE_SIZE_MB。
+- **800MB 实测结果（Windows dev，修复后）**：生成 1.26s；上传 2.36s（338.4 MB/s）；审批+os.rename 摆渡 34ms（含 API 往返）；下载 2.28s（350.5 MB/s）；全链路 5.94s；MD5 四方一致（e67ea69b2c5bc10399e324fc8819bc4c）；删除清理成功；退出码 0 全部通过。
+- 测试 221 → 233 项（Windows，+12：MD5 完整性 5 + 删除提交单 5 + 源码/工具存在性 2）；WSL production 232 项（mock 403 分支）；双环境 100%，v2.2.24 待发布。
+*文档结束 | SecureTrans 测试报告 v1.20.0 | 2026-09-10*

@@ -40,11 +40,24 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.23"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.24"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
-MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(800 * 1024 * 1024)).strip())  # 800MB 上传上限
+# 上传上限（v2.2.24）：MAX_FILE_SIZE_MB 为单文件大小上限（MB，默认800）；
+# 请求体限制 MAX_CONTENT_LENGTH = 文件上限 + 1MB（multipart 封装余量），
+# 否则 800MB 文件 + boundary 封装会触发 413。
+_legacy_mcl = os.getenv("MAX_CONTENT_LENGTH", "").strip()
+if _legacy_mcl and not os.getenv("MAX_FILE_SIZE_MB", "").strip():
+    # 兼容旧 .env：仅配置了 MAX_CONTENT_LENGTH 时，请求体限制=该值，文件上限=该值-1MB
+    MAX_CONTENT_LENGTH = int(_legacy_mcl)
+    MAX_FILE_SIZE_MB = max(1, MAX_CONTENT_LENGTH // 1024 // 1024 - 1)
+else:
+    MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "800").strip())
+    MAX_FILE_SIZE_MB = max(1, MAX_FILE_SIZE_MB)
+MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
+if not (_legacy_mcl and not os.getenv("MAX_FILE_SIZE_MB", "").strip()):
+    MAX_CONTENT_LENGTH = MAX_FILE_SIZE + 1024 * 1024  # 文件 + multipart 封装余量(1MB)
 
 # 部署模式：testing（本地文件系统+Flask自带服务器）/ production（NAS+gunicorn）
 # testing 为默认值，适合开发和测试环境验证；生产环境设为 production
@@ -138,6 +151,7 @@ I18N_ERRORS = {
     "请输入确认码 RESTORE": "Please enter confirmation code RESTORE",
     "请输入确认码 RESET": "Please enter confirmation code RESET",
     "请输入确认码 MOCK": "Please enter confirmation code MOCK",
+    "删除需确认码 DEL": "Deletion requires confirmation code DEL",
     "备份不存在": "Backup not found",
     "生产/预生产环境禁止生成模拟数据（ADR-011）": "Mock data generation is forbidden in production/pre-production environments (ADR-011)",
     "文件不存在": "File not found",
@@ -388,7 +402,8 @@ def init_db():
         filename TEXT,
         downloader TEXT,
         download_time TEXT,
-        ip TEXT
+        ip TEXT,
+        md5 TEXT
     );
 
     CREATE TABLE IF NOT EXISTS ad_config (
@@ -419,6 +434,11 @@ def init_db():
             conn.execute("ALTER TABLE submissions ADD COLUMN receiver_org TEXT")
         except sqlite3.OperationalError:
             pass
+    if not _column_exists("download_records", "md5"):
+        try:
+            conn.execute("ALTER TABLE download_records ADD COLUMN md5 TEXT")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
 
     # 初始管理员（幂等插入）
@@ -435,7 +455,7 @@ def init_db():
     defaults = {
         "auto_approval_enabled": os.getenv("AUTO_APPROVAL_ENABLED", "false").strip().lower(),
         "default_expiry_days": os.getenv("EXTERNAL_EXPIRY_DAYS", "7").strip(),
-        "max_file_size_mb": str(MAX_CONTENT_LENGTH // 1024 // 1024),
+        "max_file_size_mb": str(MAX_FILE_SIZE_MB),
         "app_name": "SecureTrans",
     }
     for k, v in defaults.items():
@@ -1165,11 +1185,11 @@ def api_upload_file():
     size = file.tell()
     file.seek(0)
     try:
-        max_mb = int(float(get_config_value("max_file_size_mb", str(MAX_CONTENT_LENGTH // 1024 // 1024)) or 0))
+        max_mb = int(float(get_config_value("max_file_size_mb", str(MAX_FILE_SIZE_MB)) or 0))
     except (ValueError, TypeError):
-        max_mb = MAX_CONTENT_LENGTH // 1024 // 1024
+        max_mb = MAX_FILE_SIZE_MB
     if max_mb <= 0:
-        max_mb = MAX_CONTENT_LENGTH // 1024 // 1024
+        max_mb = MAX_FILE_SIZE_MB
     if size > max_mb * 1024 * 1024:
         return jsonify({"error": f"文件过大，最大支持 {max_mb}MB"}), 400
 
@@ -1512,19 +1532,29 @@ def api_download_file(sub_id, filename):
         if not file_path.exists():
             return jsonify({"error": "文件不存在"}), 404
 
-    # 记录下载
+    # 查文件 MD5（端到端完整性：上传时计算并存储，下载时随响应头返回供客户端比对）
+    md5 = None
+    frow = db.execute("SELECT md5 FROM submission_files WHERE submission_id=? AND name=?", (sub_id, filename)).fetchone()
+    if frow:
+        md5 = frow["md5"] or None
+
+    # 记录下载（含 MD5）
     db.execute(
-        "INSERT INTO download_records (id,submission_id,filename,downloader,download_time,ip) VALUES (?,?,?,?,?,?)",
-        (str(uuid.uuid4()), sub_id, filename, current_user.username, now_str(), get_client_ip())
+        "INSERT INTO download_records (id,submission_id,filename,downloader,download_time,ip,md5) VALUES (?,?,?,?,?,?,?)",
+        (str(uuid.uuid4()), sub_id, filename, current_user.username, now_str(), get_client_ip(), md5)
     )
     # 更新状态为 downloaded（如果还是 approved）
     if sub["status"] == "approved":
         db.execute("UPDATE submissions SET status='downloaded' WHERE id=?", (sub_id,))
     db.commit()
 
-    add_audit_log(current_user.username, "download", sub_id, f"下载文件: {filename}", get_client_ip())
+    add_audit_log(current_user.username, "download", sub_id,
+                  f"下载文件: {filename}" + (f"（MD5: {md5}）" if md5 else ""), get_client_ip())
 
-    return send_file(str(file_path), as_attachment=True, download_name=filename)
+    resp = send_file(str(file_path), as_attachment=True, download_name=filename)
+    if md5:
+        resp.headers["X-File-MD5"] = md5
+    return resp
 
 # ============================================================
 # 路由：用户管理（admin）
@@ -2302,12 +2332,42 @@ def api_ops_mock_data():
         return jsonify({"error": msg}), 403
     return jsonify({"message": msg})
 
+@app.route("/api/admin/submissions/<sub_id>", methods=["DELETE"])
+@login_required
+@role_required("admin")
+def api_delete_submission(sub_id):
+    """删除提交单（admin，确认码 DEL 防误触）：
+    DB 记录（submissions/submission_files/approvals/download_records）+
+    磁盘目录（staging/external/archive 三处对应路径）一并清理。
+    用于清理测试数据/误提交；不可恢复，请谨慎（先备份再删）。"""
+    data = request.get_json(silent=True) or {}
+    if data.get("confirm") != "DEL":
+        return jsonify({"error": "删除需确认码 DEL"}), 400
+    db = get_db()
+    sub = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
+    if not sub:
+        return jsonify({"error": "提交单不存在"}), 404
+    # 磁盘清理（三处目录）
+    removed = []
+    for d in (STAGING_DIR, EXTERNAL_DIR, ARCHIVE_DIR):
+        p = d / sub_id
+        if p.exists():
+            shutil.rmtree(p, ignore_errors=True)
+            removed.append(d.name)
+    # DB 清理（submissions 级联删除关联表；download_records 无外键，显式删除）
+    db.execute("DELETE FROM download_records WHERE submission_id=?", (sub_id,))
+    db.execute("DELETE FROM submissions WHERE id=?", (sub_id,))
+    db.commit()
+    add_audit_log(current_user.username, "delete_submission", sub_id,
+                  f"删除提交单（清理目录: {', '.join(removed) if removed else '无'}）", get_client_ip())
+    return jsonify({"message": "提交单已删除"})
+
 # ============================================================
 # 错误处理
 # ============================================================
 @app.errorhandler(413)
 def too_large(e):
-    return jsonify({"error": f"文件过大，最大支持 {MAX_CONTENT_LENGTH//1024//1024}MB"}), 413
+    return jsonify({"error": f"文件过大，最大支持 {MAX_FILE_SIZE_MB}MB"}), 413
 
 @app.errorhandler(404)
 def not_found(e):
