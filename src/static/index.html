@@ -206,7 +206,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.2.28';
+const APP_VERSION = 'v2.2.29';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -232,7 +232,10 @@ const I18N = {
     'page.title.partners': '合作方管理', 'page.title.approvers': '审批人配置', 'page.title.config': '系统配置', 'page.title.ops': '系统工具', 'page.title.audit': '审计日志',
     'ops.backupTitle': '数据备份 / 恢复', 'ops.backupDesc': '备份数据库与业务文件（staging/external/archive）到 data/backups/，恢复将替换当前业务数据（回退=再恢复之前的备份）。',
     'ops.backupNow': '立即备份', 'ops.backupList': '备份列表', 'ops.backupName': '备份名称', 'ops.backupTime': '备份时间', 'ops.backupSize': '大小',
-    'ops.sysTitle': '系统备份 / 恢复（升级用）', 'ops.sysDesc': '备份系统数据（数据库：系统配置 / AD配置 / 用户 / 审计日志），升级系统前后执行保证可回退；恢复仅替换系统数据，不动业务文件。',
+    'ops.sysTitle': '系统备份 / 恢复（升级用）', 'ops.backupListSys': '系统备份列表（升级/回退用）',
+    'ops.backupListSysDesc': '仅系统备份（backup-system-*），可恢复系统配置/数据库；业务数据备份不在此列。',
+    'ops.backupListBiz': '业务数据备份列表（历史归档/存储迁移用）',
+    'ops.backupListBizDesc': '仅业务数据备份（backup-business-*），可恢复摆渡文件；系统备份不在此列。', 'ops.sysDesc': '备份系统数据（数据库：系统配置 / AD配置 / 用户 / 审计日志），升级系统前后执行保证可回退；恢复仅替换系统数据，不动业务文件。',
     'ops.sysNow': '系统备份', 'ops.allNow': '全部备份',
     'ops.bizTitle': '业务数据备份 / 恢复', 'ops.bizDesc': '备份业务文件（staging/external/archive），用于更换存储目录/历史归档；恢复仅替换业务文件，不动系统配置。',
     'ops.bizNow': '业务数据备份', 'ops.type': '类型', 'ops.typeSys': '系统', 'ops.typeBiz': '业务', 'ops.typeAll': '全部',
@@ -319,6 +322,8 @@ const I18N = {
     'adConfig.bindDn': 'AD_BIND_DN（可选）', 'adConfig.bindPwd': 'AD_BIND_PASSWORD（可选）',
     'adConfig.userField': 'AD_USER_FIELD', 'adConfig.displayField': 'AD_DISPLAY_FIELD', 'adConfig.mailField': 'AD_MAIL_FIELD', 'adConfig.groupField': 'AD_GROUP_FIELD',
     'adConfig.hint': '保存后即时生效（无需重启）；留空回退 .env 值；AD 登录成功/失败原因见审计日志。',
+    'adConfig.test': '测试连接', 'adConfig.testPh': '输入用户名精确验证（可选，留空仅测 bind）', 'adConfig.testing': '测试中...', 'adConfig.testResult': '测试结果',
+    'ad.testHint': '服务器手工验证需先安装：sudo dnf install -y openldap-clients',
     'adConfig.imported': '已从 .env 导入 AD 配置', 'adConfig.saved': 'AD 配置已保存（即时生效）',
     'overview.title': '配置总览（来源标记，防遗忘）', 'overview.deploy': '部署级配置（.env，只读，改后需重启）', 'overview.runtime': '运行时配置（数据库，界面可改，即时生效）',
     'overview.key': '配置项', 'overview.value': '值', 'overview.source': '来源', 'overview.env': 'env', 'overview.db': 'db', 'overview.updated': '更新时间',
@@ -364,7 +369,10 @@ const I18N = {
     'page.title.partners': 'Partner Management', 'page.title.approvers': 'Approver Config', 'page.title.config': 'System Config', 'page.title.ops': 'System Tools', 'page.title.audit': 'Audit Logs',
     'ops.backupTitle': 'Data Backup / Restore', 'ops.backupDesc': 'Back up database and business files (staging/external/archive) to data/backups/; restore replaces current business data (rollback = restore an earlier backup).',
     'ops.backupNow': 'Backup Now', 'ops.backupList': 'Backup List', 'ops.backupName': 'Backup Name', 'ops.backupTime': 'Backup Time', 'ops.backupSize': 'Size',
-    'ops.sysTitle': 'System Backup / Restore (for upgrades)', 'ops.sysDesc': 'Backs up system data (database: system config / AD config / users / audit logs). Run before/after system upgrades to guarantee rollback; restore replaces system data only, not business files.',
+    'ops.sysTitle': 'System Backup / Restore (for upgrades)', 'ops.backupListSys': 'System Backup List (for upgrades/rollback)',
+    'ops.backupListSysDesc': 'System backups only (backup-system-*); restores system config/database; business backups are not listed here.',
+    'ops.backupListBiz': 'Business Data Backup List (archive/storage migration)',
+    'ops.backupListBizDesc': 'Business data backups only (backup-business-*); restores transfer files; system backups are not listed here.', 'ops.sysDesc': 'Backs up system data (database: system config / AD config / users / audit logs). Run before/after system upgrades to guarantee rollback; restore replaces system data only, not business files.',
     'ops.sysNow': 'System Backup', 'ops.allNow': 'Backup All',
     'ops.bizTitle': 'Business Data Backup / Restore', 'ops.bizDesc': 'Backs up business files (staging/external/archive) for storage migration / historical archive; restore replaces business files only, not system config.',
     'ops.bizNow': 'Business Backup', 'ops.type': 'Type', 'ops.typeSys': 'System', 'ops.typeBiz': 'Business', 'ops.typeAll': 'All',
@@ -450,6 +458,8 @@ const I18N = {
     'adConfig.enabled': 'Enable AD', 'adConfig.host': 'AD_HOST', 'adConfig.domain': 'AD_DOMAIN', 'adConfig.baseDn': 'AD_BASE_DN',
     'adConfig.bindDn': 'AD_BIND_DN (optional)', 'adConfig.bindPwd': 'AD_BIND_PASSWORD (optional)',
     'adConfig.userField': 'AD_USER_FIELD', 'adConfig.displayField': 'AD_DISPLAY_FIELD', 'adConfig.mailField': 'AD_MAIL_FIELD', 'adConfig.groupField': 'AD_GROUP_FIELD',
+    'adConfig.test': 'Test Connection', 'adConfig.testPh': 'Enter username to verify exactly (optional, empty = bind only)', 'adConfig.testing': 'Testing...', 'adConfig.testResult': 'Result',
+    'ad.testHint': 'Server-side manual check requires: sudo dnf install -y openldap-clients',
     'adConfig.hint': 'Saved values take effect immediately (no restart); empty falls back to .env; AD login success/failure reasons are in audit logs.',
     'adConfig.imported': 'Imported AD config from .env', 'adConfig.saved': 'AD config saved (effective now)',
     'overview.title': 'Config Overview (source-tagged, anti-forgetting)', 'overview.deploy': 'Deploy-level config (.env, read-only, restart required)', 'overview.runtime': 'Runtime config (database, editable, immediate)',
@@ -823,11 +833,11 @@ function renderSubmit() {
         </div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label data-i18n="submit.receiverName">接收方姓名 *</label><input type="text" id="receiverName" placeholder="${t('submit.receiverNamePh')}"></div>
+        <div class="form-group" id="receiverNameWrap"><label data-i18n="submit.receiverName">接收方姓名 *</label><input type="text" id="receiverName" placeholder="${t('submit.receiverNamePh')}"></div>
         <div class="form-group" id="receiverOrgWrap" style="display:none;"><label id="receiverOrgLabel" data-i18n="submit.receiverOrg">接收方单位 *</label><input type="text" id="receiverOrg" placeholder="${t('submit.receiverOrgPh')}"></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label data-i18n="submit.receiverEmailOpt">接收方邮箱（可选）</label><input type="email" id="receiverEmail" placeholder="${t('submit.receiverEmailPh')}"></div>
+        <div class="form-group" id="receiverEmailWrap"><label data-i18n="submit.receiverEmailOpt">接收方邮箱（可选）</label><input type="email" id="receiverEmail" placeholder="${t('submit.receiverEmailPh')}"></div>
         <div class="form-group"><label data-i18n="submit.reason">外发事由</label><textarea id="reason" rows="2" placeholder="${t('submit.reasonPh')}"></textarea></div>
       </div>
       <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
@@ -906,10 +916,14 @@ function removeFile(index) {
 async function onReceiverTypeChange() {
   const row = document.getElementById('partnerSelectRow');
   const orgWrap = document.getElementById('receiverOrgWrap');
+  const nameWrap = document.getElementById('receiverNameWrap');
+  const emailWrap = document.getElementById('receiverEmailWrap');
   const type = document.getElementById('receiverType').value;
   row.style.display = type === 'partner' ? 'flex' : 'none';
-  // 公司内部：仅需接收人，无单位字段；合作方/非合作方：显示单位（合作方选中清单时自动带出只读）
+  // 公司内部：仅需接收人（姓名+邮箱），无单位字段；合作方/非合作方：显示单位（合作方选中清单时隐藏姓名/邮箱）
   orgWrap.style.display = type === 'internal' ? 'none' : 'block';
+  nameWrap.style.display = type === 'internal' ? 'block' : 'block';
+  emailWrap.style.display = 'block';
   if (type === 'partner') {
     try {
       const partners = await api('/api/partners');
@@ -942,23 +956,34 @@ async function onReceiverTypeChange() {
 function onPartnerSelected() {
   const name = document.getElementById('partnerSelect').value;
   const orgInput = document.getElementById('receiverOrg');
+  const nameWrap = document.getElementById('receiverNameWrap');
+  const emailWrap = document.getElementById('receiverEmailWrap');
   if (name === '__custom__') {
-    // 其他（自行填写）：单位可编辑必填，提交后自动加入合作方清单
+    // 其他（自行填写）：显示姓名/单位/邮箱手工填写，提交后自动加入合作方清单
     orgInput.value = '';
     orgInput.readOnly = false;
+    nameWrap.style.display = 'block';
+    emailWrap.style.display = 'block';
   } else if (name) {
-    // 选择已配置合作方：单位自动带出（只读），姓名/邮箱为联系人信息
+    // 选择已配置合作方：隐藏姓名/邮箱（接收方=该合作方），单位自动带出只读
     orgInput.value = name;
     orgInput.readOnly = true;
+    nameWrap.style.display = 'none';
+    emailWrap.style.display = 'none';
   } else {
+    // 未选择：清空单位，显示姓名/邮箱
     orgInput.value = '';
     orgInput.readOnly = false;
+    nameWrap.style.display = 'block';
+    emailWrap.style.display = 'block';
   }
 }
 
 async function submitFiles() {
-  const receiverName = document.getElementById('receiverName').value.trim();
-  const receiverOrg = document.getElementById('receiverOrg').value.trim();
+  const orgInput = document.getElementById('receiverOrg');
+  const orgReadOnly = orgInput.readOnly; // 选中清单合作方时单位只读 → 姓名/邮箱隐藏，接收方=合作方名
+  const receiverName = (orgReadOnly ? orgInput.value : document.getElementById('receiverName').value).trim();
+  const receiverOrg = orgInput.value.trim();
   const receiverType = document.getElementById('receiverType').value;
   if (!receiverName) { toast(t('err.requireName'), 'error'); return; }
   if (receiverType !== 'internal' && !receiverOrg) { toast(t('err.requireOrg'), 'error'); return; }
@@ -1273,6 +1298,8 @@ function showAdUserSearch() {
   openModal();
 }
 
+let _adCmdCache = []; // 复制命令缓存（多行命令走索引，避免内联 onclick 换行截断 bug）
+
 async function searchAdUserTable() {
   const kw = document.getElementById('adUserKw').value.trim();
   const box = document.getElementById('adUserResult');
@@ -1280,14 +1307,18 @@ async function searchAdUserTable() {
     const resp = await api('/api/admin/ad/search', { method: 'POST', body: { keyword: kw } });
     const list = resp.users || [];
     const vc = resp.verifyCommand || '';
+    const err = resp.error || '';
+    _adCmdCache = [vc];
+    let errHtml = err ? `<div class="empty" style="color:#dc2626;white-space:pre-wrap;">${err.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : '';
     box.innerHTML = (vc ? `
       <div class="form-group mb-8">
         <div class="text-sm text-muted" data-i18n="ad.verifyTitle">手工验证命令（可复制到服务器执行，将 **** 替换为 AD 绑定密码）</div>
         <pre style="background:#f3f4f6;padding:8px;border-radius:6px;font-size:12px;white-space:pre-wrap;word-break:break-all;margin:6px 0;">${vc.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
-        <button class="btn btn-sm btn-secondary" onclick="copyText(this,'${vc.replace(/'/g, "\\'")}')" data-i18n="ad.copy">复制命令</button>
+        <button class="btn btn-sm btn-secondary" onclick="copyAdCmd(0)" data-i18n="ad.copy">复制命令</button>
         <span class="text-sm text-muted"><span data-i18n="ad.modeNote">搜索模式</span>：${resp.mode === 'mock' ? t('ad.modeMock') : t('ad.modeLdap')}</span>
       </div>` : '')
-      + (list.length === 0
+      + errHtml
+      + (list.length === 0 && !err
       ? `<div class="empty" data-i18n="appr.adEmpty">无匹配，请换关键词</div>`
       : `<table><thead><tr><th data-i18n="user.adColUser">用户名</th><th data-i18n="user.adColName">显示名</th><th data-i18n="user.adColEmail">邮箱</th><th data-i18n="user.adColDept">部门</th></tr></thead><tbody>
           ${list.map(u => `<tr><td>${u.username}</td><td>${u.displayName || '-'}</td><td class="text-sm text-muted">${u.email || '-'}</td><td class="text-sm text-muted">${u.department || '-'}</td></tr>`).join('')}
@@ -1296,12 +1327,26 @@ async function searchAdUserTable() {
   } catch (e) { toast(t('toast.loadFail', e.message), 'error'); }
 }
 
-function copyText(btn, text) {
-  try { navigator.clipboard.writeText(text).then(() => { toast(t('ad.copied'), 'success'); }); }
-  catch (e) {
-    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
-    ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-    toast(t('ad.copied'), 'success');
+function copyAdCmd(i) {
+  const text = _adCmdCache[i] || '';
+  copyText(text);
+}
+
+function copyText(text) {
+  const done = () => toast(t('ad.copied'), 'success');
+  const fallback = () => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      done();
+    } catch (e2) { toast(t('ad.copyFail', e2.message), 'error'); }
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done).catch(fallback);
+  } else {
+    fallback();
   }
 }
 
@@ -1671,8 +1716,14 @@ async function renderConfig() {
           <div class="form-group"><label data-i18n="adConfig.mailField">AD_MAIL_FIELD</label><input type="text" id="ad_mail_field" placeholder="mail"></div>
           <div class="form-group"><label data-i18n="adConfig.groupField">AD_GROUP_FIELD</label><input type="text" id="ad_group_field" placeholder="memberOf"></div>
         </div>
-        <button class="btn btn-primary" onclick="saveAdConfig()" data-i18n="adConfig.save">保存 AD 配置</button>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="saveAdConfig()" data-i18n="adConfig.save">保存 AD 配置</button>
+          <input type="text" id="adTestUser" style="flex:1;min-width:220px;max-width:340px;" placeholder="${t('adConfig.testPh')}">
+          <button class="btn btn-secondary" onclick="testAdConnection()" data-i18n="adConfig.test">测试连接</button>
+        </div>
+        <div id="adTestResult" class="text-sm mt-8" style="display:none;"></div>
         <p class="text-sm text-muted mt-8" data-i18n="adConfig.hint">保存后即时生效（无需重启）；留空回退 .env 值；AD 登录成功/失败原因见审计日志。</p>
+        <p class="text-sm text-muted mt-8" data-i18n="ad.testHint">服务器手工验证需先安装：sudo dnf install -y openldap-clients</p>
       </div>
 
       <!-- 配置总览卡片（ADR-010：来源标记，防遗忘） -->
@@ -1758,6 +1809,21 @@ async function loadAdConfig() {
     }
   } catch (e) { toast(t('toast.loadFail', e.message), 'error'); }
 }
+async function testAdConnection() {
+  const box = document.getElementById('adTestResult');
+  const username = (document.getElementById('adTestUser').value || '').trim();
+  box.style.display = 'block';
+  box.innerHTML = `<span class="text-sm text-muted">${t('adConfig.testing')}</span>`;
+  try {
+    const resp = await api('/api/admin/ad/test', { method: 'POST', body: { username: username } });
+    box.innerHTML = resp.ok
+      ? `<span style="color:#16a34a;">✔ ${resp.message}</span>`
+      : `<span style="color:#dc2626;">✘ ${resp.message}</span>`;
+  } catch (e) {
+    box.innerHTML = `<span style="color:#dc2626;">✘ ${t('toast.loadFail', e.message)}</span>`;
+  }
+}
+
 async function saveAdConfig() {
   try {
     const body = {};
@@ -1863,6 +1929,22 @@ async function saveRule() {
 // ============================================================
 // System Ops（数据生命周期，ADR-011）：备份/恢复/出厂重置/模拟数据
 // ============================================================
+function renderBackupTable(list, kind) {
+  if (list.length === 0) {
+    return `<div class="text-sm text-muted" style="margin-top:6px;" data-i18n="ops.empty">暂无备份</div>`;
+  }
+  const sysBtn = kind === 'system';
+  return `<table class="table" style="margin-top:8px;">
+    <thead><tr><th data-i18n="ops.backupName">备份名称</th><th data-i18n="ops.backupTime">备份时间</th><th data-i18n="ops.backupSize">大小</th><th data-i18n="common.actions">操作</th></tr></thead>
+    <tbody>${list.map(b => {
+      const btn = sysBtn
+        ? (b.hasDb ? `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}')" data-i18n="ops.restoreSys">恢复系统</button>` : '-')
+        : (b.hasNas ? `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}')" data-i18n="ops.restoreBiz">恢复业务</button>` : '-');
+      return `<tr><td>${b.name}</td><td>${b.time}</td><td>${(b.size/1024).toFixed(1)} KB</td><td>${btn}</td></tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
 async function renderOps() {
   try {
     const backups = await api('/api/admin/ops/backups');
@@ -1883,21 +1965,14 @@ async function renderOps() {
         </div>
       </div>
       <div class="card">
-        <div class="card-title" data-i18n="ops.backupList">备份列表</div>
-        <table class="table">
-          <thead><tr><th data-i18n="ops.backupName">备份名称</th><th data-i18n="ops.backupTime">备份时间</th><th data-i18n="ops.backupSize">大小</th><th data-i18n="ops.type">类型</th><th data-i18n="common.actions">操作</th></tr></thead>
-          <tbody>
-            ${backups.length === 0 ? `<tr><td colspan="5" class="text-sm text-muted" data-i18n="ops.empty">暂无备份</td></tr>` :
-              backups.map(b => {
-                const type = (b.hasDb && b.hasNas) ? t('ops.typeAll') : (b.hasDb ? t('ops.typeSys') : t('ops.typeBiz'));
-                let btns = '';
-                if (b.hasDb) btns += `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}','system')" data-i18n="ops.restoreSys">恢复系统</button> `;
-                if (b.hasNas) btns += `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}','business')" data-i18n="ops.restoreBiz">恢复业务</button> `;
-                if (b.hasDb && b.hasNas) btns += `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}','all')" data-i18n="ops.restoreAll">恢复全部</button>`;
-                return `<tr><td>${b.name}</td><td>${b.time}</td><td>${(b.size/1024).toFixed(1)} KB</td><td>${type}</td><td>${btns || '-'}</td></tr>`;
-              }).join('')}
-          </tbody>
-        </table>
+        <div class="card-title" data-i18n="ops.backupListSys">系统备份列表（升级/回退用）</div>
+        <div class="text-sm text-muted" data-i18n="ops.backupListSysDesc">仅系统备份（backup-system-*），可恢复系统配置/数据库；业务数据备份不在此列。</div>
+        ${renderBackupTable(backups.filter(b => b.type === 'system' || b.type === 'all'), 'system')}
+      </div>
+      <div class="card">
+        <div class="card-title" data-i18n="ops.backupListBiz">业务数据备份列表（历史归档/存储迁移用）</div>
+        <div class="text-sm text-muted" data-i18n="ops.backupListBizDesc">仅业务数据备份（backup-business-*），可恢复摆渡文件；系统备份不在此列。</div>
+        ${renderBackupTable(backups.filter(b => b.type === 'business' || b.type === 'all'), 'business')}
       </div>
       <div class="card">
         <div class="card-title" data-i18n="ops.resetTitle">出厂重置</div>
@@ -1931,12 +2006,13 @@ async function opsBackup(scope) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-async function opsRestore(name, scope) {
+async function opsRestore(name) {
   const confirm = prompt(t('ops.restoreConfirm'));
   if (!confirm) return;
   if (confirm.trim() !== 'RESTORE') { toast(t('ops.restoreConfirm'), 'error'); return; }
   try {
-    const data = await api('/api/admin/ops/restore', { method: 'POST', body: { backupName: name, scope: scope, confirm: confirm.trim() } });
+    // scope 缺省：后端按备份名（backup-system-*/backup-business-*）自动推导类型恢复
+    const data = await api('/api/admin/ops/restore', { method: 'POST', body: { backupName: name, confirm: confirm.trim() } });
     toast(t('ops.done') + data.message, 'success');
     renderOps();
   } catch (e) { toast(e.message, 'error'); }

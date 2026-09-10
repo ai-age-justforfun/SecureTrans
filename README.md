@@ -1,6 +1,6 @@
 ﻿# SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.2.28 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
+> 版本：v2.2.29 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -49,7 +49,7 @@ cd src && python app.py
 # 另一个终端运行测试
 cd tests
 python test_api.py
-# 预期：252项测试全部通过，通过率100%（Windows dev）；WSL 测试环境 251 项（production 模式环境自适应差异 1 项）
+# 预期：266项测试全部通过，通过率100%（Windows dev）；WSL 测试环境 265 项（production 模式环境自适应差异 1 项）
 ```
 
 ### 一键部署（服务器，Rocky Linux）
@@ -62,7 +62,7 @@ cd /opt/securetrans
 # 2. 一键部署（9步自动化：Python 3.12 获取 → venv → 依赖 → .env → systemd → 启动验证）
 sudo bash infra/deploy.sh
 
-# 3. 部署验证（252项全量测试；admin 凭据自动取 .env RESET_PASSWORD；BASE_URL 自动适配 .env HOST/PORT；若 admin 密码已手工修改，用 VERIFY_ADMIN_PASS 显式传入）
+# 3. 部署验证（266项全量测试；admin 凭据自动取 .env RESET_PASSWORD；BASE_URL 自动适配 .env HOST/PORT；若 admin 密码已手工修改，用 VERIFY_ADMIN_PASS 显式传入）
 bash infra/verify.sh
 
 # 4. 防火墙放行 8000（Alpha 内测：内网 + 办公外网访问）
@@ -92,7 +92,7 @@ SecureTrans/
 │   ├── .env.production       # 生产环境配置模板（唯一生产配置源）
 │   └── static/               # 前端静态文件（SPA + 登录页）
 ├── tests/                    # 自动化测试
-│   └── test_api.py           # 全量API测试脚本（252项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
+│   └── test_api.py           # 全量API测试脚本（266项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
 ├── docs/                     # 统一文档（数字前缀排序，持续刷新）
 │   ├── 00-lean-startup-phase-map.md   # Lean Startup三阶段映射与决策门
 │   ├── 01-scrum-io-definition.md      # Scrum各阶段输入输出定义
@@ -100,7 +100,7 @@ SecureTrans/
 │   ├── 03-psf-process.md              # PSF阶段标准流程
 │   ├── 04-pmf-process.md              # PMF阶段标准流程（下一阶段准备）
 │   ├── 05-test-cases.md               # 测试用例
-│   ├── 06-test-report.md              # 测试报告（252项全通过）
+│   ├── 06-test-report.md              # 测试报告（266项全通过）
 │   ├── 07-psf-sprint4-retrospective.md # PSF阶段迭代小结
 │   ├── 08-cicd-gitops-architecture.md # CICD/GitOps架构规划
 │   ├── 09-preprod-verification.md     # 生产预验收清单
@@ -110,7 +110,7 @@ SecureTrans/
 └── infra/                    # 基础设施配置
     ├── deploy.sh             # 一键部署脚本（9步自动化, Linux）
     ├── deploy.ps1            # 一键部署脚本（Windows）
-    ├── verify.sh             # 部署验证脚本（252项，BASE_URL 自适应 + 凭据自动取 .env RESET_PASSWORD）
+    ├── verify.sh             # 部署验证脚本（266项，BASE_URL 自适应 + 凭据自动取 .env RESET_PASSWORD）
     ├── get-offline-python.sh # 离线 Python 3.12 RPM 获取（联网 Rocky8 跑一次）
     ├── nginx-securetrans.conf        # Nginx双网卡配置
     ├── nginx-securetrans-single.conf # Nginx单网卡配置
@@ -218,7 +218,7 @@ main ────●────●────●────●────  �
 - **Commit 规范**：`<type>(<scope>): <描述>`，不强制带 Sprint 编号，可关联 Story 编号
 
 ### 当前阶段
-**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，252项自动化测试 100%（WSL production 251 项）+ 800MB 性能压力测试通过（MD5 端到端一致），内部人工测试启动中（内网全功能 + 办公外网下载）。
+**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，266项自动化测试 100%（WSL production 265 项）+ 800MB 性能压力测试通过（MD5 端到端一致），内部人工测试启动中（内网全功能 + 办公外网下载）。
 
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
@@ -226,7 +226,7 @@ main ────●────●────●────●────  �
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（252项全通过）](docs/06-test-report.md)
+- [测试报告（266项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
 - [部署指南（唯一部署文档）](docs/DEPLOY.md)
@@ -340,6 +340,7 @@ main ────●────●────●────●────  �
 - **离线脚本（infra/，服务停止时最安全）**：`ops-backup.sh [all|system|business]` / `ops-restore.sh <name> [all|system|business]` / `ops-reset.sh`（备份+清理，调 CLI `--reset-factory`）/ `ops-mock.sh`（调 CLI `--mock-data`）；deploy.sh 支持 `RESET_DB=1` 部署时出厂重置（测试环境用）。
 - **与 ADR-010 不重叠**：ADR-010 管配置权威（静态三档），ADR-011 管数据生命周期与运维操作（动态）；mock+verify 构成 ADR-007 调测门禁的执行闭环。
 - **已落点**：v2.2.27（app.py ops 路由 scope 拆分 + 前端系统/业务备份卡 + ops-*.sh scope 参数 + test_api.py 250 项 + deploy.sh 9.8 RESET_DB；v2.2.23 初版：ops 路由 + CLI --reset-factory/--mock-data + 前端系统工具页 + test_api.py 221 项 + infra/ops-*.sh）
+- **v2.2.29 强化（备份命名区分，普通人可识别）**：备份目录名改为 `backup-system-<ts>` / `backup-business-<ts>` / `backup-all-<ts>`（名字即类型）；列表带 `type` 字段；系统工具页**两个独立备份列表**（系统备份列表 / 业务数据备份列表），恢复按钮不再选 scope——**后端按备份名自动推导类型**，杜绝"从同一个备份混恢复"；旧版 `backup-<ts>` 兼容识别为 all
 
 ### ADR-012：性能与文件完整性——800MB 全链路压力测试 + MD5 端到端四方一致（强制）
 - **背景**：生产部署前需要正式的性能与完整性验证——800MB 大文件 上传→审批摆渡→下载 全链路性能；文件完整性（MD5）端到端保证，防止传输/摆渡过程损坏。
@@ -351,6 +352,18 @@ main ────●────●────●────●────  �
 - **与 ADR-011 不重叠**：ADR-011 管数据生命周期（备份/恢复/重置），ADR-012 管性能验证与文件完整性（删除提交单是其中运维项，确认码机制一致）
 - **已落点**：v2.2.24（app.py：download_records.md5 迁移/下载 X-File-MD5/删除提交单 API/MAX_FILE_SIZE_MB；前端完整 MD5 + 删除按钮；tests/perf_test.py；test_api.py 233 项；800MB 实测：上传 338 MB/s / 摆渡 34ms / 下载 350 MB/s / 全链路 5.94s / MD5 四方一致）
 
+### ADR-013：AD 真实 LDAP 集成——精确匹配 + 连接测试 + openldap-clients 依赖（强制）
+- **背景**：v2.2.28 前 `/api/admin/ad/search` 在 ad_enabled=true 时是 TODO 占位（永远返回空 users + 手工命令），界面"查询失败，没有匹配"但手工 ldapsearch 成功——根因是**程序从未实现真实查询**，不是密码/网络问题；复制命令按钮把多行命令内联进 onclick 导致换行截断（只复制出"="）；verifyCommand 在用户名后加 `*` 通配（用户要求精确匹配：有就是有，没有就是没有）。
+- **决策**：
+  - **真实 LDAP 查询（ldap3，已内置依赖）**：`_ad_connection()` 用 AD_HOST/AD_BIND_DN/AD_BIND_PASSWORD 做 bind（同源读取 ad_config/.env）；`_ad_search_users()` 按 `(&(objectClass=user)(<ad_user_field>=<keyword>))` **精确匹配**（无通配符 `*`），返回 username/displayName/mail/department；异常翻译成可读原因（49/52e=凭据错、socket/timeout=网络、NoSuchObject=base_dn 错、invalidDN=DN 格式错），界面显示 error 不再静默"无匹配"
+  - **空关键字不 dump**：返回提示"请输入用户名关键字"（不返回全量用户，防泄露）；打桩模式（ad_enabled=false）仍返回 mock 演示用户
+  - **AD 连接测试（新增 `POST /api/admin/ad/test`）**：AD 配置卡片"测试连接"按钮 + 可选输入用户名——用当前配置实测 bind + 精确搜索该用户（存在/不存在/失败原因），生成审计日志 ad_test；替代/补充手工 ldapsearch
+  - **openldap-clients 为部署必装项**：deploy.sh 自动安装（联网 dnf/apt），离线环境提前准备 RPM；verifyCommand 注释附带安装提示；AD 配置卡片展示提示
+  - **复制命令修复**：多行命令改用 JS 数组缓存 + 索引 onclick（`copyAdCmd(i)`），不再内联进 HTML 属性
+  - **程序直连 AD 无需入域**：应用 ldap3 bind+search，与服务器是否加入 AD 域（sssd）完全独立，互不干扰（已有大规模 sssd 场景不受影响）
+- **与 ADR-010 不重叠**：ADR-010 管 AD 配置存储权威（SQLite），ADR-013 管 AD 查询执行与验证方式（真实查询/精确匹配/连接测试/依赖）
+- **已落点**：v2.2.29（app.py：_ad_err/_ad_connection/_ad_fields/_ad_search_users + api_search_ad 真实查询/精确匹配/error 字段 + POST /api/admin/ad/test；前端：AD 配置卡片测试连接按钮 + 搜索错误显示 + copyAdCmd 修复；deploy.sh openldap-clients 自动安装；test_api.py 266 项）
+
 ---
 
 ## 许可证
@@ -359,5 +372,5 @@ main ────●────●────●────●────  �
 
 ---
 
-*SecureTrans v2.2.28 | 2026-09-10*
+*SecureTrans v2.2.29 | 2026-09-10*
 

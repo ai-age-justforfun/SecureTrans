@@ -1,9 +1,27 @@
 # SecureTrans 测试报告
 
-> 版本：v2.2.28 | 日期：2026-09-10 | 阶段：PSF（Alpha）
+> 版本：v2.2.29 | 日期：2026-09-10 | 阶段：PSF（Alpha）
 > 测试环境：Windows 11 (本地dev) + Rocky Linux (WSL2 test)，Python 3.12 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
 > 测试工具：tests/test_api.py（Python urllib，无额外依赖）
+
+---
+
+## 〇、v2.2.29 回归（2026-09-10）
+
+**总计 266项测试（Windows dev）/ 265项（WSL production）全部通过，通过率 100%。**
+
+**本轮需求（6 项修复 + AD 真实集成）**：
+
+1. **合作方交互**：选择已配置合作方后**隐藏接收方姓名/单位/邮箱**（接收方=该合作方，单位自动带出只读）；仅选择 **"其他（自行填写）"** 才显示三字段手工填写，提交后自动加入合作方清单（后端信任模式，去重不重复加）。
+2. **备份完全拆分**：备份目录名**按类型区分**（`backup-system-<ts>` / `backup-business-<ts>` / `backup-all-<ts>`，名字即类型）；系统工具页**两个独立备份列表**（系统备份 / 业务数据备份），恢复不再选 scope——**后端按备份名自动推导**，杜绝"从同一备份混恢复系统/业务"。
+3. **系统工具页抬头**：确认 `'系统工具 / System Tools'` 固定中英双语（renderPage 特判），刷新/更新部署后生效。
+4. **复制命令修复**：多行 ldapsearch 命令改用 JS 数组缓存 + 索引 onclick（`copyAdCmd`），修复"只复制出 = 号"的换行截断 bug。
+5. **openldap-clients 必装**：deploy.sh 自动安装（联网），离线需提前备 RPM；AD 配置卡片 + verifyCommand 提示同步。
+6. **AD 连接测试**：新增 `POST /api/admin/ad/test` + AD 配置卡片"测试连接"按钮（可输入用户名精确验证），bind 实测返回成功/失败可读原因，写审计日志。
+7. **AD 搜索真实化（核心卡点解决）**：`api_search_ad` 实现**真实 LDAP 查询（ldap3）**——原为 TODO 占位（ad_enabled=true 永远返回空 → 界面"没有匹配"但手工 ldapsearch 成功）；**精确匹配**（去掉用户名后 `*` 通配符）；空关键字不 dump 全量；错误返回 `error` 字段前端展示（52e=bind 凭据错等）；修复插入代码时 `@app.route` 装饰器错位 bug（路由曾绑定到 `_ad_err`）。
+
+**新增断言（14 项）**：备份名 backup-system-*/backup-business-* 前缀、列表 type 字段、恢复自动推导、verifyCommand 无通配符、空关键字防 dump、AD 测试连接接口（bind + 指定用户名）、前端备份双列表/恢复不传 scope/测试连接按钮/复制缓存/错误显示/合作方隐藏姓名邮箱。
 
 ---
 

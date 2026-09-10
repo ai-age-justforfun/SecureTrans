@@ -1565,10 +1565,70 @@ test("AD: 搜索返回 mode/users/verifyCommand(ldapsearch)",
 # 6) 后端资源：APP_STAGE / 备份 scope / init_db 播种用 RESET_PASSWORD / 登录 fallback 无 Admin@123
 test("后端: app.py 含 APP_STAGE + 备份 scope 拆分 + init_db 播种 RESET_PASSWORD",
      'APP_STAGE = os.getenv("APP_STAGE"' in _app_src and 'def _backup_now(scope="all")' in _app_src
-     and 'RESET_PASSWORD.encode()' in _app_src and '_restore_backup(name, scope="all")' in _app_src)
+     and 'RESET_PASSWORD.encode()' in _app_src and 'def _restore_backup(name, scope=None)' in _app_src
+     and 'def _backup_type(name: str) -> str' in _app_src)
 test("后端: app.py 登录 fallback 页不再写死 Admin@123（动态 RESET_PASSWORD）",
      'Admin@123' not in _app_src.replace('RESET_PASSWORD', '').replace('RESET_PWD', '')
      or '__RESET_PWD__' in _app_src)
+
+# ============================================================
+# v2.2.29 回归组：备份命名区分/自动推导 + AD 精确匹配/测试连接 + 前端交互
+# ============================================================
+print("\n--- 17. v2.2.29 备份拆分命名/AD真实查询/复制/合作方交互 ---")
+# 1) 备份命名区分：system→backup-system-* / business→backup-business-*，列表带 type
+code, data = request('POST', '/api/admin/ops/backup', json_data={"scope": "system"})
+test("运维: 系统备份名含 backup-system- 前缀（名字即类型）",
+     code == 200 and data.get('name', '').startswith('backup-system-'), f"code={code}, data={data}")
+code, data = request('POST', '/api/admin/ops/backup', json_data={"scope": "business"})
+test("运维: 业务备份名含 backup-business- 前缀（名字即类型）",
+     code == 200 and data.get('name', '').startswith('backup-business-'), f"code={code}, data={data}")
+code, data = request('GET', '/api/admin/ops/backups')
+_has_type = code == 200 and isinstance(data, list) and len(data) >= 1 and all('type' in b for b in data)
+test("运维: 备份列表含 type 字段（system/business/all，普通人可识别）",
+     _has_type, f"code={code}, n={len(data) if isinstance(data,list) else 'NA'}")
+# 2) 恢复不传 scope：后端按备份名自动推导（不混恢复）
+code, data = request('POST', '/api/admin/ops/restore', json_data={"backupName": "backup-x", "confirm": "RESTORE"})
+test("运维: 恢复缺省 scope 由备份名自动推导（缺失备份仍400）", code == 400, f"code={code}")
+# 3) AD 搜索：精确匹配（用户名后无通配符 *）；空关键字返回提示不 dump
+code, data = request('POST', '/api/admin/ad/search', json_data={"keyword": "zha"})
+_vc = data.get('verifyCommand', '') if isinstance(data, dict) else ''
+test("AD: verifyCommand 精确匹配（filter 无通配符 *）",
+     code == 200 and '*))' not in _vc,
+     f"vc_has_star_filter={'*))' in _vc}")
+code, data = request('POST', '/api/admin/ad/search', json_data={"keyword": ""})
+test("AD: 空关键字返回提示（不返回全量用户，防 dump）",
+     code == 200 and isinstance(data, dict)
+     and (data.get('mode') == 'mock' or data.get('error') != '' or data.get('users') == []),
+     f"code={code}, mode={data.get('mode') if isinstance(data,dict) else 'NA'}, error={data.get('error','') if isinstance(data,dict) else 'NA'}")
+# 4) AD 连接测试接口（bind 实测 + 可选用户名精确验证）
+code, data = request('POST', '/api/admin/ad/test', json_data={"username": ""})
+test("运维: AD 测试连接接口可达（返回 ok 布尔）",
+     code == 200 and isinstance(data, dict) and 'ok' in data, f"code={code}, data={data}")
+code, data = request('POST', '/api/admin/ad/test', json_data={"username": "zhangsan"})
+test("运维: AD 测试连接支持指定用户名（精确验证）",
+     code == 200 and isinstance(data, dict) and 'ok' in data, f"code={code}, data={data}")
+# 5) 前端：备份列表完全拆分（两个独立列表卡片）
+test("前端: 备份列表拆分系统/业务两列表 + 名字区分",
+     'ops.backupListSys' in _html and 'ops.backupListBiz' in _html
+     and 'renderBackupTable(backups.filter(b => b.type' in _html
+     and 'backup-{scope}-{ts}' in _app_src)
+test("前端: 恢复按钮不再传 scope（按备份名自动推导）",
+     "opsRestore('${b.name}')" in _html and "body: { backupName: name, confirm" in _html)
+# 6) 前端：AD 配置页测试连接按钮 + openldap-clients 提示
+test("前端: AD 配置卡片含测试连接（可输用户名）",
+     'adConfig.test' in _html and 'testAdConnection' in _html and 'id="adTestUser"' in _html
+     and 'ad.testHint' in _html and 'openldap-clients' in _html)
+# 7) 前端：复制命令修复（数组缓存 + copyAdCmd，多行命令不被截断）
+test("前端: 复制命令改用缓存索引（修复只复制'='的截断bug）",
+     '_adCmdCache' in _html and 'copyAdCmd(0)' in _html and 'function copyAdCmd' in _html)
+# 8) 前端：AD 搜索结果错误显示
+test("前端: AD 搜索显示 error 原因（不再静默无匹配）",
+     'resp.error' in _html and 'errHtml' in _html)
+# 9) 前端：合作方选中清单 → 隐藏姓名/邮箱；仅'其他'显示
+test("前端: 合作方选中清单隐藏姓名/邮箱（仅其他自行填写显示）",
+     'id="receiverNameWrap"' in _html and 'id="receiverEmailWrap"' in _html
+     and "nameWrap.style.display = 'none'" in _html and "emailWrap.style.display = 'none'" in _html
+     and 'orgReadOnly' in _html)
 
 # ============================================================
 # 测试报告

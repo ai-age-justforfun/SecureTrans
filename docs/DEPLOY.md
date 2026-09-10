@@ -24,6 +24,8 @@
 > 首次启用 AD：部署完成后登录 admin →「系统配置 → AD 配置」→ 点 **从 .env 导入**（把下方 .env 值读入数据库）→ 按需修改 → **保存**（即时生效，无需重启）。
 > 之后改 AD 参数在管理页操作，**改 .env 不再生效**；如需重置回 .env 值，再次点"从 .env 导入"。
 > **程序直连 AD 无需服务器入域、无需 SSSD**（v2.2.27 确认）：应用通过 ldap3 协议 bind 查询，与服务器是否加入 AD 域完全独立，与既有 sssd 大规模使用互不干扰。
+> **openldap-clients 为部署必装项（v2.2.29，ADR-013）**：提供 `ldapsearch` 供服务器手工验证；deploy.sh 自动安装（联网 `dnf install -y openldap-clients` / `apt install -y ldap-utils`），**离线环境需提前下载 RPM 放入部署包**（可先 `dnf install --downloadonly openldap-clients` 在联网机准备）。未安装不影响系统运行，AD 配置页有「测试连接」可替代手工验证。
+> **AD 真实查询 + 连接测试（v2.2.29，ADR-013）**：AD 用户搜索为**真实 LDAP 查询（ldap3，精确匹配）**——用户名后无通配符 `*`，有就是有、没有就是没有；空关键字不返回全量用户（防泄露）。AD 配置卡片新增 **测试连接** 按钮：用当前配置实测 bind，可输入用户名做精确验证（存在/不存在/失败原因），失败原因可读（52e=bind 凭据错、网络不通/base_dn 错等），并写审计日志。
 > **手工验证命令（v2.2.27）**：用户管理/审批人 → AD 用户搜索 → 复制页面生成的 `ldapsearch` 命令到服务器执行（bind 密码处替换为实际密码），可独立确认 AD 连通与凭据；`52e` = bind 凭据错误，先查账号密码与 bind DN。
 
 | 配置项（.env 键） | 管理页键 | 默认值 | 说明 |
@@ -133,7 +135,7 @@ cd ~/securetrans/tests && python3 test_api.py   # 201项全通过
 RESET_DB=1 sudo bash infra/deploy.sh
 # 或运行期：系统工具页点"模拟数据"（确认码 MOCK），或离线脚本
 sudo bash infra/ops-mock.sh
-# 全量自动化验证（Windows dev 252项 / WSL 生产面 251项，凭据自动取 .env RESET_PASSWORD）
+# 全量自动化验证（Windows dev 266项 / WSL 生产面 265项，凭据自动取 .env RESET_PASSWORD）
 sudo bash infra/verify.sh
 ```
 
@@ -662,11 +664,11 @@ sudo systemctl restart securetrans
 │   ├── .env.production       # 生产环境配置模板
 │   └── static/               # 前端SPA（index.html，单页应用）
 ├── tests/
-│   └── test_api.py           # 252项全量测试（WSL 生产面 251项）
+│   └── test_api.py           # 266项全量测试（WSL 生产面 265项）
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署 (Linux，RESET_DB=1 部署时出厂重置)
 │   ├── deploy.ps1            # 一键部署 (Windows)
-│   ├── verify.sh             # 部署验证（251项全量测试，凭据自动取 .env RESET_PASSWORD）
+│   ├── verify.sh             # 部署验证（265项全量测试，凭据自动取 .env RESET_PASSWORD）
 │   ├── ops-backup.sh / ops-restore.sh / ops-reset.sh / ops-mock.sh  # 数据生命周期离线脚本（ADR-011）
 │   ├── env-refresh.sh        # .env 配置刷新（备份+只增不覆盖，ADR-010/5.4）
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式

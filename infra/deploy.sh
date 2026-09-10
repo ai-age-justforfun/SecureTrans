@@ -113,6 +113,14 @@ if ! "$PY_CMD" -m venv --help &>/dev/null 2>&1; then
     fi
 fi
 
+# AD 手工验证依赖（openldap-clients 提供 ldapsearch；离线环境需提前准备 RPM，未装不影响系统运行）
+if command -v dnf &>/dev/null && ! command -v ldapsearch &>/dev/null; then
+    echo -e "${YELLOW}  ldapsearch 未安装（AD 手工验证用），尝试安装 openldap-clients ...${NC}"
+    dnf install -y openldap-clients 2>/dev/null || echo -e "${YELLOW}  openldap-clients 安装失败（离线？），可在 AD 配置页使用「测试连接」替代手工 ldapsearch${NC}"
+elif command -v apt &>/dev/null && ! command -v ldapsearch &>/dev/null; then
+    apt install -y ldap-utils 2>/dev/null || echo -e "${YELLOW}  ldap-utils 安装失败（离线？），可在 AD 配置页使用「测试连接」替代手工 ldapsearch${NC}"
+fi
+
 # 检查源码目录
 if [ ! -d "$SRC_DIR" ]; then
     echo -e "${RED}错误: 未找到源码目录 ${SRC_DIR}（请在项目根目录运行: sudo bash infra/deploy.sh）${NC}"

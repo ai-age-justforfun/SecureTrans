@@ -40,7 +40,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.28"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.29"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -1693,14 +1693,74 @@ def api_delete_role_mapping(mapping_id):
     add_audit_log(current_user.username, "delete_role_mapping", mapping_id, "删除角色映射", get_client_ip())
     return jsonify({"message": "删除成功"})
 
+def _ad_err(ex):
+    """把 ldap3/网络异常翻译成可读原因（供界面/审计展示）"""
+    s = str(ex)
+    if "InvalidCredentials" in s or "49" in s or "52e" in s.lower():
+        return "bind 凭据错误（LDAP 49 / data 52e）：AD_BIND_DN 或 AD_BIND_PASSWORD 不正确"
+    if any(k in s for k in ("socket", "timeout", "timed out", "ServerPool", "unreachable", "Name or service")):
+        return "无法连接 AD 服务器：请检查 AD_HOST 地址/端口、网络连通性与防火墙"
+    if "NoSuchObject" in s:
+        return "AD 搜索基准(base_dn)不存在：请检查 AD_BASE_DN"
+    if "invalidDN" in s:
+        return "bind DN 格式无效：请检查 AD_BIND_DN"
+    return s[:200]
+
+def _ad_connection():
+    """创建并 bind AD 连接（ldap3，同源读取 ad_config/.env）"""
+    from ldap3 import Server, Connection, ALL
+    ad_host = get_ad_config_value("ad_host", os.getenv("AD_HOST", ""))
+    ad_bind_dn = get_ad_config_value("ad_bind_dn", os.getenv("AD_BIND_DN", ""))
+    ad_bind_password = get_ad_config_value("ad_bind_password", os.getenv("AD_BIND_PASSWORD", ""))
+    server = Server(ad_host, get_info=ALL)
+    conn = Connection(server, user=ad_bind_dn or None, password=ad_bind_password or None,
+                      auto_bind=True, raise_exceptions=True)
+    return conn
+
+def _ad_fields():
+    return {
+        "ad_user_field": get_ad_config_value("ad_user_field", os.getenv("AD_USER_FIELD", "sAMAccountName")) or "sAMAccountName",
+        "ad_display_field": get_ad_config_value("ad_display_field", os.getenv("AD_DISPLAY_FIELD", "displayName")) or "displayName",
+        "ad_mail_field": get_ad_config_value("ad_mail_field", os.getenv("AD_MAIL_FIELD", "mail")) or "mail",
+        "ad_base_dn": get_ad_config_value("ad_base_dn", os.getenv("AD_BASE_DN", "")),
+    }
+
+def _ad_search_users(keyword, limit=20):
+    """真实 LDAP 精确搜索用户（ldap3）；keyword 为空返回空（不 dump 全量）。返回 (users, error)"""
+    f = _ad_fields()
+    conn = _ad_connection()
+    try:
+        if keyword:
+            flt = f"(&(objectClass=user)({f['ad_user_field']}={keyword}))"  # 精确匹配：有就是有，没有就是没有
+        else:
+            return [], "请输入用户名关键字（精确匹配，不返回全量用户）"
+        conn.search(f["ad_base_dn"], flt, attributes=[f["ad_user_field"], f["ad_display_field"], f["ad_mail_field"], "department"],
+                    size_limit=limit)
+        users = []
+        for e in conn.entries:
+            users.append({
+                "username": str(getattr(e, f["ad_user_field"], "") or ""),
+                "displayName": str(getattr(e, f["ad_display_field"], "") or ""),
+                "email": str(getattr(e, f["ad_mail_field"], "") or ""),
+                "department": str(getattr(e, "department", "") or ""),
+            })
+        return users, ""
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+
 @app.route("/api/admin/ad/search", methods=["POST"])
 @login_required
 @role_required("admin")
 def api_search_ad():
-    """搜索 AD 用户（PMF 阶段模拟，生产接入真实 LDAP 查询）
+    """搜索 AD 用户（真实 LDAP 查询，ldap3；ad_enabled=false 时为打桩模拟）
     同时返回 verifyCommand：可直接在服务器/AD 管理机手工执行的 ldapsearch 验证命令
-    （与程序同源读取 ad_config/.env，避免界面配置与手工验证不一致；bind 密码不回显明文，用 **** 占位提示替换）。"""
+    （与程序同源读取 ad_config/.env，避免界面配置与手工验证不一致；bind 密码不回显明文，用 **** 占位提示替换）。
+    精确匹配（用户名后无通配符 *）：有就是有，没有就是没有。"""
     keyword = request.form.get("keyword", "") if request.form else (request.get_json() or {}).get("keyword", "")
+    keyword = (keyword or "").strip()
     ad_enabled = get_ad_config_value("ad_enabled", "false").lower()
     ad_host = get_ad_config_value("ad_host", os.getenv("AD_HOST", ""))
     ad_bind_dn = get_ad_config_value("ad_bind_dn", os.getenv("AD_BIND_DN", ""))
@@ -1710,15 +1770,15 @@ def api_search_ad():
     ad_mail_field = get_ad_config_value("ad_mail_field", os.getenv("AD_MAIL_FIELD", "mail")) or "mail"
     verify_cmd = ""
     if ad_host and ad_base_dn:
-        host_part = ad_host.replace("ldap://", "").replace("ldaps://", "")
-        secure_flag = "-x" if ad_host.startswith("ldaps://") else "-x"
+        secure_flag = "-Z" if ad_host.startswith("ldaps://") else "-x"
         bind_part = f"-D '{ad_bind_dn}' -w '****'" if ad_bind_dn else ""
+        flt_cmd = f"(&(objectClass=user)({ad_user_field}={keyword}))" if keyword else "(&(objectClass=user))"
         verify_cmd = (f"ldapsearch {secure_flag} -H {ad_host} {bind_part} -b '{ad_base_dn}' "
-                      f"'(&(objectClass=user)({ad_user_field}={keyword or '*'}*))' {ad_display_field} {ad_mail_field}"
-                      + ("\n# 注：将 **** 替换为 AD 绑定密码；无 ldapsearch 时可用: "
-                         f"yum install -y openldap-clients" if bind_part else ""))
+                      f"'{flt_cmd}' {ad_display_field} {ad_mail_field}"
+                      + ("\n# 注：将 **** 替换为 AD 绑定密码（AD_BIND_PASSWORD）；服务器无 ldapsearch 时先安装: "
+                         f"sudo dnf install -y openldap-clients" if bind_part else ""))
     if ad_enabled != "true":
-        # 模拟返回
+        # 打桩模拟（PMF 未启用 AD 时演示）
         mock = [
             {"username": "zhangsan", "displayName": "张三", "email": "zhangsan@nexskysemi.com", "department": "研发部"},
             {"username": "lisi", "displayName": "李四", "email": "lisi@nexskysemi.com", "department": "研发部"},
@@ -1726,9 +1786,47 @@ def api_search_ad():
             {"username": "zhaoliu", "displayName": "赵六", "email": "zhaoliu@nexskysemi.com", "department": "市场部"},
         ]
         result = [u for u in mock if keyword.lower() in u["username"].lower() or keyword in u["displayName"]]
-        return jsonify({"mode": "mock", "users": result, "verifyCommand": verify_cmd})
-    # TODO: 生产环境真实 AD 查询
-    return jsonify({"mode": "ldap", "users": [], "verifyCommand": verify_cmd})
+        return jsonify({"mode": "mock", "users": result, "verifyCommand": verify_cmd, "error": ""})
+    # 真实 LDAP 精确查询（ldap3；ad_enabled=true）
+    if not ad_host or not ad_base_dn:
+        return jsonify({"mode": "ldap", "users": [], "verifyCommand": verify_cmd,
+                        "error": "AD 未完整配置：请先在「系统配置 → AD 配置」填写 AD_HOST / AD_BASE_DN 并保存"})
+    if not keyword:
+        return jsonify({"mode": "ldap", "users": [], "verifyCommand": verify_cmd,
+                        "error": "请输入用户名关键字（精确匹配，不返回全量用户）"})
+    try:
+        users, err = _ad_search_users(keyword)
+        return jsonify({"mode": "ldap", "users": users, "verifyCommand": verify_cmd, "error": err})
+    except Exception as ex:
+        return jsonify({"mode": "ldap", "users": [], "verifyCommand": verify_cmd, "error": f"AD 查询失败：{_ad_err(ex)}"})
+
+@app.route("/api/admin/ad/test", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_ad_test():
+    """AD 连接测试：用当前配置的 bind 凭据实测连通；可选指定用户名做精确查询验证（有就是有，没有就是没有）"""
+    data = request.get_json() or {}
+    username = (data.get("username") or "").strip()
+    try:
+        conn = _ad_connection()
+        msg = "AD 连接成功（bind 认证通过）"
+        if username:
+            f = _ad_fields()
+            conn.search(f["ad_base_dn"], f"(&(objectClass=user)({f['ad_user_field']}={username}))",
+                        attributes=[f["ad_user_field"], f["ad_display_field"]], size_limit=1)
+            if conn.entries:
+                e = conn.entries[0]
+                disp = str(getattr(e, f["ad_display_field"], "") or "")
+                msg = f"AD 连接成功；用户「{username}」存在（显示名：{disp or '-'}）"
+            else:
+                msg = f"AD 连接成功；未找到用户「{username}」（精确匹配，有就是有，没有就是没有）"
+        conn.unbind()
+        add_audit_log(current_user.username, "ad_test", f"username={username or '(bind only)'}", msg, get_client_ip())
+        return jsonify({"ok": True, "message": msg})
+    except Exception as ex:
+        emsg = f"AD 连接失败：{_ad_err(ex)}"
+        add_audit_log(current_user.username, "ad_test", f"username={username or '(bind only)'}", emsg, get_client_ip())
+        return jsonify({"ok": False, "message": emsg})
 
 # ============================================================
 # 路由：AD 配置管理 + 配置总览（ADR-010，仅 admin）
@@ -2173,7 +2271,9 @@ def _backup_now(scope="all"):
     系统备份用于升级前后保证系统可回退；业务备份用于业务文件历史归档与存储迁移（ADR-011 拆分）。"""
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S")
-    dest = BACKUP_DIR / f"backup-{ts}"
+    # 备份名区分类型：backup-system-<ts> / backup-business-<ts> / backup-all-<ts>
+    # （系统备份与业务数据备份完全独立，名字即类型，普通人可识别，避免混用）
+    dest = BACKUP_DIR / f"backup-{scope}-{ts}"
     (dest / "db").mkdir(parents=True, exist_ok=True)
     (dest / "nas").mkdir(parents=True, exist_ok=True)
     if scope in ("all", "system"):
@@ -2191,6 +2291,15 @@ def _backup_now(scope="all"):
                 shutil.copytree(str(src), str(dest / "nas" / sub))
     return dest
 
+def _backup_type(name: str) -> str:
+    """从备份名推导类型：backup-system-* → system；backup-business-* → business；其余（backup-all-*/旧版 backup-*）→ all"""
+    n = name or ""
+    if n.startswith("backup-system-"):
+        return "system"
+    if n.startswith("backup-business-"):
+        return "business"
+    return "all"
+
 def _list_backups():
     out = []
     if BACKUP_DIR.exists():
@@ -2204,14 +2313,17 @@ def _list_backups():
                     "name": d.name,
                     "time": d.name[len("backup-"):].replace("_", " "),
                     "size": size,
+                    "type": _backup_type(d.name),
                     "hasDb": (d / "db" / "securetrans.db").exists(),
                     "hasNas": any((d / "nas" / sub).exists() and any((d / "nas" / sub).iterdir()) for sub in ["staging", "external", "archive"]),
                 })
     return out
 
-def _restore_backup(name, scope="all"):
-    """从备份恢复（scope 同 _backup_now；回退 = 再恢复之前的备份）
+def _restore_backup(name, scope=None):
+    """从备份恢复（scope 缺省自动按备份名推导，普通人无需知道内部类型；回退 = 再恢复之前的备份）
     system：仅替换 DB（配置+数据），不动业务文件；business：仅替换 NAS 业务目录，不动 DB"""
+    if scope is None or scope not in ("all", "system", "business"):
+        scope = _backup_type(name)
     src = BACKUP_DIR / name
     if not src.exists():
         return False, "备份不存在"
@@ -2341,9 +2453,7 @@ def api_ops_backup():
 def api_ops_restore():
     data = request.get_json() or {}
     name = data.get("backupName", "")
-    scope = data.get("scope", "all")
-    if scope not in ("all", "system", "business"):
-        return jsonify({"error": "scope 仅支持 all/system/business"}), 400
+    scope = data.get("scope")  # 缺省自动按备份名推导（_restore_backup 内处理）
     if data.get("confirm") != "RESTORE":
         return jsonify({"error": "请输入确认码 RESTORE"}), 400
     ok, msg = _restore_backup(name, scope)
