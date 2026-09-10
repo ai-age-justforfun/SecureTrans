@@ -1,13 +1,37 @@
 # SecureTrans 测试报告
 
-> 版本：v2.2.31 | 日期：2026-09-10 | 阶段：PSF（Alpha）
+> 版本：v2.3.0 | 日期：2026-09-10 | 阶段：PSF→Beta（第 1 个 beta 版本）
 > 测试环境：Windows 11 (本地dev) + Rocky Linux (WSL2 test)，Python 3.12 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
-> 测试工具：tests/test_api.py（Python urllib，无额外依赖）
+> 测试工具：tests/test_api.py（Python urllib，无额外依赖）+ tests/mock/（AD 模拟，ADR-016）
 
 ---
 
-## 〇、v2.2.31 回归（2026-09-10）
+## 〇、v2.3.0-beta 回归（2026-09-10）
+
+**总计 298项测试（Windows dev）/ 297项（WSL production）全部通过，通过率 100%。**
+
+**本轮变更（ADR-016 · 12-Factor 三环境一体化 + 进入 Beta）**：
+
+1. **env/ 分层配置**：三模板迁移 `src/.env.{production,testing,example}` → `env/`（dev/test/prod.env.template），
+   引用同步（deploy.sh / env-refresh.sh / start.sh / package.sh / test_api.py）；.gitignore 修正（ENV/ 误伤移除）。
+2. **.env 启动自动加载**：`app.py` 启动加载同目录 `.env`（不覆盖已注入环境变量，生产 systemd 优先），
+   开发/测试直接 `python app.py` 配置即生效（stage=beta 等）。
+3. **AD 模拟目录（AD_MOCK_MODE）**：`authenticate_ad` / `api_search_ad` 走内置 `MOCK_AD_USERS`
+   （6 用户 + 统一密码，与生产典型 AD 数据脱敏一致，不触网）；生产 false 直连真实 AD。
+4. **tests/mock/**：`mock_expected.json` 期望基线 + `mock_ad.py` 防漂移校验器（PASS）。
+5. **新增第 23 组测试（AD 模拟回归）**：搜索命中/无匹配、登录成功/错误密码 401/用户不存在 401/恢复 admin（7 断言）。
+6. **safe_rename 重试**：Windows Defender/句柄瞬时占用（PermissionError WinError 5）加 5 次重试，
+   Linux/NAS 原子 rename 不受影响。
+7. **RTM（docs/07-requirements-traceability.md）**：需求域 ↔ 测试组一一映射，生产仅冒烟+人工（不写数据）。
+8. **CI 骨架（.gitea/workflows/ci.yml + infra/ci-runner.md）**：本地 runner 全量 TDD 回归。
+9. **版本阶段**：APP_STAGE=alpha → **beta**（页面/健康检查显示 v2.3.0-beta），第 1 个 beta 由用户手工发布验证。
+
+**双环境基线**：Windows dev 298/298、WSL production 297/297（AD 模拟组 7 项双环境通过）。
+
+---
+
+## 一、v2.2.31 回归（2026-09-10）
 
 **总计 291项测试（Windows dev）/ 290项（WSL production）全部通过，通过率 100%。**
 
@@ -464,4 +488,4 @@
 - **根因**：登录初始化 `navigate(admin?'dashboard':'submit')` 在外网面被 navigate 外网校验拦截（只允许 external），但 `currentPage` 保持初始 'dashboard' 且内容区未渲染；语言切换 `switchLang()` 绕过 navigate 直接 `renderPage(currentPage)` → renderDashboard 调 `/api/stats` → 外网 403。
 - **变更（前端 index.html）**：① `switchLang` 外网面强制 `navigate('external')`（复用 navigate 外网校验，仅刷新下载页），内网面维持 renderPage 刷新动态文案；② 登录初始化外网面直进 `navigate('external')`，内容区正确渲染下载页。
 - 测试 233 → 235 项（+2 前端资源断言）；浏览器实测：模拟外网面切换语言仅请求 /api/external/files（无 /api/stats、无 403），下载列表正常渲染；Windows dev 235/235，v2.2.25 待发布。
-*文档结束 | SecureTrans 测试报告 v1.22.0 | 2026-09-10*
+*文档结束 | SecureTrans 测试报告 v2.3.0-beta | 2026-09-10*

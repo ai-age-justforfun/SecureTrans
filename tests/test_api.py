@@ -1583,9 +1583,9 @@ test("前端: 登录初始化外网面直进外网下载页(管理页被外网�
 # ============================================================
 print("\n--- 15. .env 模板与刷新机制 ---")
 # 模板统一：三模板用 MAX_FILE_SIZE_MB，不含旧键 MAX_CONTENT_LENGTH=
-_env_prod = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'src', '.env.production'), encoding='utf-8').read()
-_env_test = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'src', '.env.testing'), encoding='utf-8').read()
-_env_ex = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'src', '.env.example'), encoding='utf-8').read()
+_env_prod = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'env', 'prod.env.template'), encoding='utf-8').read()
+_env_test = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'env', 'test.env'), encoding='utf-8').read()
+_env_ex = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'env', 'dev.env'), encoding='utf-8').read()
 test("模板: 三个.env模板统一用MAX_FILE_SIZE_MB且不含旧键MAX_CONTENT_LENGTH=",
      'MAX_FILE_SIZE_MB=800' in _env_prod and 'MAX_FILE_SIZE_MB=800' in _env_test and 'MAX_FILE_SIZE_MB=800' in _env_ex
      and not any(l.startswith('MAX_CONTENT_LENGTH=') for l in _env_prod.splitlines())
@@ -1736,6 +1736,43 @@ test("前端: 备份列表行含删除按钮（opsDeleteBackup + 确认）",
 test("前端: 系统工具抬头不随语言刷新被覆盖（applyI18n ops 特判）",
      "currentPage === 'ops' ? '系统工具 / System Tools'" in _html
      and "t(_titles[currentPage] || currentPage)" in _html)
+
+
+# ============================================================
+# 23. AD 模拟回归组（ADR-016：AD_MOCK_MODE=true 时全链路自动化）
+# 说明：开发/测试环境 AD_MOCK_MODE=true（env/dev.env、env/test.env），走内置模拟目录
+#      （src/app.py MOCK_AD_USERS，与生产典型 AD 数据脱敏一致），不触网；
+#      生产 AD_MOCK_MODE=false 时本组自动跳过（探测 mode=mock）。
+# ============================================================
+print("\n--- 23. AD 模拟回归组（自动探测 mock 模式） ---")
+_code, _data = request('POST', '/api/admin/ad/search', data={"keyword": "zhangsan"},
+                       headers={"X-Network-Zone": "internal"})
+_mock_on = isinstance(_data, dict) and _data.get("mode") == "mock"
+test("AD模拟: 探测搜索模式（mode=mock 激活本组）", _mock_on,
+     f"code={_code}, mode={_data.get('mode') if isinstance(_data, dict) else _data}")
+if _mock_on:
+    test("AD模拟: 搜索命中（zhangsan→张三）",
+         any(u.get('username') == 'zhangsan' and u.get('displayName') == '张三' for u in _data.get('users', [])),
+         f"users={_data.get('users')}")
+    _c2, _d2 = request('POST', '/api/admin/ad/search', data={"keyword": "notexist_zzz"},
+                       headers={"X-Network-Zone": "internal"})
+    test("AD模拟: 搜索无匹配返回空列表", _c2 == 200 and _d2.get('users') == [],
+         f"code={_c2}, users={_d2.get('users')}")
+    # 登录成功（mock AD 用户，密码 MOCK_AD_PASSWORD）
+    _c3, _d3 = request('POST', '/api/auth/login', json_data={"username": "zhangsan", "password": "Mock@123456"})
+    test("AD模拟: 登录成功（zhangsan/Mock@123456）", _c3 == 200 and _d3.get('message') == '登录成功',
+         f"code={_c3}, data={_d3}")
+    # 退出后验证失败路径（错误密码 / 用户不存在 → 401 + 审计）
+    request('POST', '/api/auth/logout')
+    _c4, _d4 = request('POST', '/api/auth/login', json_data={"username": "zhangsan", "password": "wrong-pass"})
+    test("AD模拟: 登录失败（错误密码→401）", _c4 == 401, f"code={_c4}")
+    _c5, _d5 = request('POST', '/api/auth/login', json_data={"username": "notexist", "password": "Mock@123456"})
+    test("AD模拟: 登录失败（用户不存在→401）", _c5 == 401, f"code={_c5}")
+    # 恢复 admin 登录态（后续报告段无请求，保持一致性）
+    _c6, _d6 = request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    test("AD模拟: 恢复 admin 登录态", _c6 == 200, f"code={_c6}")
+else:
+    print("  [跳过] 当前服务 AD_MOCK_MODE=false（生产/真实 AD 模式），本组不执行")
 
 # ============================================================
 # 测试报告

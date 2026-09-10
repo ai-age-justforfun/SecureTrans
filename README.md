@@ -1,6 +1,6 @@
 ﻿# SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.2.31 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
+> 版本：v2.3.0 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（第 1 个 beta 版本）
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -30,7 +30,7 @@ SecureTrans 是面向中小企业的轻量级单向跨网文件审批摆渡系�
 
 ```bash
 cd src
-cp .env.testing .env          # 测试环境配置（默认 DEPLOY_MODE=testing）
+cp env/test.env .env          # 测试环境配置（默认 DEPLOY_MODE=testing）
 python -m venv venv
 # Windows: venv\Scripts\activate
 # Linux:   source venv/bin/activate
@@ -87,9 +87,9 @@ SecureTrans/
 │   ├── start.sh              # 测试环境启动脚本（Flask自带服务器）
 │   ├── start-production.sh   # 生产环境启动脚本（gunicorn）
 │   ├── start.bat             # Windows启动脚本
-│   ├── .env.example          # 环境变量通用示例
-│   ├── .env.testing          # 测试环境配置模板
-│   ├── .env.production       # 生产环境配置模板（唯一生产配置源）
+│   ├── env/                  # 12-Factor 分层配置（ADR-016）
+│   │   ├── test.env          # 测试环境配置（WSL + AD mock）
+│   │   ├── dev.env           # 开发环境配置（Windows 本地 + AD mock）
 │   └── static/               # 前端静态文件（SPA + 登录页）
 ├── tests/                    # 自动化测试
 │   └── test_api.py           # 全量API测试脚本（266项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
@@ -390,6 +390,7 @@ main ────●────●────●────●────  �
 
 ### ADR-015：备份彻底分离 + 生产备份健壮性 + 可见性治理 + 审批人闭环（强制）
 - **背景（v2.2.31 用户验收 6+1 组问题）**：① verify.sh 生产业务备份 500（v2.2.29 基线，本地/WSL 全过但生产 NAS 环境失败——copytree 对已存在目标/符号链接/特殊文件名不健壮）；② 改密提示方位写"右上角"，实际按钮在左下角；③ 备份界面仍混合（"全部备份"按钮 + 列表含 all 类型 + "恢复系统"文案混淆）；④ 免审批开关已关仍显示"匹配特征码"；⑤ 合作方选中后接收方单位仍显示；⑥ 外网下载显示所有人文件（应仅本人且已走完审批）；⑦ 无审批人配置时提交 pending 永久卡死。
+| ADR-016 | 12-Factor 三环境一体化：env/ 分层配置（dev/test/prod 模板）、AD_MOCK_MODE 模拟目录、tests/mock 种子与 RTM（docs/07）、.env 启动自动加载、Gitea Actions CI（.gitea/workflows/ci.yml） |
 - **决策**：
   1. **备份健壮化**：copytree 加 `dirs_exist_ok=True + symlinks=True + ignore 临时/锁文件(.nfs*/.DS_Store/*.tmp/*.lock)`，异常清理半成品并返回可读错误（不再裸 500）。
   2. **备份界面彻底分离**：移除"全部备份"按钮与列表 all 混合过滤；系统区块只列 backup-system-*（创建/列表/恢复/删除），业务区块只列 backup-business-*（创建/列表/恢复/删除）；恢复按钮统一"恢复"；旧版混合备份 backup-all-* 不显示，给出提示建议删除。API 层保留 all 兼容（旧脚本），界面不暴露。

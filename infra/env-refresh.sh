@@ -3,7 +3,7 @@
 # env-refresh.sh — 刷新 .env 到最新模板格式（安全：只增不覆盖）
 #
 # 背景：发布包不含 .env（gitignore + 打包排除）；deploy.sh 首次部署从
-#   src/.env.production 生成 .env，升级时自动保留现有 .env（不覆盖）。
+#   env/prod.env.template 生成 .env，升级时自动保留现有 .env（不覆盖）。
 #   但当新版本模板新增/改名配置键（如 v2.2.24 起 MAX_CONTENT_LENGTH →
 #   MAX_FILE_SIZE_MB）时，老 .env 缺少新键，需要"刷新格式"。
 #
@@ -13,7 +13,7 @@
 #
 # 行为（安全三原则）:
 #   1. 先备份现有 .env → .env.bak-<时间戳>（可回退）
-#   2. 以 src/.env.production 为模板对比键：
+#   2. 以 env/prod.env.template 为模板对比键：
 #       模板有、现有缺失 → 追加模板默认值（已有键绝不覆盖原值）
 #       SECRET_KEY 缺失   → 随机生成（不从模板占位符复制）
 #       AD_BIND_PASSWORD 缺失 → 留空并提示手工填写
@@ -27,7 +27,7 @@ set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/securetrans}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEMPLATE="$SCRIPT_DIR/../src/.env.production"
+TEMPLATE="$SCRIPT_DIR/../env/prod.env.template"
 ENV_FILE="$INSTALL_DIR/.env"
 
 if [ ! -f "$ENV_FILE" ]; then

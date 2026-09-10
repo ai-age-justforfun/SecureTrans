@@ -23,15 +23,15 @@ else
     source venv/bin/activate
 fi
 
-# 加载环境变量（优先 .env，其次 .env.testing）
+# 加载环境变量（优先 .env，其次 ../env/test.env）
 if [ -f ".env" ]; then
     set -a
     source .env
     set +a
-elif [ -f ".env.testing" ]; then
-    echo "[信息] 未找到 .env，使用 .env.testing 配置"
+elif [ -f "../env/test.env" ]; then
+    echo "[信息] 未找到 .env，使用 ../env/test.env 配置"
     set -a
-    source .env.testing
+    source ../env/test.env
     set +a
 fi
 

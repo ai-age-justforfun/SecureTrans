@@ -174,7 +174,7 @@ echo -e "  程序文件已复制 ${GREEN}OK${NC}"
 # ============================================================
 echo -e "${YELLOW}[4/9] 配置环境变量...${NC}"
 if [ ! -f "$INSTALL_DIR/.env" ]; then
-    cp "$SRC_DIR/.env.production" "$INSTALL_DIR/.env"
+    cp "$PROJECT_ROOT/env/prod.env.template" "$INSTALL_DIR/.env"
     RANDOM_KEY=$("$PY_CMD" -c "import secrets; print(secrets.token_hex(32))")
     sed -i "s/^SECRET_KEY=.*/SECRET_KEY=${RANDOM_KEY}/" "$INSTALL_DIR/.env"
     echo -e "  .env 已创建，SECRET_KEY 已随机生成 ${GREEN}OK${NC}"

@@ -27,6 +27,22 @@ import bcrypt
 # 配置
 # ============================================================
 BASE_DIR = Path(__file__).parent.resolve()
+
+# 12-Factor 配置加载（ADR-016）：启动时加载同目录 .env（若存在）到环境变量。
+# - 不覆盖已注入的环境变量（生产 systemd EnvironmentFile 优先，行为不变）；
+# - 开发/测试直接 `python app.py` 时 .env（src/.env / env 模板复制）自动生效。
+_ENV_FILE_PATH = BASE_DIR / ".env"
+if _ENV_FILE_PATH.exists():
+    try:
+        for _line in _ENV_FILE_PATH.read_text(encoding="utf-8", errors="ignore").splitlines():
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                _k = _k.strip()
+                if _k and _k not in os.environ:
+                    os.environ[_k] = _v.strip().strip('"').strip("'")
+    except Exception:
+        pass  # .env 解析失败不阻塞启动（后续按环境变量/默认值运行）
 DATA_DIR = Path(os.getenv("SECURETRANS_DATA", str(BASE_DIR / "data")).strip())
 DB_PATH = DATA_DIR / "securetrans.db"
 LOG_PATH = DATA_DIR / "securetrans.log"
@@ -40,7 +56,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.31"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.3.0"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -722,16 +738,27 @@ def verify_password(password: str, password_hash: str) -> bool:
 # ============================================================
 # 文件移动（os.rename 0拷贝）
 # ============================================================
-def safe_rename(src: Path, dst: Path):
+def safe_rename(src: Path, dst: Path, retries: int = 5, delay: float = 0.5):
     """
     安全移动目录：os.rename 同文件系统内 0拷贝。
     如果目标已存在，先删除目标（应该不会发生，因为ID唯一）。
+    Windows 上 Defender/句柄瞬时占用会抛 PermissionError（WinError 5），做短暂重试；
+    Linux/NAS（生产）同文件系统 rename 原子，重试不影响行为。
     """
     if dst.exists():
         logger.warning("目标已存在，先删除: %s", dst)
         shutil.rmtree(dst)
-    os.rename(str(src), str(dst))
-    logger.info("os.rename 0拷贝移动: %s -> %s", src, dst)
+    for _attempt in range(1, retries + 1):
+        try:
+            os.rename(str(src), str(dst))
+            logger.info("os.rename 0拷贝移动: %s -> %s", src, dst)
+            return
+        except PermissionError as _e:
+            if _attempt >= retries:
+                logger.error("os.rename 多次被占用仍失败（%d次）: %s -> %s", retries, src, dst)
+                raise
+            logger.warning("os.rename 被占用（第%d次重试）: %s -> %s", _attempt, src, dst)
+            time.sleep(delay)
 
 def move_to_external(sub_id: str):
     """审核通过：staging -> external（0拷贝摆渡）"""
@@ -875,6 +902,41 @@ def authenticate_local(username: str, password: str):
         return row_to_dict(row)
     return None
 
+
+# ------------------------------------------------------------
+# AD 模拟目录（ADR-016，12-Factor 三环境一体化）
+#   AD_MOCK_MODE=true 时 authenticate_ad / api_search_ad 走本目录（不触网），
+#   用于开发/测试环境全量自动化回归；字段与生产典型 AD（脱敏）一致：
+#   与测试环境假想目录树完全对应，密码统一 MOCK_AD_PASSWORD。
+#   生产环境 AD_MOCK_MODE=false，直连真实 AD（SSSD/LDAP 同源兼容）。
+# ------------------------------------------------------------
+MOCK_AD_USERS = [
+    {"username": "zhangsan", "displayName": "张三", "email": "zhangsan@nexskysemi.com", "department": "研发部"},
+    {"username": "lisi", "displayName": "李四", "email": "lisi@nexskysemi.com", "department": "研发部"},
+    {"username": "wangzong", "displayName": "王总", "email": "wangzong@nexskysemi.com", "department": "公司高管"},
+    {"username": "zhaoliu", "displayName": "赵六", "email": "zhaoliu@nexskysemi.com", "department": "市场部"},
+    {"username": "qianqi", "displayName": "钱七", "email": "qianqi@nexskysemi.com", "department": "财务部"},
+    {"username": "sunba", "displayName": "孙八", "email": "sunba@nexskysemi.com", "department": "质量部"},
+]
+MOCK_AD_PASSWORD = "Mock@123456"
+
+
+def _ad_mock_enabled() -> bool:
+    """AD 模拟开关：AD_MOCK_MODE=true（默认 false，生产零影响）"""
+    return os.getenv("AD_MOCK_MODE", "false").strip().lower() == "true"
+
+
+def _mock_ad_authenticate(username: str, password: str):
+    """模拟 AD 认证：与真实路径返回相同结构（user dict / error str）"""
+    for u in MOCK_AD_USERS:
+        if u["username"].lower() == username.lower():
+            if password == MOCK_AD_PASSWORD:
+                return {"display_name": u["displayName"], "email": u.get("email", ""),
+                        "groups": [], "department": u.get("department", "")}, ""
+            return None, "LDAP 绑定失败（模拟）：用户名或密码错误"
+    return None, "LDAP 绑定失败（模拟）：用户不存在"
+
+
 def authenticate_ad(username: str, password: str):
     """
     AD 认证：直接 LDAP 绑定，与 sssd 完全兼容（sssd 也是用 LDAP 连 AD）。
@@ -892,6 +954,9 @@ def authenticate_ad(username: str, password: str):
     - AD_BIND_PASSWORD=xxxxxx                 (可选，服务账户密码)
     """
     ad_enabled = get_ad_config_value("ad_enabled", "false").lower() == "true"
+    # AD 模拟模式（ADR-016）：AD_MOCK_MODE=true 时走内置模拟目录，不触网
+    if _ad_mock_enabled():
+        return _mock_ad_authenticate(username, password)
     if not ad_enabled:
         return None, "AD_ENABLED=false（未启用AD认证，可在系统管理-AD配置开启）"
     if not password:
@@ -1834,15 +1899,10 @@ def api_search_ad():
                       f"'{flt_cmd}' {ad_display_field} {ad_mail_field}"
                       + ("\n# 注：将 **** 替换为 AD 绑定密码（AD_BIND_PASSWORD）；服务器无 ldapsearch 时先安装: "
                          f"sudo dnf install -y openldap-clients" if bind_part else ""))
-    if ad_enabled != "true":
-        # 打桩模拟（PMF 未启用 AD 时演示）
-        mock = [
-            {"username": "zhangsan", "displayName": "张三", "email": "zhangsan@nexskysemi.com", "department": "研发部"},
-            {"username": "lisi", "displayName": "李四", "email": "lisi@nexskysemi.com", "department": "研发部"},
-            {"username": "wangzong", "displayName": "王总", "email": "wangzong@nexskysemi.com", "department": "公司高管"},
-            {"username": "zhaoliu", "displayName": "赵六", "email": "zhaoliu@nexskysemi.com", "department": "市场部"},
-        ]
-        result = [u for u in mock if keyword.lower() in u["username"].lower() or keyword in u["displayName"]]
+    if _ad_mock_enabled() or ad_enabled != "true":
+        # 模拟目录（ADR-016）：AD_MOCK_MODE=true 或 AD 未启用时走 MOCK_AD_USERS（不触网）
+        result = [u for u in MOCK_AD_USERS
+                  if keyword.lower() in u["username"].lower() or keyword in u["displayName"]]
         return jsonify({"mode": "mock", "users": result, "verifyCommand": verify_cmd, "error": ""})
     # 真实 LDAP 精确查询（ldap3；ad_enabled=true）
     if not ad_host or not ad_base_dn:

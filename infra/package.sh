@@ -59,6 +59,7 @@ echo "[5/7] 复制文档..."
 cp -r "$PROJECT_ROOT/docs" "$BUILD_DIR/$PACKAGE_NAME/docs"
 cp "$PROJECT_ROOT/README.md" "$BUILD_DIR/$PACKAGE_NAME/"
 cp "$PROJECT_ROOT/LICENSE" "$BUILD_DIR/$PACKAGE_NAME/"
+cp -r "$PROJECT_ROOT/env" "$BUILD_DIR/$PACKAGE_NAME/env"
 cp "$PROJECT_ROOT/AGENTS.md" "$BUILD_DIR/$PACKAGE_NAME/" 2>/dev/null || true
 
 # 5.5 内置离线 Python（可选，get-offline-python.sh 生成；服务器一键部署自动安装）

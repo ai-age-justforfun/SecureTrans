@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.2.31（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步；发布阶段 .env APP_STAGE，显示 vX.Y.Z-stage）
+- **当前版本**：v2.3.0（APP_STAGE=beta，显示 v2.3.0-beta）（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步；发布阶段 .env APP_STAGE，显示 vX.Y.Z-stage）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
@@ -111,6 +111,7 @@
 | ADR-014 | 外网下载链路修复（第一批第一 story）：下载弹窗改调 GET /api/external/submissions/<id>（原 /api/submissions/<id> 不在外网白名单 → 外网 403 无法下载）；/api/health 加入外网放行（版本/阶段显示）；管理详情维持外网 403；备份删除 DELETE /api/admin/ops/backups/<name>（admin+前端确认，防路径穿越）；系统工具页抬头特判"系统工具 / System Tools"确认；外网面自动化+手工测试清单 | README + 本文件部署规范 + DEPLOY.md |
 | ADR-015 | 备份彻底分离（系统/业务各自独立列表，移除 all 混合按钮与过滤，恢复按钮统一文案，旧版 backup-all-* 提示删除）+ 备份健壮化（copytree dirs_exist_ok/symlinks/ignore 临时文件，异常清理+可读错误）+ 特征码匹配受免审批总开关约束（开关关不显示匹配，MD5 必选）+ 合作方选中隐藏姓名/单位/邮箱（仅"其他"显示）+ 外网可见性治理（列表/详情/下载仅本人已批准文件）+ 审批人闭环（init_db 播种 admin 一级+二级审批人，提交按接收方类型校验审批人存在，缺失 400 提示）| README + 本文件部署规范 + DEPLOY.md |
 
+| ADR-016 | 12-Factor 三环境一体化：env/ 分层配置（dev/test/prod 模板）、AD_MOCK_MODE 模拟目录、tests/mock 种子与 RTM（docs/07）、.env 启动自动加载、Gitea Actions CI（.gitea/workflows/ci.yml） |
 ### ADR-005 详述：非硬编码原则（强制）
 
 prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → 测试(WSL) → 生产(Rocky) 环境差异大，

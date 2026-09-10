@@ -1,0 +1,11 @@
+{
+  "MOCK_AD_PASSWORD": "Mock@123456",
+  "users": [
+    {"username": "zhangsan", "displayName": "张三", "email": "zhangsan@nexskysemi.com", "department": "研发部"},
+    {"username": "lisi", "displayName": "李四", "email": "lisi@nexskysemi.com", "department": "研发部"},
+    {"username": "wangzong", "displayName": "王总", "email": "wangzong@nexskysemi.com", "department": "公司高管"},
+    {"username": "zhaoliu", "displayName": "赵六", "email": "zhaoliu@nexskysemi.com", "department": "市场部"},
+    {"username": "qianqi", "displayName": "钱七", "email": "qianqi@nexskysemi.com", "department": "财务部"},
+    {"username": "sunba", "displayName": "孙八", "email": "sunba@nexskysemi.com", "department": "质量部"}
+  ]
+}

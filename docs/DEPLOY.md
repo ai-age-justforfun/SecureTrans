@@ -55,6 +55,7 @@
 
 ### ADR-015：备份彻底分离 + 生产备份健壮性 + 可见性治理 + 审批人闭环（强制）
 - **背景（v2.2.31 用户验收 6+1 组问题）**：① verify.sh 生产业务备份 500（v2.2.29 基线，本地/WSL 全过但生产 NAS 环境失败——copytree 对已存在目标/符号链接/特殊文件名不健壮）；② 改密提示方位写"右上角"，实际按钮在左下角；③ 备份界面仍混合（"全部备份"按钮 + 列表含 all 类型 + "恢复系统"文案混淆）；④ 免审批开关已关仍显示"匹配特征码"；⑤ 合作方选中后接收方单位仍显示；⑥ 外网下载显示所有人文件（应仅本人且已走完审批）；⑦ 无审批人配置时提交 pending 永久卡死。
+| ADR-016 | 12-Factor 三环境一体化：env/ 分层配置（dev/test/prod 模板）、AD_MOCK_MODE 模拟目录、tests/mock 种子与 RTM（docs/07）、.env 启动自动加载、Gitea Actions CI（.gitea/workflows/ci.yml） |
 - **决策**：
   1. **备份健壮化**：copytree 加 `dirs_exist_ok=True + symlinks=True + ignore 临时/锁文件(.nfs*/.DS_Store/*.tmp/*.lock)`，异常清理半成品并返回可读错误（不再裸 500）。
   2. **备份界面彻底分离**：移除"全部备份"按钮与列表 all 混合过滤；系统区块只列 backup-system-*（创建/列表/恢复/删除），业务区块只列 backup-business-*（创建/列表/恢复/删除）；恢复按钮统一"恢复"；旧版混合备份 backup-all-* 不显示，给出提示建议删除。API 层保留 all 兼容（旧脚本），界面不暴露。
@@ -284,7 +285,7 @@ python3 -m venv venv
 
 ```bash
 cd /opt/securetrans/src
-cp .env.testing .env
+cp env/test.env .env
 grep -E '^(DEPLOY_MODE|NAS_ROOT)=' .env   # 应为 DEPLOY_MODE=testing, NAS_ROOT=./nas
 
 nohup ./venv/bin/python app.py > /tmp/st-testing.log 2>&1 &
@@ -311,7 +312,7 @@ python3 test_api.py
 pkill -f 'app.py' || true
 sleep 1
 cd /opt/securetrans/src
-cp .env.production .env
+cp env/prod.env.template .env
 
 # 先用本地磁盘当存储（阶段4 再切 NAS）
 sed -i 's|^NAS_ROOT=.*|NAS_ROOT=/opt/securetrans/nas|' .env
@@ -644,11 +645,11 @@ sudo bash infra/ops-mock.sh                           # 模拟数据（仅 testi
 
 ### 5.4 .env 生命周期：生成 / 保留 / 刷新（v2.2.26 起显式机制）
 
-**发布包不含 .env**（`.gitignore` 排除 + package.sh 打包时删除），三个模板随包携带：`src/.env.example`（示例）/ `.env.testing`（测试环境）/ `.env.production`（生产环境）。
+**发布包不含 .env**（`.gitignore` 排除 + package.sh 打包时删除），三个模板随包携带：`env/dev.env`（开发）/ `env/test.env`（测试）/ `env/prod.env.template`（生产，ADR-016）。
 
 | 场景 | 机制 | 说明 |
 |------|------|------|
-| **首次部署** | `deploy.sh` 检测 `.env` 不存在 → 从 `src/.env.production` 复制生成 + **随机 SECRET_KEY** | 之后编辑 `.env` 改 NAS_ROOT/INTERNAL_CIDRS 等 |
+| **首次部署** | `deploy.sh` 检测 `.env` 不存在 → 从 `env/prod.env.template` 复制生成 + **随机 SECRET_KEY** | 之后编辑 `.env` 改 NAS_ROOT/INTERNAL_CIDRS 等 |
 | **升级部署（默认）** | `deploy.sh` 检测 `.env` 已存在 → **原样保留**（先备份 `.env.deploybak`，tar 解包排除 `.env`/`.env.*`，解包后恢复） | 老配置（IP/网段/密钥/AD）绝不被覆盖 |
 | **刷新格式（按需）** | `sudo bash infra/env-refresh.sh` | 备份 → 按模板**只增不覆盖**追加缺失键 → 报告新增/保留/旧键 |
 
@@ -670,6 +671,30 @@ sudo systemctl restart securetrans
 
 ---
 
+## 五.5、12-Factor 三环境一体化（ADR-016）
+
+### 环境矩阵
+
+| 环境 | 配置 | 数据 | AD |
+|---|---|---|---|
+| 开发（Windows） | `env/dev.env` → `src/.env`（启动自动加载） | `./data` | `AD_MOCK_MODE=true`（模拟目录） |
+| 测试（WSL） | `env/test.env` → `/opt/securetrans/.env` | `/opt/securetrans/data` | `AD_MOCK_MODE=true`（模拟目录） |
+| 生产（Rocky） | `env/prod.env.template` → `.env`（deploy.sh 生成，真实值人工填） | `/mnt/nas/securetrans` | `AD_MOCK_MODE=false`（真实 AD/SSSD） |
+
+### 关键机制
+
+1. **`.env` 启动自动加载**：`app.py` 启动时加载同目录 `.env`（不覆盖已注入的环境变量，
+   生产 systemd EnvironmentFile 优先，行为不变）；开发/测试直接 `python app.py` 即生效。
+2. **AD 模拟**：`AD_MOCK_MODE=true` 时 AD 搜索/登录走内置模拟目录（`MOCK_AD_USERS`，与生产典型
+   数据脱敏一致，不触网）；生产必须 `false`。
+3. **测试边界**：全面 TDD 回归只在开发/测试环境执行（写数据）；生产只做只读冒烟 + 人工验收
+   （需求↔测试追踪矩阵见 `docs/07-requirements-traceability.md`）。
+4. **CI**：`.gitea/workflows/ci.yml` + 本地 runner（注册见 `infra/ci-runner.md`），
+   push 到 main 自动跑全量回归；生产发布保留人工门禁。
+5. **配置纪律**：生产 `.env`/密钥/数据永不入 git；三模板随发布包携带。
+
+---
+
 ## 六、文件清单
 
 ```
@@ -677,20 +702,25 @@ sudo systemctl restart securetrans
 ├── src/                      # 源代码
 │   ├── app.py                # Flask主程序
 │   ├── requirements.txt      # Python依赖（含 waitress，Windows WSGI）
-│   ├── .env.testing          # 测试环境配置模板
-│   ├── .env.production       # 生产环境配置模板
 │   └── static/               # 前端SPA（index.html，单页应用）
+├── env/                      # 12-Factor 分层配置（ADR-016）
+│   ├── dev.env               # 开发环境（Windows 本地 + AD mock）
+│   ├── test.env              # 测试环境（WSL + AD mock）
+│   └── prod.env.template     # 生产环境模板（真实 AD，NAS）
 ├── tests/
-│   └── test_api.py           # 266项全量测试（WSL 生产面 265项）
+│   ├── test_api.py           # 298项全量测试（WSL 生产面 297项）
+│   └── mock/                 # 模拟数据与 AD 模拟目录（ADR-016：mock_ad.py 校验 / mock_expected.json 基线）
+├── .gitea/workflows/ci.yml  # Gitea Actions CI（本地 runner，全量 TDD 回归）
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署 (Linux，RESET_DB=1 部署时出厂重置)
 │   ├── deploy.ps1            # 一键部署 (Windows)
-│   ├── verify.sh             # 部署验证（277项全量测试，凭据自动取 .env RESET_PASSWORD）
+│   ├── verify.sh             # 部署验证（297项全量测试，凭据自动取 .env RESET_PASSWORD）
 │   ├── ops-backup.sh / ops-restore.sh / ops-reset.sh / ops-mock.sh  # 数据生命周期离线脚本（ADR-011）
 │   ├── env-refresh.sh        # .env 配置刷新（备份+只增不覆盖，ADR-010/5.4）
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式
 │   ├── nginx-securetrans-single.conf # Nginx 单网卡模式
 │   ├── securetrans.service   # systemd 服务
+│   ├── ci-runner.md         # Gitea Actions runner 注册指南（ADR-016）
 │   └── package.sh / release.ps1     # 打包与 Gitea 发布
 ├── docs/                     # 文档
 │   ├── DEPLOY.md             # 本部署指南（唯一部署文档）
@@ -701,4 +731,4 @@ sudo systemctl restart securetrans
 
 ---
 
-*部署指南 v2.2.26 | 2026-09-10*
+*部署指南 v2.3.0 | 2026-09-10*

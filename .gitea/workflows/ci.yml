@@ -1,0 +1,45 @@
+name: CI-TDD
+
+# SecureTrans 持续集成（ADR-016 · 12-Factor 三环境一体化）
+# 触发：push 到 main 后，在本地测试环境 runner（securetrans-wsl，WSL rocky10-st）执行全量 TDD 回归
+# 前置：
+#   1. Gitea 启用 Actions（站点配置 → Actions → 启用）
+#   2. 注册本地 runner：见 infra/ci-runner.md（labels=securetrans-wsl）
+#   3. 仓库 Settings → Actions Secrets 配置 GITEA_TOKEN（有仓库读权限的访问令牌）
+# 说明：测试环境 = 生产配置镜像（systemd + gunicorn），数据为 mock（AD_MOCK_MODE=true，不触网）；
+#       生产环境不做写数据自动化测试，仅冒烟 + 人工验收（RTM，见 docs/07-requirements-traceability.md）。
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  tdd-verify:
+    runs-on: securetrans-wsl
+    steps:
+      - name: Clone latest code (private repo via secret token)
+        run: |
+          set -euo pipefail
+          sudo rm -rf /opt/securetrans-ci
+          sudo git clone "http://oauth2:${{ secrets.GITEA_TOKEN }}@localhost:3000/openwrtadmin/SecureTrans.git" /opt/securetrans-ci
+          sudo chmod -R a+rX /opt/securetrans-ci
+
+      - name: Sync to running instance (preserve .env/data/nas/venv)
+        run: |
+          set -euo pipefail
+          sudo rsync -a --delete \
+            --exclude '.env' --exclude '.env.*' --exclude 'data' --exclude 'nas' --exclude 'venv' \
+            /opt/securetrans-ci/src/ /opt/securetrans/src/
+          sudo rsync -a --delete /opt/securetrans-ci/tests/ /opt/securetrans/tests/
+          sudo rsync -a --delete /opt/securetrans-ci/infra/ /opt/securetrans/infra/
+          sudo cp -a /opt/securetrans-ci/env /opt/securetrans/env 2>/dev/null || true
+
+      - name: Restart service
+        run: |
+          sudo systemctl restart securetrans
+          sleep 3
+          curl -sf http://127.0.0.1:8000/api/health || curl -sf "http://$(grep -E '^HOST=' /opt/securetrans/.env | cut -d= -f2 | tr -d '\r'):8000/api/health"
+
+      - name: Full TDD regression (verify.sh)
+        run: |
+          cd /opt/securetrans && sudo -E bash infra/verify.sh
