@@ -13,13 +13,21 @@
 
 Gitea 站点管理（Admin 面板 → Actions）启用 Actions；本地 Gitea（docker）默认支持。
 
-## 二、注册本地 Runner（WSL 执行）
+## 二、Runner 前置依赖（WSL 测试环境）
 
 ```bash
-# 1. 下载 act_runner（与 Gitea 版本匹配，Linux amd64）
-wget -q https://github.com/gitea/act_runner/releases/latest/download/act_runner_linux_amd64.tar.gz
-tar xzf act_runner_linux_amd64.tar.gz
-sudo mv act_runner /usr/local/bin/
+# git（workflow 第一步 clone 必需；sudo 下 PATH 不包含 Windows git）
+sudo dnf install -y git
+```
+
+## 三、注册本地 Runner（WSL 执行）
+
+```bash
+# 1. 下载 act_runner（与 Gitea 版本匹配，Linux amd64；资产名为连字符格式，gitea.com 官方镜像）
+VERSION=0.2.11   # 按需调整；GitHub 资产名同样为 act_runner-${VERSION}-linux-amd64
+curl -sL -o /tmp/act_runner "https://gitea.com/gitea/act_runner/releases/download/v${VERSION}/act_runner-${VERSION}-linux-amd64"
+chmod +x /tmp/act_runner
+sudo mv /tmp/act_runner /usr/local/bin/act_runner
 
 # 2. 获取注册 token（仓库或组织级；以下用 API，需有管理权限的令牌 GITEA_ADMIN_TOKEN）
 TOKEN=$(curl -s -X POST -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
@@ -42,19 +50,19 @@ sudo act_runner daemon --config /var/lib/act_runner/config.yaml &
 > 生产化常驻：`sudo cp /usr/local/bin/act_runner /usr/local/bin/act_runner` 后创建
 > systemd unit（`/etc/systemd/system/act_runner.service`）或直接由 CI 触发时启动。
 
-## 三、配置仓库 Secret
+## 四、配置仓库 Secret（可选）
 
-仓库 `Settings → Actions → Secrets` 新增：
+仓库 `Settings → Actions → Secrets` 新增（**当前仓库 public，clone 无需凭据；私有化后必须配置**）：
 - `GITEA_TOKEN`：有该仓库读权限的访问令牌（用户设置 → 应用 → 生成令牌，勾选 read:repository）
   （用于 workflow 内 clone 私有仓库）
 
-## 四、验证
+## 五、验证
 
 1. 推送一个 commit 到 main（或 Actions 页面手动 Run workflow）
 2. Actions 标签页查看 `CI-TDD` 运行：应看到 Clone → Sync → Restart → Full TDD regression 四步
 3. 全量通过 = 绿灯；失败项与本地 `bash infra/verify.sh` 一致（同一脚本）
 
-## 五、后续扩展（CD，ssh 打通后）
+## 六、后续扩展（CD，ssh 打通后）
 
 - `on: push: tags: ['v*']` 触发打包：`bash infra/package.sh` → 上传 Release 资产（release.ps1 逻辑）
 - 生产部署 job（ssh）：解压 → `deploy.sh`（保留 .env）→ 冒烟 → 通知人工验收门禁
