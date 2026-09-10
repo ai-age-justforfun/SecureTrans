@@ -1,6 +1,18 @@
+## ◎ v2.3.1-beta 回归（2026-09-10）
+**总计 308 项测试（Windows dev）/ 307 项（WSL test）全部通过，通过率 100%；生产冒烟（smoke.sh）10/10 通过。**
+
+**本轮变更（ADR-017 · 测试/生产环境隔离，三合一）：**
+1. **代码合一**：`tests/test_api.py` 单脚本承载全量回归 + 冒烟白名单组（组 24，10 项纯只读）。
+2. **入口分离**：`infra/verify.sh`=dev/test/CI 全量（ENV_ROLE=test 自动注入）；`infra/smoke.sh`=生产 allowlist 只读冒烟（SMOKE_MODE=1 仅组 24）。
+3. **fail-safe 护栏**：ENV_ROLE=prod 或 SMOKE_MODE=1 时组 1~23 整组不执行（请求层拦截写操作），生产误跑全量零副作用；`/api/health` 新增 `envRole` 字段。
+4. **测试发现并修复**：冒烟模式下 test() 外裸请求（初始化/重新登录）会真实执行 → 改为整组门控 + 请求层拦截双保险。
+**双环境基线**：Windows dev 308/308、WSL test 307/307、冒烟（Windows+WSL）10/10，均 100%。
+
+---
+
 # SecureTrans 测试报告
 
-> 版本：v2.3.0 | 日期：2026-09-10 | 阶段：PSF→Beta（第 1 个 beta 版本）
+> 版本：v2.3.1 | 日期：2026-09-10 | 阶段：PSF→Beta（第 2 个 beta 版本，测试/生产隔离）
 > 测试环境：Windows 11 (本地dev) + Rocky Linux (WSL2 test)，Python 3.12 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
 > 测试工具：tests/test_api.py（Python urllib，无额外依赖）+ tests/mock/（AD 模拟，ADR-016）

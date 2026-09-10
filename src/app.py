@@ -56,10 +56,13 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.3.0"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.3.1"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
+# 环境角色（ADR-017 测试/生产隔离）：test=开发/测试环境（允许全量写测试） / prod=生产环境（写测试 fail-safe 拒绝）
+# 默认 prod：宁可误拒不可误写（.env 未配置时生产安全优先）
+ENV_ROLE = os.getenv("ENV_ROLE", "prod").strip().lower()
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
@@ -2362,7 +2365,8 @@ def api_stats():
 @app.route("/api/health")
 def api_health():
     return jsonify({"status": "ok", "time": now_str(), "version": APP_VERSION, "stage": APP_STAGE,
-                    "deployMode": DEPLOY_MODE, "resetPassword": RESET_PASSWORD})
+                    "deployMode": DEPLOY_MODE, "resetPassword": RESET_PASSWORD,
+                    "envRole": ENV_ROLE})
 
 # ============================================================
 # 手动触发过期清理（admin）

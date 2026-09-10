@@ -119,8 +119,17 @@ TEST_ADMIN_USER="${VERIFY_ADMIN_USER:-admin}"
 TEST_ADMIN_PASS="${VERIFY_ADMIN_PASS:-${ENV_RESET_PWD:-Init@123456}}"
 echo "  验证账号: ${TEST_ADMIN_USER} (凭据: .env RESET_PASSWORD 或 VERIFY_ADMIN_PASS)"
 
-# 原地运行 test_api.py（保留 tests/ 相对路径依赖），BASE_URL / NAS_ROOT / 凭据用环境变量传入
-BASE_URL="$BASE_URL" NAS_ROOT="$NAS_ROOT" TEST_ADMIN_USER="$TEST_ADMIN_USER" TEST_ADMIN_PASS="$TEST_ADMIN_PASS" "$PY" "$TEST_SCRIPT_PATH"
+# ADR-017 环境角色：test=开发/测试（全量）；prod=生产（test_api.py fail-safe 拒绝写测试）
+# 生产环境标准验证入口为 infra/smoke.sh（SMOKE_MODE=1，allowlist 只读冒烟）
+ENV_ROLE_VAL="test"
+if [ -f "$INSTALL_DIR/.env" ]; then
+    ENV_ROLE_VAL=$(grep -E '^ENV_ROLE=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r' | head -1 || true)
+    ENV_ROLE_VAL="${ENV_ROLE_VAL:-test}"
+fi
+echo "  环境角色: ${ENV_ROLE_VAL}  (test=全量 TDD；prod=写测试将被 fail-safe 拒绝，请改用 smoke.sh)"
+
+# 原地运行 test_api.py（保留 tests/ 相对路径依赖），BASE_URL / NAS_ROOT / 凭据 / ENV_ROLE 用环境变量传入
+BASE_URL="$BASE_URL" NAS_ROOT="$NAS_ROOT" TEST_ADMIN_USER="$TEST_ADMIN_USER" TEST_ADMIN_PASS="$TEST_ADMIN_PASS" ENV_ROLE="$ENV_ROLE_VAL" "$PY" "$TEST_SCRIPT_PATH"
 TEST_EXIT=$?
 
 if [ $TEST_EXIT -ne 0 ]; then
