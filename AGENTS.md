@@ -108,6 +108,7 @@
 | ADR-011 | 数据生命周期与运维功能化：备份/恢复/出厂重置/模拟数据进系统（菜单"系统工具" + API + TDD 可调）；备份拆分 system=仅DB（升级回退）/ business=仅NAS业务文件（存储迁移/归档）/ all；三环境一套代码配置数据脚本（dev/test 模拟数据+verify 闭环，prod 备份/恢复/重置）；脚本仅保留首部署与离线场景（ops-backup/restore/reset/mock 支持 scope）；部署级 .env RESET_DB=1 可触发出厂重置 | README + 本文件部署规范 + DEPLOY.md |
 | ADR-012 | 性能与文件完整性：800MB 全链路压力测试（tests/perf_test.py，TDD 可调）+ MD5 端到端四方一致（上传=DB=响应头X-File-MD5=下载内容）；上传上限统一口径 MAX_FILE_SIZE_MB（MAX_CONTENT_LENGTH 自动+1MB 封装余量）；删除提交单（admin+确认码 DEL） | README + 本文件部署规范 + DEPLOY.md |
 | ADR-013 | AD 真实 LDAP 集成：api_search_ad 真实 ldap3 查询（不再 TODO 占位）+ 精确匹配（用户名后无通配符*，空关键字不 dump）+ 新增 POST /api/admin/ad/test 连接测试（bind 实测+可选用户名精确验证）+ openldap-clients 部署必装（deploy.sh 自动安装）+ 复制命令缓存索引修复（copyAdCmd，多行命令不被截断）；程序直连 AD 无需入域/SSSD | README + 本文件部署规范 + DEPLOY.md |
+| ADR-014 | 外网下载链路修复（第一批第一 story）：下载弹窗改调 GET /api/external/submissions/<id>（原 /api/submissions/<id> 不在外网白名单 → 外网 403 无法下载）；/api/health 加入外网放行（版本/阶段显示）；管理详情维持外网 403；备份删除 DELETE /api/admin/ops/backups/<name>（admin+前端确认，防路径穿越）；系统工具页抬头特判"系统工具 / System Tools"确认；外网面自动化+手工测试清单 | README + 本文件部署规范 + DEPLOY.md |
 
 ### ADR-005 详述：非硬编码原则（强制）
 
@@ -194,6 +195,14 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
   - **复制修复**：`_adCmdCache` 数组 + `copyAdCmd(i)` 索引 onclick，多行命令不再内联
   - **不重叠**：ADR-010 管 AD 配置存储权威，ADR-013 管 AD 查询执行与验证方式
 - **已落点**：v2.2.29（app.py _ad_err/_ad_connection/_ad_fields/_ad_search_users + api_search_ad 真实查询/精确匹配/error 字段 + POST /api/admin/ad/test；前端测试连接按钮/错误显示/copyAdCmd；deploy.sh openldap-clients；test_api.py 266 项；修复装饰器错位 bug——插入代码块时 @app.route 悬空在 _ad_err 上导致路由绑定错误）
+
+### ADR-014 详述：外网下载链路修复 + 备份删除 + 系统工具抬头确认（强制）
+- **根因（第一批需求第一个 story 回归）**：下载弹窗 `showDownloadFiles()` 调 `/api/submissions/<id>`（管理详情），不在外网白名单 EXTERNAL_ALLOW_PREFIXES → 外网 403 → 弹窗打不开 → "内网可下载、外网无法下载"。网络面测试矩阵此前未覆盖弹窗详情链路。
+- **修复**：新增 `GET /api/external/submissions/<sub_id>`（login_required，仅 approved/downloaded，返回详情+files 明细）；前端 showDownloadFiles 改用 `/api/external/submissions/${id}`（内外网同一弹窗同一接口）；`/api/health` 加入外网放行（外网页版本/阶段显示，无敏感数据，替代前端 try/catch 隐性降级）；管理详情 `/api/submissions/<id>` 外网仍 403。
+- **备份删除**：`DELETE /api/admin/ops/backups/<name>`（admin）：仅 backup- 前缀、拒绝路径穿越（含 `/` 名字由 Flask 路由 405 兜底）；前端备份列表行加删除按钮 + confirm（删除不可恢复）；审计日志 ops_delete_backup。并入 ADR-011 数据生命周期（备份可删，数据删除纪律不变）。
+- **系统工具抬头修复（真实根因）**：navigate() 特判正确设置过"系统工具 / System Tools"，但语言刷新 applyI18n() 的 titles 映射缺 ops 键 → 回退 `t('ops')` 输出 "ops" 覆盖（renderOps 异步完成后触发）。修复：applyI18n 对 currentPage==='ops' 同样输出固定中英双语；浏览器实测中英切换后仍为"系统工具 / System Tools"。
+- **外网面测试清单（alpha 收尾）**：自动化（test_api.py 22d 矩阵）：登录页/首页/静态/me/health/外网列表/外网详情/下载放行；改密/提交/上传/用户/合作方/审批人/特征码/系统配置/审计/统计/管理详情拒绝；非法 X-Network-Zone 回退 internal。手工（生产，双网段）：①外网仅"外网下载"菜单无改密入口 ②外网登录→列表→弹窗→下载成功 MD5 一致 ③直接输管理 URL 403 ④外网切中英文正常（不误报"管理操作请从内网访问"）⑤强刷防缓存 ⑥内网全功能对照。
+- **已落点**：v2.2.30（Windows 278 / WSL 277 全过）
 ## 研发流程
 
 ### 阶段划分（Lean Startup）

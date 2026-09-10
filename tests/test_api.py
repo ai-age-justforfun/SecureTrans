@@ -820,8 +820,19 @@ test("驳回提交单文件已 os.rename 到 archive", reject_in_archive,
 # 20d. 过期归档流程
 print("\n--- 10d. 过期归档流程 ---")
 
-# 上传 PDF（免审批自动通过），将系统配置默认有效期临时改为0实现立即过期
+# 自包含（v2.2.30 强化）：特征码默认禁用=模板，过期归档需免审批自动通过，故显式开启总开关
+# + 确保 PDF 规则启用（若上传未匹配则启用 .pdf 规则后重传），不依赖历史测试状态
+code, data = request('PUT', '/api/config/system', json_data={"auto_approval_enabled": "true"})
+test("过期归档前显式开启免审批总开关", code == 200, f"code={code}")
 code, data = upload_file(test_pdf, "expire_test.pdf")
+if isinstance(data, dict) and not data.get('matched'):
+    _rules = request('GET', '/api/config/feature-rules')[1]
+    for _r in _rules:
+        if _r.get('rule_type') == 'extension' and '.pdf' in (_r.get('pattern') or ''):
+            request('PUT', f"/api/admin/feature-rules/{_r['id']}", json_data={"enabled": True})
+    code, data = upload_file(test_pdf, "expire_test.pdf")
+test("过期归档上传匹配特征码（免审批可自动通过）", code == 200 and isinstance(data, dict) and data.get('matched') == True,
+     f"code={code}, matched={data.get('matched') if isinstance(data,dict) else 'NA'}")
 expire_temp_id = data.get('tempId')
 
 # 有效期统一由系统配置控制：临时改为0，提交单应使用该值
@@ -997,6 +1008,18 @@ test("external面审计日志被拒403", code == 403, f"code={code}")
 
 code, data = request('GET', '/api/stats', headers={"X-Network-Zone": "external"})
 test("external面统计被拒403", code == 403, f"code={code}")
+
+# v2.2.30：外网下载详情（下载弹窗链路）——管理详情接口必须拒、外网详情接口必须放行
+code, data = request('GET', f'/api/submissions/{auto_sub_id}', headers={"X-Network-Zone": "external"})
+test("external面管理详情被拒403（原下载弹窗403根因回归保护）", code == 403, f"code={code}")
+
+code, data = request('GET', f'/api/external/submissions/{auto_sub_id}', headers={"X-Network-Zone": "external"})
+test("external面外网详情放行（下载弹窗可打开）",
+     code == 200 and isinstance(data, dict) and isinstance(data.get('files'), list),
+     f"code={code}, has_files={isinstance(data.get('files'), list) if isinstance(data,dict) else 'NA'}")
+
+code, data = request('GET', '/api/health', headers={"X-Network-Zone": "external"})
+test("external面health放行（版本/阶段显示，无敏感数据）", code == 200, f"code={code}")
 
 # 非法 X-Network-Zone 值回退 internal（安全兜底）
 code, data = request('GET', '/api/auth/me', headers={"X-Network-Zone": "evil"})
@@ -1589,6 +1612,19 @@ test("运维: 备份列表含 type 字段（system/business/all，普通人可�
 # 2) 恢复不传 scope：后端按备份名自动推导（不混恢复）
 code, data = request('POST', '/api/admin/ops/restore', json_data={"backupName": "backup-x", "confirm": "RESTORE"})
 test("运维: 恢复缺省 scope 由备份名自动推导（缺失备份仍400）", code == 400, f"code={code}")
+# 2b) v2.2.30 备份删除：删除后列表不含；非法名/不存在返回错误；删除是破坏性操作需确认（前端 confirm）
+code, data = request('POST', '/api/admin/ops/backup', json_data={"scope": "system"})
+_del_name = data.get('name', '') if isinstance(data, dict) else ''
+code, data = request('DELETE', f'/api/admin/ops/backups/{_del_name}')
+test("运维: 删除备份成功（不永久保留）", code == 200 and '已删除' in str(data), f"code={code}, name={_del_name}")
+code, data = request('GET', '/api/admin/ops/backups')
+test("运维: 删除后备份列表不再包含该备份",
+     code == 200 and isinstance(data, list) and all(b.get('name') != _del_name for b in data),
+     f"code={code}, n={len(data) if isinstance(data,list) else 'NA'}")
+code, data = request('DELETE', '/api/admin/ops/backups/backup-x')
+test("运维: 删除不存在的备份返回404", code == 404, f"code={code}")
+code, data = request('DELETE', '/api/admin/ops/backups/..%2F..%2Fevil')
+test("运维: 非法备份名被拒（防路径穿越，Flask路由405同样拒绝）", code in (400, 404, 405), f"code={code}")
 # 3) AD 搜索：精确匹配（用户名后无通配符 *）；空关键字返回提示不 dump
 code, data = request('POST', '/api/admin/ad/search', json_data={"keyword": "zha"})
 _vc = data.get('verifyCommand', '') if isinstance(data, dict) else ''
@@ -1629,6 +1665,17 @@ test("前端: 合作方选中清单隐藏姓名/邮箱（仅其他自行填写�
      'id="receiverNameWrap"' in _html and 'id="receiverEmailWrap"' in _html
      and "nameWrap.style.display = 'none'" in _html and "emailWrap.style.display = 'none'" in _html
      and 'orgReadOnly' in _html)
+# v2.2.30：下载弹窗改用外网详情接口（/api/external/ 内外网放行）；备份列表含删除按钮
+test("前端: 下载弹窗改用外网详情接口（修复外网无法下载）",
+     "api(`/api/external/submissions/${id}`)" in _html
+     and 'function showDownloadFiles' in _html
+     and "const sub = await api(`/api/external/submissions/${id}`);" in _html)
+test("前端: 备份列表行含删除按钮（opsDeleteBackup + 确认）",
+     'opsDeleteBackup' in _html and 'ops.deleteBackup' in _html and 'ops.deleteConfirm' in _html
+     and 'method: \'DELETE\'' in _html)
+test("前端: 系统工具抬头不随语言刷新被覆盖（applyI18n ops 特判）",
+     "currentPage === 'ops' ? '系统工具 / System Tools'" in _html
+     and "t(_titles[currentPage] || currentPage)" in _html)
 
 # ============================================================
 # 测试报告

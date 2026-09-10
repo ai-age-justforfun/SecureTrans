@@ -40,7 +40,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.29"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.30"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -677,6 +677,7 @@ EXTERNAL_ALLOW_PREFIXES = (
     "/api/auth/login",
     "/api/auth/logout",
     "/api/auth/me",
+    "/api/health",
     "/api/external/",
 )
 
@@ -1516,6 +1517,18 @@ def api_external_files():
     db = get_db()
     rows = db.execute("SELECT * FROM submissions WHERE status IN ('approved','downloaded') ORDER BY approved_time DESC LIMIT 200").fetchall()
     return jsonify(rows_to_list(rows))
+
+@app.route("/api/external/submissions/<sub_id>")
+@login_required
+def api_external_submission_detail(sub_id):
+    """外网下载详情（下载弹窗用）：仅 approved/downloaded 状态可见，含文件明细；
+    替代原前端直接调 /api/submissions/<id>（不在外网白名单 → 403，导致外网无法下载）。"""
+    db = get_db()
+    sub = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
+    if not sub or sub["status"] not in ("approved", "downloaded"):
+        return jsonify({"error": "文件不可下载"}), 404
+    files = db.execute("SELECT * FROM submission_files WHERE submission_id=?", (sub_id,)).fetchall()
+    return jsonify({**row_to_dict(sub), "files": rows_to_list(files)})
 
 @app.route("/api/external/<sub_id>/download/<path:filename>")
 @login_required
@@ -2461,6 +2474,22 @@ def api_ops_restore():
         return jsonify({"error": msg}), 400
     add_audit_log(current_user.username, "ops_restore", f"{name}({scope})", "系统运维：从备份恢复数据", get_client_ip())
     return jsonify({"message": msg})
+
+@app.route("/api/admin/ops/backups/<name>", methods=["DELETE"])
+@login_required
+@role_required("admin")
+def api_ops_delete_backup(name):
+    """删除备份（不永久保留，运维可清理）；仅允许删除 data/backups/ 下的 backup-* 目录（防路径穿越）"""
+    if not name or not name.startswith("backup-"):
+        return jsonify({"error": "备份名必须以 backup- 开头"}), 400
+    if "/" in name or "\\" in name or name in (".", ".."):
+        return jsonify({"error": "非法备份名"}), 400
+    target = BACKUP_DIR / name
+    if not target.exists() or not target.is_dir():
+        return jsonify({"error": f"备份 {name} 不存在"}), 404
+    shutil.rmtree(str(target), ignore_errors=True)
+    add_audit_log(current_user.username, "ops_delete_backup", name, f"系统运维：删除备份 {name}", get_client_ip())
+    return jsonify({"message": f"备份 {name} 已删除"})
 
 @app.route("/api/admin/ops/reset-factory", methods=["POST"])
 @login_required

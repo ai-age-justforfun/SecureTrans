@@ -206,7 +206,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.2.29';
+const APP_VERSION = 'v2.2.30';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -234,6 +234,7 @@ const I18N = {
     'ops.backupNow': '立即备份', 'ops.backupList': '备份列表', 'ops.backupName': '备份名称', 'ops.backupTime': '备份时间', 'ops.backupSize': '大小',
     'ops.sysTitle': '系统备份 / 恢复（升级用）', 'ops.backupListSys': '系统备份列表（升级/回退用）',
     'ops.backupListSysDesc': '仅系统备份（backup-system-*），可恢复系统配置/数据库；业务数据备份不在此列。',
+    'ops.deleteBackup': '删除', 'ops.deleteConfirm': '确认删除备份 %s ？删除后不可恢复。',
     'ops.backupListBiz': '业务数据备份列表（历史归档/存储迁移用）',
     'ops.backupListBizDesc': '仅业务数据备份（backup-business-*），可恢复摆渡文件；系统备份不在此列。', 'ops.sysDesc': '备份系统数据（数据库：系统配置 / AD配置 / 用户 / 审计日志），升级系统前后执行保证可回退；恢复仅替换系统数据，不动业务文件。',
     'ops.sysNow': '系统备份', 'ops.allNow': '全部备份',
@@ -371,6 +372,7 @@ const I18N = {
     'ops.backupNow': 'Backup Now', 'ops.backupList': 'Backup List', 'ops.backupName': 'Backup Name', 'ops.backupTime': 'Backup Time', 'ops.backupSize': 'Size',
     'ops.sysTitle': 'System Backup / Restore (for upgrades)', 'ops.backupListSys': 'System Backup List (for upgrades/rollback)',
     'ops.backupListSysDesc': 'System backups only (backup-system-*); restores system config/database; business backups are not listed here.',
+    'ops.deleteBackup': 'Delete', 'ops.deleteConfirm': 'Delete backup %s ? This cannot be undone.',
     'ops.backupListBiz': 'Business Data Backup List (archive/storage migration)',
     'ops.backupListBizDesc': 'Business data backups only (backup-business-*); restores transfer files; system backups are not listed here.', 'ops.sysDesc': 'Backs up system data (database: system config / AD config / users / audit logs). Run before/after system upgrades to guarantee rollback; restore replaces system data only, not business files.',
     'ops.sysNow': 'System Backup', 'ops.allNow': 'Backup All',
@@ -539,13 +541,13 @@ function applyI18n() {
     }
   }
   if (ls) ls.textContent = currentLang === 'zh' ? 'EN' : '中';
-  // 页面标题随语言刷新（titles 映射见 showPage）
+  // 页面标题随语言刷新（titles 映射见 showPage）；系统工具页恒为固定中英双语（不随语言覆盖）
   const _pt = document.getElementById('pageTitle');
   if (_pt && currentPage) {
     const _titles = { dashboard: 'page.title.dashboard', submit: 'page.title.submit', 'my-submissions': 'page.title.mySubmissions',
       pending: 'page.title.pending', external: 'page.title.external', users: 'page.title.users',
       partners: 'page.title.partners', approvers: 'page.title.approvers', config: 'page.title.config', audit: 'page.title.audit' };
-    _pt.textContent = t(_titles[currentPage] || currentPage);
+    _pt.textContent = currentPage === 'ops' ? '系统工具 / System Tools' : t(_titles[currentPage] || currentPage);
   }
   // 上传限制提示随语言刷新（仅当已加载过配置）
   const _uh = document.getElementById('uploadLimitHint');
@@ -1220,7 +1222,8 @@ async function renderExternal() {
 
 async function showDownloadFiles(id) {
   try {
-    const sub = await api(`/api/submissions/${id}`);
+    // 外网详情接口（/api/external/ 前缀内外网均放行）；原 /api/submissions/<id> 外网被 403 → 外网无法下载
+    const sub = await api(`/api/external/submissions/${id}`);
     document.getElementById('modalTitle').textContent = t('common.download') + ' - ' + id;
     document.getElementById('modalBody').innerHTML = `
       <p class="text-sm text-muted mb-8">${t('detail.ferryInfo', sub.receiver_name || '-', sub.approved_time || '-')}</p>
@@ -1940,7 +1943,8 @@ function renderBackupTable(list, kind) {
       const btn = sysBtn
         ? (b.hasDb ? `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}')" data-i18n="ops.restoreSys">恢复系统</button>` : '-')
         : (b.hasNas ? `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}')" data-i18n="ops.restoreBiz">恢复业务</button>` : '-');
-      return `<tr><td>${b.name}</td><td>${b.time}</td><td>${(b.size/1024).toFixed(1)} KB</td><td>${btn}</td></tr>`;
+      const del = `<button class="btn btn-sm btn-danger" onclick="opsDeleteBackup('${b.name}')" data-i18n="ops.deleteBackup" style="margin-left:6px;">删除</button>`;
+      return `<tr><td>${b.name}</td><td>${b.time}</td><td>${(b.size/1024).toFixed(1)} KB</td><td>${btn}${del}</td></tr>`;
     }).join('')}</tbody>
   </table>`;
 }
@@ -2013,6 +2017,15 @@ async function opsRestore(name) {
   try {
     // scope 缺省：后端按备份名（backup-system-*/backup-business-*）自动推导类型恢复
     const data = await api('/api/admin/ops/restore', { method: 'POST', body: { backupName: name, confirm: confirm.trim() } });
+    toast(t('ops.done') + data.message, 'success');
+    renderOps();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function opsDeleteBackup(name) {
+  if (!confirm(t('ops.deleteConfirm', name))) return;
+  try {
+    const data = await api(`/api/admin/ops/backups/${encodeURIComponent(name)}`, { method: 'DELETE' });
     toast(t('ops.done') + data.message, 'success');
     renderOps();
   } catch (e) { toast(e.message, 'error'); }

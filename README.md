@@ -1,6 +1,6 @@
 ﻿# SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.2.29 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
+> 版本：v2.2.30 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -341,6 +341,7 @@ main ────●────●────●────●────  �
 - **与 ADR-010 不重叠**：ADR-010 管配置权威（静态三档），ADR-011 管数据生命周期与运维操作（动态）；mock+verify 构成 ADR-007 调测门禁的执行闭环。
 - **已落点**：v2.2.27（app.py ops 路由 scope 拆分 + 前端系统/业务备份卡 + ops-*.sh scope 参数 + test_api.py 250 项 + deploy.sh 9.8 RESET_DB；v2.2.23 初版：ops 路由 + CLI --reset-factory/--mock-data + 前端系统工具页 + test_api.py 221 项 + infra/ops-*.sh）
 - **v2.2.29 强化（备份命名区分，普通人可识别）**：备份目录名改为 `backup-system-<ts>` / `backup-business-<ts>` / `backup-all-<ts>`（名字即类型）；列表带 `type` 字段；系统工具页**两个独立备份列表**（系统备份列表 / 业务数据备份列表），恢复按钮不再选 scope——**后端按备份名自动推导类型**，杜绝"从同一个备份混恢复"；旧版 `backup-<ts>` 兼容识别为 all
+- **v2.2.30 备份删除（不永久保留）**：新增 `DELETE /api/admin/ops/backups/<name>`（admin）——前端备份列表行加"删除"按钮（确认后删除，删除不可恢复）；后端校验备份名（backup- 前缀 + 无路径穿越，路径穿越由 Flask 路由 405 兜底）；审计日志 ops_delete_backup
 
 ### ADR-012：性能与文件完整性——800MB 全链路压力测试 + MD5 端到端四方一致（强制）
 - **背景**：生产部署前需要正式的性能与完整性验证——800MB 大文件 上传→审批摆渡→下载 全链路性能；文件完整性（MD5）端到端保证，防止传输/摆渡过程损坏。
@@ -363,6 +364,26 @@ main ────●────●────●────●────  �
   - **程序直连 AD 无需入域**：应用 ldap3 bind+search，与服务器是否加入 AD 域（sssd）完全独立，互不干扰（已有大规模 sssd 场景不受影响）
 - **与 ADR-010 不重叠**：ADR-010 管 AD 配置存储权威（SQLite），ADR-013 管 AD 查询执行与验证方式（真实查询/精确匹配/连接测试/依赖）
 - **已落点**：v2.2.29（app.py：_ad_err/_ad_connection/_ad_fields/_ad_search_users + api_search_ad 真实查询/精确匹配/error 字段 + POST /api/admin/ad/test；前端：AD 配置卡片测试连接按钮 + 搜索错误显示 + copyAdCmd 修复；deploy.sh openldap-clients 自动安装；test_api.py 266 项）
+
+### ADR-014：外网下载链路修复 + 备份删除 + 系统工具抬头确认（强制）
+- **背景（第一批需求第一个 story 回归）**：内网提交→审批→外网下载，但用户实测"内网可下载、外网无法下载"——根因：前端下载弹窗 `showDownloadFiles()` 调 `/api/submissions/<id>` 拉详情，该路径**不在外网白名单**（EXTERNAL_ALLOW_PREFIXES 仅 /login /static/ /api/auth/* /api/health /api/external/），外网一律 403 → 弹窗打不开 → 无法下载。内网全放行所以正常。**测试遗漏**：网络面矩阵只测了列表/下载接口，未测下载弹窗的详情链路。
+- **决策**：
+  - **外网详情接口 `GET /api/external/submissions/<sub_id>`**（login_required）：仅 approved/downloaded 状态可见，返回提交单详情 + files 明细（与内网详情同构）；前端下载弹窗改用该接口（`/api/external/` 前缀内外网均放行）——内网外网同一弹窗同一接口
+  - **`/api/health` 加入外网放行**：外网页需显示版本/阶段（loadUser 调用），仅返回版本/模式/时间无敏感数据；此前外网 403 靠前端 try/catch 兜底降级，属隐性缺陷
+  - **管理详情接口维持拒绝**：`/api/submissions/<id>` 外网仍 403（回归保护测试：外网管理详情被拒 + 外网详情放行）
+  - **备份删除（不永久保留）**：`DELETE /api/admin/ops/backups/<name>`（admin），前端备份列表行加"删除"按钮（confirm 确认，删除不可恢复）；后端校验 backup- 前缀、拒绝路径穿越；属 ADR-011 数据生命周期运维功能化的补充（备份本身可删，数据删除纪律不变）
+  - **系统工具页抬头修复（真实根因）**：navigate() 特判曾正确设置"系统工具 / System Tools"，但**语言刷新 applyI18n() 的 titles 映射缺 ops 键** → `t(_titles['ops']||'ops')` 回退键名覆盖为 "ops"（renderOps 异步完成后触发，故用户看到抬头变成 ops）。修复：applyI18n 对 `currentPage==='ops'` 同样输出固定中英双语；浏览器实测中英切换后仍为"系统工具 / System Tools"
+- **外网面测试清单（自动化 + 手工，alpha 收尾前逐项验证）**：
+  - 自动化（tests/test_api.py 22d 网络面矩阵，已覆盖）：登录页/首页/静态资源/me/health/外网列表/外网详情/下载文件 放行；修改密码/提交列表/上传/用户管理/合作方/审批人/特征码/系统配置/审计/统计/管理详情 拒绝；非法 X-Network-Zone 回退 internal
+  - 手工（生产环境，双网段/双网卡）：
+    1. 外网（办公网段）打开 → 仅"外网下载"菜单，无提交/审批/管理菜单，无修改密码入口
+    2. 外网登录 → 外网下载列表可见已摆渡文件 → 点下载 → 弹窗含文件明细 → 下载成功且 MD5 一致
+    3. 外网直接输入管理 URL（/api/admin/*、/api/config/*）→ 403
+    4. 外网切换中英文 → 正常显示、下载功能不受影响（不出现"管理操作请从内网访问"误报）
+    5. 外网浏览器刷新/强刷（Ctrl+F5）→ 页面为最新版（防缓存旧前端）
+    6. 内网对照：全功能正常（提交/审批/管理/系统工具）
+- **与 ADR-003 不重叠**：ADR-003 管网络模式（单/双网卡）部署选型，ADR-014 管外网下载功能链路与测试矩阵；备份删除并入 ADR-011 生命周期，此处仅记录本版落点
+- **已落点**：v2.2.30（app.py：/api/external/submissions/<sub_id> + /api/health 放行 + DELETE /api/admin/ops/backups/<name>；index.html：showDownloadFiles 用外网详情接口 + 备份删除按钮 + i18n；test_api.py 278 项（新增：外网管理详情拒绝/外网详情放行/health 放行/备份删除成功/列表不含/404/非法名/applyI18n ops 特判；10d 段自包含强化）；双环境 TDD Windows 278 / WSL 277 全通过）
 
 ---
 
