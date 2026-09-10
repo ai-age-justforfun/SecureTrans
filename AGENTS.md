@@ -1,4 +1,4 @@
-# SecureTrans 项目 AI 协作指南
+﻿# SecureTrans 项目 AI 协作指南
 
 > 本文件指导 AI Agent 在本项目中的协作行为，确保代码和文档的一致性。
 
@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.2.24（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
+- **当前版本**：v2.2.25（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
@@ -133,8 +133,8 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
 - **调测期（PSF Alpha/Beta）**：代码/脚本/配置模板每次变更即发布（密集发布，便于服务器验证）
 - **RTM 后**：默认不逐次发布，关键里程碑手工发布
 - **文档-only 变更**：commit + push main，不 bump、不打包、不建 Release（随仓库演进，代码发布时包内自动带入最新）
-- **调测门禁（双环境 TDD 全量回归）**：本地调测中间阶段——Windows 开发环境（testing：`python test_api.py` 233项）
-  + WSL 测试环境（production：`infra/verify.sh` 232项），**全部通过才允许 bump + 发布**
+- **调测门禁（双环境 TDD 全量回归）**：本地调测中间阶段——Windows 开发环境（testing：`python test_api.py` 235项）
+  + WSL 测试环境（production：`infra/verify.sh` 234项），**全部通过才允许 bump + 发布**
 - 版本号是发布产物属性，APP_VERSION 只在代码发布时递增
 
 
@@ -204,7 +204,7 @@ main ────●────●────●────●────  �
 1. **需求**：Sprint Planning，拆分Story，确认验收标准
 2. **设计**：复杂功能技术方案，API定义，ADR记录
 3. **开发**：编码 + 单元测试 + 每日站会
-4. **测试**：全量回归（`tests/test_api.py` 233项）+ Bug修复
+4. **测试**：全量回归（`tests/test_api.py` 235项）+ Bug修复
 5. **验证**：Sprint Review，PO验收，收集反馈
 6. **复盘**：Retrospective，输出迭代小结文档（`docs/07-psf-sprintN-retrospective.md`）
 
@@ -224,9 +224,9 @@ main ────●────●────●────●────  �
 ### 自动化测试
 
 - **测试脚本**：`tests/test_api.py`，使用Python标准库urllib，无额外依赖；**admin 凭据参数化**：`TEST_ADMIN_USER`/`TEST_ADMIN_PASS` 环境变量（默认 admin/Admin@123，Windows dev 场景）
-- **测试范围**：全量233项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置、i18n双语、网络面隔离、部署凭据策略、AD 配置管理/配置总览、MD5 端到端完整性、删除提交单、性能压力测试工具）
+- **测试范围**：全量235项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置、i18n双语、网络面隔离、部署凭据策略、AD 配置管理/配置总览、MD5 端到端完整性、删除提交单、性能压力测试工具）
 - **运行方式**：先启动服务（`cd src && python app.py`），再 `cd tests && python test_api.py`，预期通过率100%
-- **部署验证**：`infra/verify.sh`（232项全量，BASE_URL 自动适配 .env HOST/PORT——HOST=具体IP时自动用 http://<IP>:PORT；**admin 凭据自动取 .env RESET_PASSWORD**（部署时 admin 密码已重置为该值），admin 密码被手工修改时用 `VERIFY_ADMIN_PASS` 显式传入）
+- **部署验证**：`infra/verify.sh`（234项全量，BASE_URL 自动适配 .env HOST/PORT——HOST=具体IP时自动用 http://<IP>:PORT；**admin 凭据自动取 .env RESET_PASSWORD**（部署时 admin 密码已重置为该值），admin 密码被手工修改时用 `VERIFY_ADMIN_PASS` 显式传入）
 - **新增功能**：必须在 test_api.py 中添加对应测试用例
 - **i18n 测试**：双语回归组覆盖后端 error_en/message_en、动态模板翻译、前端 I18N 字典资源检查
 
@@ -290,7 +290,7 @@ main ────●────●────●────●────  �
 
 - `infra/deploy.sh`：一键式部署（root运行；Python 3.12 获取优先级：系统已有 → offline-python/ 离线RPM → dnf AppStream/EPEL；离线 wheel 优先；NAS_ROOT 可环境变量覆盖并写回 .env；systemd ReadWritePaths 模板渲染——NAS 不存在时只保留 /opt/securetrans，避免 systemd 226/NAMESPACE）
 - `infra/get-offline-python.sh`：离线 Python 3.12 RPM 获取（联网 Rocky8 运行一次，产出 offline-python/ 随包离线携带）
-- `infra/verify.sh`：部署验证（232项全量测试，BASE_URL 自适应绑定地址，admin 凭据自动取 .env RESET_PASSWORD）
+- `infra/verify.sh`：部署验证（234项全量测试，BASE_URL 自适应绑定地址，admin 凭据自动取 .env RESET_PASSWORD）
 - `infra/nginx-securetrans.conf` / `nginx-securetrans-single.conf`：Nginx 双/单网卡反向代理配置
 - `infra/securetrans.service`：systemd服务配置（gunicorn，${HOST}:${PORT} 变量展开）
 - `infra/ops-backup.sh` / `ops-restore.sh <name>` / `ops-reset.sh` / `ops-mock.sh`：数据生命周期离线脚本（ADR-011；服务停止时最安全；ops-mock 仅 testing 环境）
@@ -348,4 +348,4 @@ main ────●────●────●────●────  �
 
 ---
 
-*AGENTS.md v1.10 | 2026-09-10*
+*AGENTS.md v1.11 | 2026-09-10*

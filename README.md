@@ -1,6 +1,6 @@
-# SecureTrans — 轻量级跨网文件审批摆渡系统
+﻿# SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.2.24 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
+> 版本：v2.2.25 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -217,7 +217,7 @@ main ────●────●────●────●────  �
 - **Commit 规范**：`<type>(<scope>): <描述>`，不强制带 Sprint 编号，可关联 Story 编号
 
 ### 当前阶段
-**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，233项自动化测试 100% + 800MB 性能压力测试通过（MD5 端到端一致），内部人工测试启动中（内网全功能 + 办公外网下载）。
+**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，235项自动化测试 100% + 800MB 性能压力测试通过（MD5 端到端一致），内部人工测试启动中（内网全功能 + 办公外网下载）。
 
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
@@ -225,7 +225,7 @@ main ────●────●────●────●────  �
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（233项全通过）](docs/06-test-report.md)
+- [测试报告（235项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
 - [部署指南（唯一部署文档）](docs/DEPLOY.md)
@@ -358,5 +358,5 @@ main ────●────●────●────●────  �
 
 ---
 
-*SecureTrans v2.2.24 | 2026-09-10*
+*SecureTrans v2.2.25 | 2026-09-10*
 

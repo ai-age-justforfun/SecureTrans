@@ -1468,6 +1468,19 @@ test("工具: 性能压力测试脚本存在(800MB 上传/摆渡/下载+MD5)",
      os.path.exists(os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'perf_test.py')))
 
 # ============================================================
+# v2.2.25 回归组：外网面语言切换 403 修复（switchLang 绕过 navigate 外网校验）
+# ============================================================
+print("\n--- 14. 外网面语言切换 ---")
+test("前端: 语言切换外网面强制刷新下载页(复用navigate外网校验)",
+     "if (window._networkZone === 'external') navigate('external');" in _html
+     and "else if (typeof currentPage === 'string' && currentPage) renderPage(currentPage);" in _html,
+     "switchLang 外网分支缺失")
+test("前端: 登录初始化外网面直进外网下载页(管理页被外网校验拦截)",
+     "if (window._networkZone === 'external') navigate('external');" in _html
+     and "else navigate(currentUser && currentUser.role === 'admin' ? 'dashboard' : 'submit');" in _html,
+     "init 外网分支缺失")
+
+# ============================================================
 # 测试报告
 # ============================================================
 print("\n" + "=" * 70)

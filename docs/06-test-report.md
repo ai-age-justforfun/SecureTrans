@@ -369,5 +369,10 @@
 - **性能测试工具 tests/perf_test.py（新建，纯标准库）**：流式生成指定大小文件（边写边算 MD5）→ 流式 multipart 上传 → 合作方提交单 → 一级审批（计时含 os.rename 摆渡）→ 流式下载（取 X-File-MD5 头）→ 本地 MD5 四方比对 → JSON 报告 + 阈值断言 + 自动清理；支持 BASE_URL 参数与 PERF_* 环境变量；退出码 0=通过/2=失败。
 - **实测 Bug 修复（800MB 文件 413）**：MAX_CONTENT_LENGTH 原严格等于 800MB，multipart 封装（boundary+头部）使请求体 > 限制被 Flask 拒绝。修复：新增 `MAX_FILE_SIZE_MB`（.env 新键，默认 800，单文件上限），请求体限制 `MAX_CONTENT_LENGTH = MAX_FILE_SIZE + 1MB`（multipart 封装余量）；兼容旧 .env（仅配 MAX_CONTENT_LENGTH 时，文件上限=该值-1MB）；上传校验/413 文案/系统配置 max_file_size_mb 全部改用 MAX_FILE_SIZE_MB。
 - **800MB 实测结果（Windows dev，修复后）**：生成 1.26s；上传 2.36s（338.4 MB/s）；审批+os.rename 摆渡 34ms（含 API 往返）；下载 2.28s（350.5 MB/s）；全链路 5.94s；MD5 四方一致（e67ea69b2c5bc10399e324fc8819bc4c）；删除清理成功；退出码 0 全部通过。
-- 测试 221 → 233 项（Windows，+12：MD5 完整性 5 + 删除提交单 5 + 源码/工具存在性 2）；WSL production 232 项（mock 403 分支）；双环境 100%，v2.2.24 待发布。
-*文档结束 | SecureTrans 测试报告 v1.20.0 | 2026-09-10*
+- 测试 221 → 233 项（Windows，+12：MD5 完整性 5 + 删除提交单 5 + 源码/工具存在性 2）；WSL production 232 项（mock 403 分支）；双环境 100%，v2.2.24 已发布
+### 12.14 v2.2.25 外网面语言切换 403 修复（2026-09-10）
+- **问题**：外网面点击右上角 EN/中文 切换语言，内容区提示"加载失败: 外网面仅提供文件下载服务，管理操作请从内网访问"。
+- **根因**：登录初始化 `navigate(admin?'dashboard':'submit')` 在外网面被 navigate 外网校验拦截（只允许 external），但 `currentPage` 保持初始 'dashboard' 且内容区未渲染；语言切换 `switchLang()` 绕过 navigate 直接 `renderPage(currentPage)` → renderDashboard 调 `/api/stats` → 外网 403。
+- **变更（前端 index.html）**：① `switchLang` 外网面强制 `navigate('external')`（复用 navigate 外网校验，仅刷新下载页），内网面维持 renderPage 刷新动态文案；② 登录初始化外网面直进 `navigate('external')`，内容区正确渲染下载页。
+- 测试 233 → 235 项（+2 前端资源断言）；浏览器实测：模拟外网面切换语言仅请求 /api/external/files（无 /api/stats、无 403），下载列表正常渲染；Windows dev 235/235，v2.2.25 待发布。
+*文档结束 | SecureTrans 测试报告 v1.21.0 | 2026-09-10*
