@@ -206,7 +206,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.2.30';
+const APP_VERSION = 'v2.2.31';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -222,7 +222,7 @@ const I18N = {
     'net.internal': '内网', 'net.external': '外网',
     'sidebar.logout': '退出登录', 'sidebar.changePwd': '修改密码', 'sidebar.tz': '时间=服务器系统时区',
     'pwd.title': '修改密码', 'pwd.old': '原密码', 'pwd.oldHint': '初始/重置密码 = 部署时 .env RESET_PASSWORD；如已改密请用当前密码', 'pwd.new': '新密码（至少6位）',
-    'pwd.suggestChange': '当前为默认/重置密码，建议尽快修改（右上角"修改密码"）', 'pwd.externalOnly': '外网面仅提供文件下载服务，修改密码请从内网访问',
+    'pwd.suggestChange': '当前为默认/重置密码，建议尽快修改（左下角"修改密码"）', 'pwd.externalOnly': '外网面仅提供文件下载服务，修改密码请从内网访问',
     'pwd.confirm': '确认新密码', 'pwd.mismatch': '两次输入的新密码不一致', 'pwd.success': '密码修改成功', 'pwd.changeFail': '密码修改失败：',
     'role.admin': '系统管理员', 'role.internalUser': '普通用户',
     'status.pending': '待一级审批', 'status.pending2': '待二级审批', 'status.approved': '已摆渡',
@@ -242,6 +242,7 @@ const I18N = {
     'ops.bizNow': '业务数据备份', 'ops.type': '类型', 'ops.typeSys': '系统', 'ops.typeBiz': '业务', 'ops.typeAll': '全部',
     'ops.restoreSys': '恢复系统', 'ops.restoreBiz': '恢复业务', 'ops.restoreAll': '恢复全部',
     'ops.restore': '恢复', 'ops.restoreConfirm': '恢复将替换对应范围数据，请输入 RESTORE 确认', 'ops.restoreConfirmPh': '输入 RESTORE',
+    'ops.legacyHint': '存在旧版混合备份（backup-all-*），不在此列显示；建议在系统工具中直接删除，保持系统/业务备份完全分离。',
     'ops.resetTitle': '出厂重置', 'ops.resetDesc': '清空业务数据并恢复出厂状态（原数据自动备份），admin 密码重置为 .env RESET_PASSWORD。',
     'ops.resetConfirm': '出厂重置将清空全部业务数据（自动先备份），请输入 RESET 确认', 'ops.resetConfirmPh': '输入 RESET',
     'ops.mockTitle': '模拟数据（测试/开发环境）', 'ops.mockDesc': '生成测试用户/审批人/合作方/各状态提交单，供开发测试界面演示与 verify 验证闭环；生产环境禁用。',
@@ -361,7 +362,7 @@ const I18N = {
     'nav.config': 'System Config', 'nav.ops': 'System Tools', 'nav.approvers': 'Approvers', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
     'net.internal': 'Intranet', 'net.external': 'Extranet',
     'sidebar.logout': 'Logout', 'sidebar.changePwd': 'Change Password', 'sidebar.tz': 'Times = Server System Timezone',
-    'pwd.title': 'Change Password', 'pwd.old': 'Current Password', 'pwd.oldHint': 'Initial/reset password = .env RESET_PASSWORD at deploy; use current if already changed', 'pwd.new': 'New Password (min 6)', 'pwd.suggestChange': 'You are using the default/reset password; change it as soon as possible (Change Password in the top-right)', 'pwd.confirm': 'Confirm New Password', 'pwd.mismatch': 'The two new passwords do not match', 'pwd.success': 'Password changed successfully', 'pwd.changeFail': 'Password change failed: ', 'pwd.externalOnly': 'Password change is not allowed on the external network; please access from the intranet',
+    'pwd.title': 'Change Password', 'pwd.old': 'Current Password', 'pwd.oldHint': 'Initial/reset password = .env RESET_PASSWORD at deploy; use current if already changed', 'pwd.new': 'New Password (min 6)', 'pwd.suggestChange': 'You are using the default/reset password; change it as soon as possible (Change Password at the bottom-left)', 'pwd.confirm': 'Confirm New Password', 'pwd.mismatch': 'The two new passwords do not match', 'pwd.success': 'Password changed successfully', 'pwd.changeFail': 'Password change failed: ', 'pwd.externalOnly': 'Password change is not allowed on the external network; please access from the intranet',
     'role.admin': 'System Administrator', 'role.internalUser': 'Regular User',
     'status.pending': 'Pending L1', 'status.pending2': 'Pending L2', 'status.approved': 'Ferried',
     'status.downloaded': 'Downloaded', 'status.rejected': 'Rejected', 'status.archived': 'Archived', 'status.auto': 'Auto',
@@ -380,6 +381,7 @@ const I18N = {
     'ops.bizNow': 'Business Backup', 'ops.type': 'Type', 'ops.typeSys': 'System', 'ops.typeBiz': 'Business', 'ops.typeAll': 'All',
     'ops.restoreSys': 'Restore System', 'ops.restoreBiz': 'Restore Business', 'ops.restoreAll': 'Restore All',
     'ops.restore': 'Restore', 'ops.restoreConfirm': 'Restore will replace the selected scope; type RESTORE to confirm', 'ops.restoreConfirmPh': 'Type RESTORE',
+    'ops.legacyHint': 'Legacy mixed backups (backup-all-*) exist and are not shown here; delete them in System Tools to keep system/business backups fully separate.',
     'ops.resetTitle': 'Factory Reset', 'ops.resetDesc': 'Clears business data and restores factory state (original data auto-backed up); admin password reset to .env RESET_PASSWORD.',
     'ops.resetConfirm': 'Factory reset will clear all business data (auto backup first); type RESET to confirm', 'ops.resetConfirmPh': 'Type RESET',
     'ops.mockTitle': 'Mock Data (Test/Dev)', 'ops.mockDesc': 'Generates test users/approvers/partners/submissions in various states for dev/test demos and verify loop; disabled in production.',
@@ -957,23 +959,27 @@ async function onReceiverTypeChange() {
 
 function onPartnerSelected() {
   const name = document.getElementById('partnerSelect').value;
+  const orgWrap = document.getElementById('receiverOrgWrap');
   const orgInput = document.getElementById('receiverOrg');
   const nameWrap = document.getElementById('receiverNameWrap');
   const emailWrap = document.getElementById('receiverEmailWrap');
   if (name === '__custom__') {
     // 其他（自行填写）：显示姓名/单位/邮箱手工填写，提交后自动加入合作方清单
+    orgWrap.style.display = 'block';
     orgInput.value = '';
     orgInput.readOnly = false;
     nameWrap.style.display = 'block';
     emailWrap.style.display = 'block';
   } else if (name) {
-    // 选择已配置合作方：隐藏姓名/邮箱（接收方=该合作方），单位自动带出只读
+    // 选择已配置合作方：隐藏姓名/单位/邮箱（接收方=该合作方，单位自动带出只读，不再单独显示）
     orgInput.value = name;
     orgInput.readOnly = true;
+    orgWrap.style.display = 'none';
     nameWrap.style.display = 'none';
     emailWrap.style.display = 'none';
   } else {
-    // 未选择：清空单位，显示姓名/邮箱
+    // 未选择：清空单位，显示姓名/单位/邮箱
+    orgWrap.style.display = 'block';
     orgInput.value = '';
     orgInput.readOnly = false;
     nameWrap.style.display = 'block';
@@ -1941,8 +1947,8 @@ function renderBackupTable(list, kind) {
     <thead><tr><th data-i18n="ops.backupName">备份名称</th><th data-i18n="ops.backupTime">备份时间</th><th data-i18n="ops.backupSize">大小</th><th data-i18n="common.actions">操作</th></tr></thead>
     <tbody>${list.map(b => {
       const btn = sysBtn
-        ? (b.hasDb ? `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}')" data-i18n="ops.restoreSys">恢复系统</button>` : '-')
-        : (b.hasNas ? `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}')" data-i18n="ops.restoreBiz">恢复业务</button>` : '-');
+        ? (b.hasDb ? `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}')" data-i18n="ops.restore">恢复</button>` : '-')
+        : (b.hasNas ? `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}')" data-i18n="ops.restore">恢复</button>` : '-');
       const del = `<button class="btn btn-sm btn-danger" onclick="opsDeleteBackup('${b.name}')" data-i18n="ops.deleteBackup" style="margin-left:6px;">删除</button>`;
       return `<tr><td>${b.name}</td><td>${b.time}</td><td>${(b.size/1024).toFixed(1)} KB</td><td>${btn}${del}</td></tr>`;
     }).join('')}</tbody>
@@ -1958,26 +1964,23 @@ async function renderOps() {
         <div class="text-sm text-muted" data-i18n="ops.sysDesc">备份系统数据（数据库：系统配置 / AD配置 / 用户 / 审计日志），升级系统前后执行，保证系统可回退；恢复仅替换系统数据，不动业务文件。</div>
         <div style="margin:12px 0;">
           <button class="btn btn-primary" onclick="opsBackup('system')" data-i18n="ops.sysNow">系统备份</button>
-          <button class="btn btn-secondary" onclick="opsBackup('all')" data-i18n="ops.allNow" style="margin-left:8px;">全部备份</button>
         </div>
+        <div class="card-title" style="margin-top:18px;" data-i18n="ops.backupListSys">系统备份列表（升级/回退用）</div>
+        <div class="text-sm text-muted" data-i18n="ops.backupListSysDesc">仅系统备份（backup-system-*），可恢复系统配置/数据库；业务数据备份不在此列。</div>
+        ${renderBackupTable(backups.filter(b => b.type === 'system'), 'system')}
       </div>
       <div class="card">
         <div class="card-title" data-i18n="ops.bizTitle">业务数据备份 / 恢复</div>
-        <div class="text-sm text-muted" data-i18n="ops.bizDesc">备份业务文件（staging/external/archive）到 data/backups/，用于更换存储目录/历史归档（原则上游刃有余，平时不必频繁使用）；恢复仅替换业务文件，不动系统配置。</div>
+        <div class="text-sm text-muted" data-i18n="ops.bizDesc">备份业务文件（staging/external/archive）到 data/backups/，用于更换存储目录/历史归档（原则上平时不必频繁使用）；恢复仅替换业务文件，不动系统配置。</div>
         <div style="margin:12px 0;">
           <button class="btn btn-primary" onclick="opsBackup('business')" data-i18n="ops.bizNow">业务数据备份</button>
         </div>
-      </div>
-      <div class="card">
-        <div class="card-title" data-i18n="ops.backupListSys">系统备份列表（升级/回退用）</div>
-        <div class="text-sm text-muted" data-i18n="ops.backupListSysDesc">仅系统备份（backup-system-*），可恢复系统配置/数据库；业务数据备份不在此列。</div>
-        ${renderBackupTable(backups.filter(b => b.type === 'system' || b.type === 'all'), 'system')}
-      </div>
-      <div class="card">
-        <div class="card-title" data-i18n="ops.backupListBiz">业务数据备份列表（历史归档/存储迁移用）</div>
+        <div class="card-title" style="margin-top:18px;" data-i18n="ops.backupListBiz">业务数据备份列表（历史归档/存储迁移用）</div>
         <div class="text-sm text-muted" data-i18n="ops.backupListBizDesc">仅业务数据备份（backup-business-*），可恢复摆渡文件；系统备份不在此列。</div>
-        ${renderBackupTable(backups.filter(b => b.type === 'business' || b.type === 'all'), 'business')}
+        ${renderBackupTable(backups.filter(b => b.type === 'business'), 'business')}
       </div>
+      ${(() => { const _legacy = backups.filter(b => b.type === 'all').length; return _legacy > 0 ? `
+      <div class="text-sm text-muted" style="margin-top:-6px;" data-i18n="ops.legacyHint">存在旧版混合备份（backup-all-*）${_legacy} 个，不在此列显示；建议在系统工具中直接删除，保持系统/业务备份完全分离。</div>` : ''; })()}
       <div class="card">
         <div class="card-title" data-i18n="ops.resetTitle">出厂重置</div>
         <div class="text-sm text-muted" data-i18n="ops.resetDesc">清空业务数据并恢复出厂状态（原数据自动备份），admin 密码重置为 .env RESET_PASSWORD。</div>

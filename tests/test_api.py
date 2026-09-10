@@ -171,6 +171,18 @@ code, data = upload_file(test_exe, "test_program.exe")
 test("上传 EXE 文件（不匹配特征码）", code == 200 and data.get('matched') == False, f"code={code}, matched={data.get('matched')}")
 exe_temp_id = data.get('tempId')
 
+# v2.2.31（ADR-015）：特征码匹配须核对免审批总开关——开关关闭时不显示匹配（MD5 仍必选）
+request('PUT', '/api/config/system', json_data={
+    "auto_approval_enabled": "false", "default_expiry_days": "7", "max_file_size_mb": "800"})
+code, data = upload_file(test_pdf, "test_document.pdf")
+test("免审批开关关闭时上传不显示特征码匹配", code == 200 and data.get('matched') == False and data.get('matchedRules') == [],
+     f"code={code}, matched={data.get('matched')}")
+request('PUT', '/api/config/system', json_data={
+    "auto_approval_enabled": "true", "default_expiry_days": "7", "max_file_size_mb": "800"})
+code, data = upload_file(test_pdf, "test_document.pdf")
+test("免审批开关开启时上传显示特征码匹配", code == 200 and data.get('matched') == True,
+     f"code={code}, matched={data.get('matched')}")
+
 # 7. 创建提交单 - 免审批场景（只有 PDF）
 print("\n--- 4. 提交单创建 ---")
 code, data = request('POST', '/api/submissions', json_data={
@@ -236,12 +248,45 @@ test("自动跳过二级审计记录存在(level2 approve)", (2, 'approve') in a
 # 14. 外网文件列表
 print("\n--- 7. 外网下载 ---")
 code, data = request('GET', '/api/external/files')
-test("已摆渡文件列表（external）", code == 200 and len(data) >= 2, f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
+test("已摆渡文件列表（external，仅本人提交）", code == 200 and len(data) >= 1 and all(x.get('submitter') == ADMIN_USER for x in data),
+     f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
 
 # 15. 文件下载
 code, data = request('GET', f'/api/external/{auto_sub_id}/download/test_document.pdf')
 test("文件下载（流式读取）", code == 200 and isinstance(data, (str, bytes)) and len(str(data)) > 0,
      f"code={code}, size={len(str(data))}")
+
+# v2.2.31（ADR-015）：外网仅本人可见——用户A 提交已摆渡文件，admin 列表不可见、详情/下载越权被拒
+request('DELETE', '/api/admin/local-users/user_iso')  # 幂等：清理上次残留
+code, data = request('POST', '/api/admin/local-users', json_data={
+    "username": "user_iso", "password": "Test@123456", "displayName": "越权测试用户", "role": "internal-user"})
+iso_tid = None
+if code == 200:
+    request('POST', '/api/auth/login', json_data={"username": "user_iso", "password": "Test@123456"})
+    iso_pdf = os.path.join(test_dir, "iso_own.pdf")
+    with open(iso_pdf, 'wb') as f:
+        f.write(b"%PDF-1.4\n" + b"ISO Own File " * 100)
+    _code, _data = upload_file(iso_pdf, "iso_own.pdf")
+    iso_tid = _data.get('tempId') if _code == 200 else None
+    _code, _data = request('POST', '/api/submissions', json_data={
+        "tempIds": [iso_tid], "receiverName": "个人接收方", "receiverEmail": "own@x.com",
+        "receiverOrg": "自有公司", "receiverType": "non-partner", "securityLevel": "internal",
+        "reason": "外网本人可见测试", "expiryDays": 7})
+    iso_sub_id = _data.get('id') if _code == 200 else None
+    test("user_iso 免审批提交文件(approved)", _code == 200 and _data.get('status') == 'approved',
+         f"code={_code}, status={_data.get('status')}")
+else:
+    iso_sub_id = None
+    test("创建越权测试用户(user_iso)", False, f"code={code}")
+request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+code, data = request('GET', '/api/external/files')
+test("外网列表仅本人提交(admin不可见user_iso文件)", code == 200 and isinstance(data, list)
+     and not any(x.get('id') == iso_sub_id for x in data), f"code={code}")
+code, data = request('GET', f'/api/external/submissions/{iso_sub_id}')
+test("外网详情越权访问他人文件被拒(404)", code == 404, f"code={code}")
+code, data = request('GET', f'/api/external/{iso_sub_id}/download/iso_own.pdf')
+test("外网下载越权访问他人文件被拒(404)", code == 404, f"code={code}")
+request('DELETE', '/api/admin/local-users/user_iso')
 
 # 16. 用户管理
 print("\n--- 8. 用户管理（admin） ---")
@@ -391,6 +436,13 @@ code, data = request('POST', '/api/admin/local-users', json_data={
     "email": "na@company.com", "role": "internal-user"
 })
 test("创建本地用户-未配置审批人(notapprover)", code == 200, f"code={code}")
+
+# v2.2.31（ADR-015）：默认播种 admin 为一级+二级审批人（提交审批逻辑闭环的兜底，幂等）
+code, data = request('GET', '/api/admin/approvers')
+_admin_appr1 = any(a.get('username') == 'admin' and a.get('level') == 1 for a in (data if isinstance(data, list) else []))
+_admin_appr2 = any(a.get('username') == 'admin' and a.get('level') == 2 for a in (data if isinstance(data, list) else []))
+test("默认播种admin为一级审批人", code == 200 and _admin_appr1, f"code={code}, appr1={_admin_appr1}")
+test("默认播种admin为二级审批人", code == 200 and _admin_appr2, f"code={code}, appr2={_admin_appr2}")
 
 # 配置审批人
 code, data = request('POST', '/api/admin/approvers', json_data={
@@ -1244,6 +1296,14 @@ try:
     test("i18n: 语言按钮跨页面重建逻辑（applyI18n 内）", 'createElement' in _html and 'langSwitch' in _html and 'insertBefore' in _html)
     # 外网面一律不允许修改密码：前端隐藏入口 + 弹窗拦截 + i18n 提示（后端白名单不含 change-password，403 兜底）
     test("前端外网面隐藏修改密码入口", 'btnChangePwd' in _html and 'pwd.externalOnly' in _html and 'showChangePwdModal() {' in _html and '// 外网面一律不允许修改密码' in _html)
+    # v2.2.31（ADR-015）：改密提示方位 = 左下角（按钮在侧栏底部）；备份界面完全分离；合作方选中隐藏单位
+    test("i18n: 改密提示方位为左下角", '左下角"修改密码"' in _html and 'bottom-left' in _html)
+    test("备份: 界面彻底分离(无全部备份按钮+列表严格按类型过滤)", "opsBackup('all')" not in _html
+         and "b.type === 'system'" in _html and "b.type === 'business'" in _html)
+    test("备份: 恢复按钮统一文案(恢复)", "data-i18n=\"ops.restore\">恢复</button>" in _html)
+    test("备份: 旧版混合备份提示", "'ops.legacyHint'" in _html and 'backup-all-' in _html)
+    test("合作方: 选中已配置合作方隐藏接收方单位", "orgWrap.style.display = 'none'" in _html
+         and "receiverOrgWrap" in _html)
 except Exception as e:
     test("i18n: 主界面资源检查", False, str(e))
 

@@ -40,7 +40,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.30"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.31"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -455,6 +455,16 @@ def init_db():
         "INSERT OR IGNORE INTO local_users (id,username,password_hash,display_name,email,role,status,must_change_password,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
         (str(uuid.uuid4()), "admin", admin_hash, "系统管理员", "admin@localhost", "admin", "active", 1, now_str())
     )
+    # 默认审批人（v2.2.31，ADR-015）：admin 显式播种为一级+二级审批人，保证提交审批逻辑闭环；
+    # 幂等（INSERT OR IGNORE 唯一约束 level+username 不存在则插入——approvers 表无唯一约束，用 EXISTS 判断）
+    _seed_admin = conn.execute("SELECT COUNT(*) as c FROM approvers WHERE level=1 AND username='admin'").fetchone()["c"]
+    if _seed_admin == 0:
+        conn.execute("INSERT INTO approvers (id,level,username,display_name,scope) VALUES (?,?,?,?,?)",
+                     (str(uuid.uuid4()), 1, "admin", "系统管理员", "all"))
+    _seed_admin2 = conn.execute("SELECT COUNT(*) as c FROM approvers WHERE level=2 AND username='admin'").fetchone()["c"]
+    if _seed_admin2 == 0:
+        conn.execute("INSERT INTO approvers (id,level,username,display_name,scope) VALUES (?,?,?,?,?)",
+                     (str(uuid.uuid4()), 2, "admin", "系统管理员", "all"))
 
     # 初始系统配置：单一来源 = .env（AUTO_APPROVAL_ENABLED / EXTERNAL_EXPIRY_DAYS / MAX_CONTENT_LENGTH）
     defaults = {
@@ -609,6 +619,15 @@ def write_env_config(updates: dict) -> bool:
             text = text.rstrip("\n") + "\n" + line + "\n"
     ENV_FILE.write_text(text, encoding="utf-8")
     return True
+
+def _has_approver(level: int) -> bool:
+    """该审批级别是否有可用审批人：approvers 表有 level 配置，或 admin 用户存在（admin 隐含可审批任意级别）"""
+    db = get_db()
+    c = db.execute("SELECT COUNT(*) as c FROM approvers WHERE level=?", (level,)).fetchone()["c"]
+    if c > 0:
+        return True
+    c2 = db.execute("SELECT COUNT(*) as c FROM local_users WHERE username='admin' AND enabled=1").fetchone()["c"]
+    return c2 > 0
 
 def can_approve_level(level: int) -> bool:
     """审批权限纯由 approvers 表配置（不设 role 体系）；admin 作为系统管理员可审批任意级别"""
@@ -1218,6 +1237,12 @@ def api_upload_file():
     actual_size = file_path.stat().st_size
     ftype = get_file_type(file.filename)
     matched, rules = match_feature_rules(file.filename, file_path)
+    # v2.2.31：特征码匹配仅用于免审批，须核对免审批总开关开启；开关关闭时不显示匹配（避免误导）
+    if matched:
+        _auto_on = str(get_config_value("auto_approval_enabled", "false")).strip().lower() == "true"
+        if not _auto_on:
+            matched = False
+            rules = []
 
     # 压缩包自动解包列清单（Linux 默认支持：zip + tar 系列）
     inner_files = []
@@ -1340,6 +1365,20 @@ def api_create_submission():
     # 免审批判定
     auto_result = check_auto_approval(files_info)
     auto_approved = 1 if auto_result["canAutoApprove"] else 0
+
+    # v2.2.31（ADR-015）：非免审批提交前校验审批人配置，缺失则提交失败提示（逻辑闭环，不产生无法审批的死单）
+    if not auto_approved:
+        _need1, _need2 = True, False
+        if receiver_type == "non-partner":
+            _need2 = True
+        if _need1 and not _has_approver(1):
+            shutil.rmtree(final_dir, ignore_errors=True)
+            return jsonify({"error": "未配置一级审批人，请联系管理员配置后提交（公司内部/合作方必须有一级审批人）",
+                            "message_en": "No level-1 approver configured. Please ask admin to configure one before submitting."}), 400
+        if _need2 and not _has_approver(2):
+            shutil.rmtree(final_dir, ignore_errors=True)
+            return jsonify({"error": "未配置二级审批人，非合作方提交必须有一级和二级审批人",
+                            "message_en": "No level-2 approver configured. Non-partner submissions require both level-1 and level-2 approvers."}), 400
 
     db = get_db()
     if auto_approved:
@@ -1515,7 +1554,8 @@ def api_approve(sub_id):
 def api_external_files():
     """已摆渡到 external 的文件列表"""
     db = get_db()
-    rows = db.execute("SELECT * FROM submissions WHERE status IN ('approved','downloaded') ORDER BY approved_time DESC LIMIT 200").fetchall()
+    rows = db.execute("SELECT * FROM submissions WHERE status IN ('approved','downloaded') AND submitter=? ORDER BY approved_time DESC LIMIT 200",
+                      (current_user.username,)).fetchall()
     return jsonify(rows_to_list(rows))
 
 @app.route("/api/external/submissions/<sub_id>")
@@ -1527,6 +1567,8 @@ def api_external_submission_detail(sub_id):
     sub = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
     if not sub or sub["status"] not in ("approved", "downloaded"):
         return jsonify({"error": "文件不可下载"}), 404
+    if sub["submitter"] != current_user.username:
+        return jsonify({"error": "无权查看他人提交的文件"}), 404
     files = db.execute("SELECT * FROM submission_files WHERE submission_id=?", (sub_id,)).fetchall()
     return jsonify({**row_to_dict(sub), "files": rows_to_list(files)})
 
@@ -1541,6 +1583,8 @@ def api_download_file(sub_id, filename):
     sub = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
     if not sub or sub["status"] not in ("approved", "downloaded"):
         return jsonify({"error": "文件不可下载"}), 404
+    if sub["submitter"] != current_user.username:
+        return jsonify({"error": "无权下载他人提交的文件"}), 404
 
     file_path = EXTERNAL_DIR / sub_id / "files" / filename
     if not file_path.exists():
@@ -2301,7 +2345,17 @@ def _backup_now(scope="all"):
         for sub in ["staging", "external", "archive"]:
             src = NAS_ROOT / sub
             if src.exists():
-                shutil.copytree(str(src), str(dest / "nas" / sub))
+                try:
+                    # v2.2.31 健壮化：dirs_exist_ok 目标已存在不报错；不跟随 symlink（NAS 挂载点常见）；
+                    # 忽略临时/锁文件（.nfs*/.DS_Store/*.tmp 等），避免特殊文件名导致 500（生产 NAS 场景实测）
+                    # symlinks=True：复制符号链接本身而非跟随（NAS 挂载点常见，避免越权/死链报错）
+                    shutil.copytree(str(src), str(dest / "nas" / sub),
+                                    dirs_exist_ok=True, symlinks=True,
+                                    ignore=shutil.ignore_patterns(".nfs*", ".DS_Store", "Thumbs.db", "*.tmp", "*.lock"))
+                except Exception as e:
+                    logger.error("业务备份 copytree 失败 %s/%s: %s", NAS_ROOT, sub, e)
+                    shutil.rmtree(str(dest), ignore_errors=True)  # 清理半成品
+                    raise
     return dest
 
 def _backup_type(name: str) -> str:
@@ -2456,7 +2510,11 @@ def api_ops_backup():
     scope = data.get("scope", "all")
     if scope not in ("all", "system", "business"):
         return jsonify({"error": "scope 仅支持 all/system/business"}), 400
-    dest = _backup_now(scope)
+    try:
+        dest = _backup_now(scope)
+    except Exception as e:
+        logger.error("创建备份失败 scope=%s: %s", scope, e)
+        return jsonify({"error": f"备份创建失败：{e}", "message_en": f"Backup failed: {e}"}), 500
     add_audit_log(current_user.username, "ops_backup", f"{dest.name}({scope})", f"系统运维：创建{ {'all':'系统+业务','system':'系统','business':'业务数据'}.get(scope,scope) }备份", get_client_ip())
     return jsonify({"message": "备份创建成功", "name": dest.name, "scope": scope})
 

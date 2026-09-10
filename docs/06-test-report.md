@@ -1,13 +1,31 @@
 # SecureTrans 测试报告
 
-> 版本：v2.2.30 | 日期：2026-09-10 | 阶段：PSF（Alpha）
+> 版本：v2.2.31 | 日期：2026-09-10 | 阶段：PSF（Alpha）
 > 测试环境：Windows 11 (本地dev) + Rocky Linux (WSL2 test)，Python 3.12 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
 > 测试工具：tests/test_api.py（Python urllib，无额外依赖）
 
 ---
 
-## 〇、v2.2.30 回归（2026-09-10）
+## 〇、v2.2.31 回归（2026-09-10）
+
+**总计 291项测试（Windows dev）/ 290项（WSL production）全部通过，通过率 100%。**
+
+**本轮需求（6+1 组用户验收修复，ADR-015）**：
+
+1. **生产业务备份 500**——根因：`_backup_now` business 分支 `shutil.copytree` 对已存在目标/符号链接/特殊文件名（NAS 挂载点常见 .nfs*/.DS_Store 等）不健壮，异常直接裸 500（本地/WSL 无 NAS 场景未触发，生产特有）。修复：copytree 加 `dirs_exist_ok=True + symlinks=True + ignore 临时/锁文件`，异常清理半成品并返回可读 JSON 错误。
+2. **改密提示方位错误**——文案"右上角"→"左下角"（按钮实际在侧栏底部，与退出登录相邻）。
+3. **备份界面彻底分离**——移除"全部备份"按钮与列表 all 混合过滤；系统区块只列 backup-system-*，业务区块只列 backup-business-*，各自独立的创建/列表/恢复/删除；恢复按钮统一"恢复"；旧版混合备份 backup-all-* 不显示并提示删除。
+4. **特征码匹配受免审批总开关约束**——MD5 必选；匹配判定 = 免审批开关开启 且 对应特征码启用，否则上传/提交均不显示"匹配特征码"（matched=false、matchedRules=[]）。
+5. **合作方选中隐藏接收方单位**——与姓名/邮箱一致：选中已配置合作方 → 隐藏姓名/单位/邮箱（单位只读带出）；仅"其他（自行填写）"显示三字段。
+6. **外网仅本人可见**——外网列表/详情/下载三处加 submitter=当前用户校验：只能看/下自己提交且已批准（approved/downloaded）的文件；越权访问他人返回 404。
+7. **审批人闭环**——init_db 幂等播种 admin 为一级+二级审批人；提交时按接收方类型校验审批人存在（内部/合作方须一级，非合作方须一级+二级），缺失则 400 提示原因，不再产生无法审批的死单。
+
+**新增测试**：默认播种 admin 审批人×2、开关关/开 matched 约束×2、外网列表仅本人、外网详情/下载越权 404×2、前端改密方位/备份分离/合作方单位/legacyHint 等。
+
+### 12.17 v2.2.30 回归（2026-09-10）
+
+
 
 **总计 278项测试（Windows dev）/ 277项（WSL production）全部通过，通过率 100%。**
 
@@ -446,4 +464,4 @@
 - **根因**：登录初始化 `navigate(admin?'dashboard':'submit')` 在外网面被 navigate 外网校验拦截（只允许 external），但 `currentPage` 保持初始 'dashboard' 且内容区未渲染；语言切换 `switchLang()` 绕过 navigate 直接 `renderPage(currentPage)` → renderDashboard 调 `/api/stats` → 外网 403。
 - **变更（前端 index.html）**：① `switchLang` 外网面强制 `navigate('external')`（复用 navigate 外网校验，仅刷新下载页），内网面维持 renderPage 刷新动态文案；② 登录初始化外网面直进 `navigate('external')`，内容区正确渲染下载页。
 - 测试 233 → 235 项（+2 前端资源断言）；浏览器实测：模拟外网面切换语言仅请求 /api/external/files（无 /api/stats、无 403），下载列表正常渲染；Windows dev 235/235，v2.2.25 待发布。
-*文档结束 | SecureTrans 测试报告 v1.21.0 | 2026-09-10*
+*文档结束 | SecureTrans 测试报告 v1.22.0 | 2026-09-10*

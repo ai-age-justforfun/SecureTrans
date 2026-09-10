@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.2.29（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步；发布阶段 .env APP_STAGE，显示 vX.Y.Z-stage）
+- **当前版本**：v2.2.31（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步；发布阶段 .env APP_STAGE，显示 vX.Y.Z-stage）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
@@ -109,6 +109,7 @@
 | ADR-012 | 性能与文件完整性：800MB 全链路压力测试（tests/perf_test.py，TDD 可调）+ MD5 端到端四方一致（上传=DB=响应头X-File-MD5=下载内容）；上传上限统一口径 MAX_FILE_SIZE_MB（MAX_CONTENT_LENGTH 自动+1MB 封装余量）；删除提交单（admin+确认码 DEL） | README + 本文件部署规范 + DEPLOY.md |
 | ADR-013 | AD 真实 LDAP 集成：api_search_ad 真实 ldap3 查询（不再 TODO 占位）+ 精确匹配（用户名后无通配符*，空关键字不 dump）+ 新增 POST /api/admin/ad/test 连接测试（bind 实测+可选用户名精确验证）+ openldap-clients 部署必装（deploy.sh 自动安装）+ 复制命令缓存索引修复（copyAdCmd，多行命令不被截断）；程序直连 AD 无需入域/SSSD | README + 本文件部署规范 + DEPLOY.md |
 | ADR-014 | 外网下载链路修复（第一批第一 story）：下载弹窗改调 GET /api/external/submissions/<id>（原 /api/submissions/<id> 不在外网白名单 → 外网 403 无法下载）；/api/health 加入外网放行（版本/阶段显示）；管理详情维持外网 403；备份删除 DELETE /api/admin/ops/backups/<name>（admin+前端确认，防路径穿越）；系统工具页抬头特判"系统工具 / System Tools"确认；外网面自动化+手工测试清单 | README + 本文件部署规范 + DEPLOY.md |
+| ADR-015 | 备份彻底分离（系统/业务各自独立列表，移除 all 混合按钮与过滤，恢复按钮统一文案，旧版 backup-all-* 提示删除）+ 备份健壮化（copytree dirs_exist_ok/symlinks/ignore 临时文件，异常清理+可读错误）+ 特征码匹配受免审批总开关约束（开关关不显示匹配，MD5 必选）+ 合作方选中隐藏姓名/单位/邮箱（仅"其他"显示）+ 外网可见性治理（列表/详情/下载仅本人已批准文件）+ 审批人闭环（init_db 播种 admin 一级+二级审批人，提交按接收方类型校验审批人存在，缺失 400 提示）| README + 本文件部署规范 + DEPLOY.md |
 
 ### ADR-005 详述：非硬编码原则（强制）
 
