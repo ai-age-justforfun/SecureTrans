@@ -206,7 +206,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.2.26';
+const APP_VERSION = 'v2.2.27';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -221,7 +221,9 @@ const I18N = {
     'nav.config': '系统配置', 'nav.ops': '系统工具', 'nav.approvers': '审批人配置', 'nav.audit': '审计日志', 'nav.dashboard': '仪表盘',
     'net.internal': '内网', 'net.external': '外网',
     'sidebar.logout': '退出登录', 'sidebar.changePwd': '修改密码', 'sidebar.tz': '时间=服务器系统时区',
-    'pwd.title': '修改密码', 'pwd.old': '原密码', 'pwd.oldHint': '初始/重置密码 = 部署时 .env RESET_PASSWORD；如已改密请用当前密码', 'pwd.new': '新密码（至少6位）', 'pwd.confirm': '确认新密码', 'pwd.mismatch': '两次输入的新密码不一致', 'pwd.success': '密码修改成功', 'pwd.changeFail': '密码修改失败：', 'pwd.externalOnly': '外网面不支持修改密码，请从内网访问后修改',
+    'pwd.title': '修改密码', 'pwd.old': '原密码', 'pwd.oldHint': '初始/重置密码 = 部署时 .env RESET_PASSWORD；如已改密请用当前密码', 'pwd.new': '新密码（至少6位）',
+    'pwd.suggestChange': '当前为默认/重置密码，建议尽快修改（右上角"修改密码"）', 'pwd.externalOnly': '外网面仅提供文件下载服务，修改密码请从内网访问',
+    'pwd.confirm': '确认新密码', 'pwd.mismatch': '两次输入的新密码不一致', 'pwd.success': '密码修改成功', 'pwd.changeFail': '密码修改失败：',
     'role.admin': '系统管理员', 'role.internalUser': '普通用户',
     'status.pending': '待一级审批', 'status.pending2': '待二级审批', 'status.approved': '已摆渡',
     'status.downloaded': '已下载', 'status.rejected': '已驳回', 'status.archived': '已归档', 'status.auto': '免审批',
@@ -230,7 +232,12 @@ const I18N = {
     'page.title.partners': '合作方管理', 'page.title.approvers': '审批人配置', 'page.title.config': '系统配置', 'page.title.ops': '系统工具', 'page.title.audit': '审计日志',
     'ops.backupTitle': '数据备份 / 恢复', 'ops.backupDesc': '备份数据库与业务文件（staging/external/archive）到 data/backups/，恢复将替换当前业务数据（回退=再恢复之前的备份）。',
     'ops.backupNow': '立即备份', 'ops.backupList': '备份列表', 'ops.backupName': '备份名称', 'ops.backupTime': '备份时间', 'ops.backupSize': '大小',
-    'ops.restore': '恢复', 'ops.restoreConfirm': '恢复将替换当前全部业务数据，请输入 RESTORE 确认', 'ops.restoreConfirmPh': '输入 RESTORE',
+    'ops.sysTitle': '系统备份 / 恢复（升级用）', 'ops.sysDesc': '备份系统数据（数据库：系统配置 / AD配置 / 用户 / 审计日志），升级系统前后执行保证可回退；恢复仅替换系统数据，不动业务文件。',
+    'ops.sysNow': '系统备份', 'ops.allNow': '全部备份',
+    'ops.bizTitle': '业务数据备份 / 恢复', 'ops.bizDesc': '备份业务文件（staging/external/archive），用于更换存储目录/历史归档；恢复仅替换业务文件，不动系统配置。',
+    'ops.bizNow': '业务数据备份', 'ops.type': '类型', 'ops.typeSys': '系统', 'ops.typeBiz': '业务', 'ops.typeAll': '全部',
+    'ops.restoreSys': '恢复系统', 'ops.restoreBiz': '恢复业务', 'ops.restoreAll': '恢复全部',
+    'ops.restore': '恢复', 'ops.restoreConfirm': '恢复将替换对应范围数据，请输入 RESTORE 确认', 'ops.restoreConfirmPh': '输入 RESTORE',
     'ops.resetTitle': '出厂重置', 'ops.resetDesc': '清空业务数据并恢复出厂状态（原数据自动备份），admin 密码重置为 .env RESET_PASSWORD。',
     'ops.resetConfirm': '出厂重置将清空全部业务数据（自动先备份），请输入 RESET 确认', 'ops.resetConfirmPh': '输入 RESET',
     'ops.mockTitle': '模拟数据（测试/开发环境）', 'ops.mockDesc': '生成测试用户/审批人/合作方/各状态提交单，供开发测试界面演示与 verify 验证闭环；生产环境禁用。',
@@ -286,7 +293,9 @@ const I18N = {
     'user.displayName': '显示名', 'user.displayNamePh': '如：张三', 'user.email': '邮箱', 'user.emailPh': 'user@company.com',
     'user.role': '角色', 'user.roleInternal': '普通用户（审批权限请在审批人配置中授予）',
     'appr.title': '审批人配置', 'appr.level': '审批级别', 'appr.level1': '一级审批', 'appr.level2': '二级审批', 'appr.username': '审批人', 'appr.scope': '适用范围', 'appr.scopeAll': '全部', 'appr.add': '新增审批人', 'appr.createTitle': '新增审批人', 'appr.selectUser': '选择用户', 'appr.confirmDelete': '确认删除该审批人配置？', 'appr.empty': '暂无审批人配置，请新增一级/二级审批人', 'appr.source': '用户来源', 'appr.sourceLocal': '本地用户', 'appr.sourceAd': 'AD 用户', 'appr.adSearch': '搜索 AD 用户', 'appr.adSearchPh': '输入用户名/姓名关键词', 'appr.adResult': '搜索结果（选择后确定）', 'appr.adEmpty': '无匹配，请换关键词',
-    'user.createdAt': '创建时间', 'user.resetPwd': '重置密码', 'user.permanent': '永久启用', 'user.adSearch': 'AD 用户搜索', 'user.adSearchTitle': 'AD 用户搜索（查看/确认）', 'user.adKw': '关键词（用户名/姓名）', 'user.adColUser': '用户名', 'user.adColName': '显示名', 'user.adColEmail': '邮箱', 'user.adColDept': '部门',
+    'user.createdAt': '创建时间', 'user.resetPwd': '重置密码', 'user.permanent': '永久启用', 'user.adSearch': 'AD 用户搜索', 'user.adSearchTitle': 'AD 用户搜索（查看/确认）',
+    'ad.verifyTitle': '手工验证命令（复制到服务器执行；将 **** 替换为 AD 绑定密码）', 'ad.copy': '复制命令', 'ad.copied': '已复制', 'ad.modeNote': '搜索模式', 'ad.modeMock': '模拟（AD 未启用）', 'ad.modeLdap': 'AD 已启用',
+    'user.adKw': '关键词（用户名/姓名）', 'user.adColUser': '用户名', 'user.adColName': '显示名', 'user.adColEmail': '邮箱', 'user.adColDept': '部门',
     'user.confirmReset': '确定重置用户 "{0}" 的密码？', 'user.confirmDelete': '确定删除用户 "{0}"？此操作不可恢复。',
     'user.confirmToggle': '确定{0}用户 "{1}"？',
     'partner.newBtn': '+ 新增合作方', 'partner.title': '合作方管理（白名单）', 'partner.createTitle': '新增合作方',
@@ -346,7 +355,7 @@ const I18N = {
     'nav.config': 'System Config', 'nav.ops': 'System Tools', 'nav.approvers': 'Approvers', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
     'net.internal': 'Intranet', 'net.external': 'Extranet',
     'sidebar.logout': 'Logout', 'sidebar.changePwd': 'Change Password', 'sidebar.tz': 'Times = Server System Timezone',
-    'pwd.title': 'Change Password', 'pwd.old': 'Current Password', 'pwd.oldHint': 'Initial/reset password = .env RESET_PASSWORD at deploy; use current if already changed', 'pwd.new': 'New Password (min 6)', 'pwd.confirm': 'Confirm New Password', 'pwd.mismatch': 'The two new passwords do not match', 'pwd.success': 'Password changed successfully', 'pwd.changeFail': 'Password change failed: ', 'pwd.externalOnly': 'Password change is not allowed on the external network; please access from the intranet',
+    'pwd.title': 'Change Password', 'pwd.old': 'Current Password', 'pwd.oldHint': 'Initial/reset password = .env RESET_PASSWORD at deploy; use current if already changed', 'pwd.new': 'New Password (min 6)', 'pwd.suggestChange': 'You are using the default/reset password; change it as soon as possible (Change Password in the top-right)', 'pwd.confirm': 'Confirm New Password', 'pwd.mismatch': 'The two new passwords do not match', 'pwd.success': 'Password changed successfully', 'pwd.changeFail': 'Password change failed: ', 'pwd.externalOnly': 'Password change is not allowed on the external network; please access from the intranet',
     'role.admin': 'System Administrator', 'role.internalUser': 'Regular User',
     'status.pending': 'Pending L1', 'status.pending2': 'Pending L2', 'status.approved': 'Ferried',
     'status.downloaded': 'Downloaded', 'status.rejected': 'Rejected', 'status.archived': 'Archived', 'status.auto': 'Auto',
@@ -355,7 +364,12 @@ const I18N = {
     'page.title.partners': 'Partner Management', 'page.title.approvers': 'Approver Config', 'page.title.config': 'System Config', 'page.title.ops': 'System Tools', 'page.title.audit': 'Audit Logs',
     'ops.backupTitle': 'Data Backup / Restore', 'ops.backupDesc': 'Back up database and business files (staging/external/archive) to data/backups/; restore replaces current business data (rollback = restore an earlier backup).',
     'ops.backupNow': 'Backup Now', 'ops.backupList': 'Backup List', 'ops.backupName': 'Backup Name', 'ops.backupTime': 'Backup Time', 'ops.backupSize': 'Size',
-    'ops.restore': 'Restore', 'ops.restoreConfirm': 'Restore will replace all current business data; type RESTORE to confirm', 'ops.restoreConfirmPh': 'Type RESTORE',
+    'ops.sysTitle': 'System Backup / Restore (for upgrades)', 'ops.sysDesc': 'Backs up system data (database: system config / AD config / users / audit logs). Run before/after system upgrades to guarantee rollback; restore replaces system data only, not business files.',
+    'ops.sysNow': 'System Backup', 'ops.allNow': 'Backup All',
+    'ops.bizTitle': 'Business Data Backup / Restore', 'ops.bizDesc': 'Backs up business files (staging/external/archive) for storage migration / historical archive; restore replaces business files only, not system config.',
+    'ops.bizNow': 'Business Backup', 'ops.type': 'Type', 'ops.typeSys': 'System', 'ops.typeBiz': 'Business', 'ops.typeAll': 'All',
+    'ops.restoreSys': 'Restore System', 'ops.restoreBiz': 'Restore Business', 'ops.restoreAll': 'Restore All',
+    'ops.restore': 'Restore', 'ops.restoreConfirm': 'Restore will replace the selected scope; type RESTORE to confirm', 'ops.restoreConfirmPh': 'Type RESTORE',
     'ops.resetTitle': 'Factory Reset', 'ops.resetDesc': 'Clears business data and restores factory state (original data auto-backed up); admin password reset to .env RESET_PASSWORD.',
     'ops.resetConfirm': 'Factory reset will clear all business data (auto backup first); type RESET to confirm', 'ops.resetConfirmPh': 'Type RESET',
     'ops.mockTitle': 'Mock Data (Test/Dev)', 'ops.mockDesc': 'Generates test users/approvers/partners/submissions in various states for dev/test demos and verify loop; disabled in production.',
@@ -411,7 +425,9 @@ const I18N = {
     'user.displayName': 'Display Name', 'user.displayNamePh': 'e.g. Zhang San', 'user.email': 'Email', 'user.emailPh': 'user@company.com',
     'user.role': 'Role', 'user.roleInternal': 'Regular user (approval rights granted in approver config)',
     'appr.title': 'Approver Config', 'appr.level': 'Level', 'appr.level1': 'Level 1', 'appr.level2': 'Level 2', 'appr.username': 'Approver', 'appr.scope': 'Scope', 'appr.scopeAll': 'All', 'appr.add': 'Add Approver', 'appr.createTitle': 'Add Approver', 'appr.selectUser': 'Select User', 'appr.confirmDelete': 'Delete this approver config?', 'appr.empty': 'No approver configured yet. Add Level 1/2 approvers.', 'appr.source': 'User Source', 'appr.sourceLocal': 'Local User', 'appr.sourceAd': 'AD User', 'appr.adSearch': 'Search AD Users', 'appr.adSearchPh': 'Enter username / display name keyword', 'appr.adResult': 'Results (select one)', 'appr.adEmpty': 'No match. Try another keyword.',
-    'user.createdAt': 'Created At', 'user.resetPwd': 'Reset Password', 'user.permanent': 'Permanent', 'user.adSearch': 'Search AD Users', 'user.adSearchTitle': 'AD User Search (view / confirm)', 'user.adKw': 'Keyword (username / name)', 'user.adColUser': 'Username', 'user.adColName': 'Display Name', 'user.adColEmail': 'Email', 'user.adColDept': 'Department',
+    'user.createdAt': 'Created At', 'user.resetPwd': 'Reset Password', 'user.permanent': 'Permanent', 'user.adSearch': 'Search AD Users', 'user.adSearchTitle': 'AD User Search (view / confirm)',
+    'ad.verifyTitle': 'Manual verification command (copy & run on the server; replace **** with AD bind password)', 'ad.copy': 'Copy Command', 'ad.copied': 'Copied', 'ad.modeNote': 'Search mode', 'ad.modeMock': 'Mock (AD disabled)', 'ad.modeLdap': 'AD enabled',
+    'user.adKw': 'Keyword (username / name)', 'user.adColUser': 'Username', 'user.adColName': 'Display Name', 'user.adColEmail': 'Email', 'user.adColDept': 'Department',
     'user.confirmReset': 'Reset password for user "{0}"?', 'user.confirmDelete': 'Delete user "{0}"? This cannot be undone.',
     'user.confirmToggle': '{0} user "{1}"?',
     'partner.newBtn': '+ New Partner', 'partner.title': 'Partner Management (Whitelist)', 'partner.createTitle': 'New Partner',
@@ -487,9 +503,9 @@ function switchLang() {
 }
 function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
-    // 品牌副标题 = 文案 + 版本号（版本号唯一来源 APP_VERSION）
+    // 品牌副标题 = 文案 + 版本号（版本号唯一来源 APP_VERSION）+ 发布阶段（APP_STAGE: alpha/beta/rtm/release）
     el.textContent = el.dataset.i18n === 'brand.subtitle'
-      ? t(el.dataset.i18n) + ' ' + APP_VERSION
+      ? t(el.dataset.i18n) + ' ' + APP_VERSION + (window._APP_STAGE ? '-' + window._APP_STAGE : '')
       : t(el.dataset.i18n);
   });
   // 侧边栏用户信息随语言刷新
@@ -609,8 +625,13 @@ async function loadUser() {
       badge.className = 'network-badge internal';
     }
     window._networkZone = networkZone;
-    // 部署模式（/api/health，用于系统工具页按环境显示模拟数据卡片）
-    try { const h = await api('/api/health'); window._deployMode = h.deployMode || 'testing'; } catch (e) { window._deployMode = 'testing'; }
+    // 部署模式 + 发布阶段（/api/health，系统工具页按环境显示模拟数据卡片；品牌副标题显示 vX.Y.Z-stage）
+    try {
+      const h = await api('/api/health');
+      window._deployMode = h.deployMode || 'testing';
+      window._APP_STAGE = h.stage || 'alpha';
+      applyI18n();
+    } catch (e) { window._deployMode = 'testing'; window._APP_STAGE = 'alpha'; }
     // Show/hide admin nav items
     const isAdmin = currentUser.role === 'admin';
     // 审批权限：角色判定 或 approvers 表配置（与后端 can_approve_level 一致，普通用户被配为审批人也显示"待我审批"）
@@ -629,12 +650,12 @@ async function loadUser() {
       const _pwdBtn = document.getElementById('btnChangePwd');
       if (_pwdBtn) _pwdBtn.style.display = 'none';
     }
-    // 首次登录/重置密码后（must_change_password=1）：内网自动弹出修改密码；外网面不允许改密，提示回内网修改
+    // 默认/重置密码标记（must_change_password=1）：不强制修改，仅提示建议尽快修改（ADR-013 密码策略）
     if (currentUser.mustChangePassword) {
       if (networkZone === 'external') {
-        toast(t('pwd.externalOnly'), 'error');
+        // 外网面不显示改密入口，也不提示（个人改密请回内网）
       } else {
-        setTimeout(() => { showChangePwdModal(); }, 600);
+        setTimeout(() => { toast(t('pwd.suggestChange'), 'info'); }, 800);
       }
     }
   } catch (e) {
@@ -700,7 +721,9 @@ function navigate(page) {
     pending: 'page.title.pending', external: 'page.title.external', users: 'page.title.users',
     partners: 'page.title.partners', approvers: 'page.title.approvers', config: 'page.title.config', ops: 'page.title.ops', audit: 'page.title.audit'
   };
-  document.getElementById('pageTitle').textContent = t(titles[page] || page);
+  document.getElementById('pageTitle').textContent = page === 'ops'
+    ? '系统工具 / System Tools'   // 系统工具页抬头固定中英双语
+    : t(titles[page] || page);
   document.getElementById('pageActions').innerHTML = '';
   renderPage(page);
 }
@@ -1226,14 +1249,32 @@ async function searchAdUserTable() {
   const kw = document.getElementById('adUserKw').value.trim();
   const box = document.getElementById('adUserResult');
   try {
-    const list = await api('/api/admin/ad/search', { method: 'POST', body: { keyword: kw } });
-    box.innerHTML = list.length === 0
+    const resp = await api('/api/admin/ad/search', { method: 'POST', body: { keyword: kw } });
+    const list = resp.users || [];
+    const vc = resp.verifyCommand || '';
+    box.innerHTML = (vc ? `
+      <div class="form-group mb-8">
+        <div class="text-sm text-muted" data-i18n="ad.verifyTitle">手工验证命令（可复制到服务器执行，将 **** 替换为 AD 绑定密码）</div>
+        <pre style="background:#f3f4f6;padding:8px;border-radius:6px;font-size:12px;white-space:pre-wrap;word-break:break-all;margin:6px 0;">${vc.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+        <button class="btn btn-sm btn-secondary" onclick="copyText(this,'${vc.replace(/'/g, "\\'")}')" data-i18n="ad.copy">复制命令</button>
+        <span class="text-sm text-muted"><span data-i18n="ad.modeNote">搜索模式</span>：${resp.mode === 'mock' ? t('ad.modeMock') : t('ad.modeLdap')}</span>
+      </div>` : '')
+      + (list.length === 0
       ? `<div class="empty" data-i18n="appr.adEmpty">无匹配，请换关键词</div>`
       : `<table><thead><tr><th data-i18n="user.adColUser">用户名</th><th data-i18n="user.adColName">显示名</th><th data-i18n="user.adColEmail">邮箱</th><th data-i18n="user.adColDept">部门</th></tr></thead><tbody>
           ${list.map(u => `<tr><td>${u.username}</td><td>${u.displayName || '-'}</td><td class="text-sm text-muted">${u.email || '-'}</td><td class="text-sm text-muted">${u.department || '-'}</td></tr>`).join('')}
-        </tbody></table>`;
+        </tbody></table>`);
     applyI18n();
   } catch (e) { toast(t('toast.loadFail', e.message), 'error'); }
+}
+
+function copyText(btn, text) {
+  try { navigator.clipboard.writeText(text).then(() => { toast(t('ad.copied'), 'success'); }); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    toast(t('ad.copied'), 'success');
+  }
 }
 
 function showCreateUser() {
@@ -1482,7 +1523,8 @@ async function searchAdUsers() {
   const kw = document.getElementById('adSearchKw').value.trim();
   const sel = document.getElementById('apprAdUser');
   try {
-    const list = await api('/api/admin/ad/search', { method: 'POST', body: { keyword: kw } });
+    const resp = await api('/api/admin/ad/search', { method: 'POST', body: { keyword: kw } });
+    const list = resp.users || [];
     sel.innerHTML = list.length === 0
       ? `<option value="" data-i18n="appr.adEmpty">无匹配，请换关键词</option>`
       : list.map(u => `<option value="${u.username}">${u.displayName || u.username} (${u.username}) · ${u.department || u.email || ''}</option>`).join('');
@@ -1798,16 +1840,34 @@ async function renderOps() {
     const backups = await api('/api/admin/ops/backups');
     document.getElementById('content').innerHTML = `
       <div class="card">
-        <div class="card-title" data-i18n="ops.backupTitle">数据备份 / 恢复</div>
-        <div class="text-sm text-muted" data-i18n="ops.backupDesc">备份数据库与业务文件（staging/external/archive）到 data/backups/，恢复将替换当前业务数据（回退=再恢复之前的备份）。</div>
+        <div class="card-title" data-i18n="ops.sysTitle">系统备份 / 恢复（升级用）</div>
+        <div class="text-sm text-muted" data-i18n="ops.sysDesc">备份系统数据（数据库：系统配置 / AD配置 / 用户 / 审计日志），升级系统前后执行，保证系统可回退；恢复仅替换系统数据，不动业务文件。</div>
         <div style="margin:12px 0;">
-          <button class="btn btn-primary" onclick="opsBackup()" data-i18n="ops.backupNow">立即备份</button>
+          <button class="btn btn-primary" onclick="opsBackup('system')" data-i18n="ops.sysNow">系统备份</button>
+          <button class="btn btn-secondary" onclick="opsBackup('all')" data-i18n="ops.allNow" style="margin-left:8px;">全部备份</button>
         </div>
+      </div>
+      <div class="card">
+        <div class="card-title" data-i18n="ops.bizTitle">业务数据备份 / 恢复</div>
+        <div class="text-sm text-muted" data-i18n="ops.bizDesc">备份业务文件（staging/external/archive）到 data/backups/，用于更换存储目录/历史归档（原则上游刃有余，平时不必频繁使用）；恢复仅替换业务文件，不动系统配置。</div>
+        <div style="margin:12px 0;">
+          <button class="btn btn-primary" onclick="opsBackup('business')" data-i18n="ops.bizNow">业务数据备份</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title" data-i18n="ops.backupList">备份列表</div>
         <table class="table">
-          <thead><tr><th data-i18n="ops.backupName">备份名称</th><th data-i18n="ops.backupTime">备份时间</th><th data-i18n="ops.backupSize">大小</th><th data-i18n="common.actions">操作</th></tr></thead>
+          <thead><tr><th data-i18n="ops.backupName">备份名称</th><th data-i18n="ops.backupTime">备份时间</th><th data-i18n="ops.backupSize">大小</th><th data-i18n="ops.type">类型</th><th data-i18n="common.actions">操作</th></tr></thead>
           <tbody>
-            ${backups.length === 0 ? `<tr><td colspan="4" class="text-sm text-muted" data-i18n="ops.empty">暂无备份</td></tr>` :
-              backups.map(b => `<tr><td>${b.name}</td><td>${b.time}</td><td>${(b.size/1024).toFixed(1)} KB</td><td><button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}')" data-i18n="ops.restore">恢复</button></td></tr>`).join('')}
+            ${backups.length === 0 ? `<tr><td colspan="5" class="text-sm text-muted" data-i18n="ops.empty">暂无备份</td></tr>` :
+              backups.map(b => {
+                const type = (b.hasDb && b.hasNas) ? t('ops.typeAll') : (b.hasDb ? t('ops.typeSys') : t('ops.typeBiz'));
+                let btns = '';
+                if (b.hasDb) btns += `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}','system')" data-i18n="ops.restoreSys">恢复系统</button> `;
+                if (b.hasNas) btns += `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}','business')" data-i18n="ops.restoreBiz">恢复业务</button> `;
+                if (b.hasDb && b.hasNas) btns += `<button class="btn btn-sm btn-secondary" onclick="opsRestore('${b.name}','all')" data-i18n="ops.restoreAll">恢复全部</button>`;
+                return `<tr><td>${b.name}</td><td>${b.time}</td><td>${(b.size/1024).toFixed(1)} KB</td><td>${type}</td><td>${btns || '-'}</td></tr>`;
+              }).join('')}
           </tbody>
         </table>
       </div>
@@ -1835,20 +1895,20 @@ async function renderOps() {
   }
 }
 
-async function opsBackup() {
+async function opsBackup(scope) {
   try {
-    const data = await api('/api/admin/ops/backup', { method: 'POST', body: {} });
+    const data = await api('/api/admin/ops/backup', { method: 'POST', body: { scope: scope } });
     toast(t('ops.done') + data.message, 'success');
     renderOps();
   } catch (e) { toast(e.message, 'error'); }
 }
 
-async function opsRestore(name) {
+async function opsRestore(name, scope) {
   const confirm = prompt(t('ops.restoreConfirm'));
   if (!confirm) return;
   if (confirm.trim() !== 'RESTORE') { toast(t('ops.restoreConfirm'), 'error'); return; }
   try {
-    const data = await api('/api/admin/ops/restore', { method: 'POST', body: { backupName: name, confirm: confirm.trim() } });
+    const data = await api('/api/admin/ops/restore', { method: 'POST', body: { backupName: name, scope: scope, confirm: confirm.trim() } });
     toast(t('ops.done') + data.message, 'success');
     renderOps();
   } catch (e) { toast(e.message, 'error'); }

@@ -1,6 +1,6 @@
 ﻿# SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.2.26 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
+> 版本：v2.2.27 | 阶段：PSF（问题-方案匹配验证）— Alpha 内测中
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -38,7 +38,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-访问 http://localhost:8000，初始账号 `admin / Admin@123`（Windows dev 场景；生产部署后 admin 密码每次自动重置为 .env `RESET_PASSWORD`，默认 Init@123456，首次登录强制改密）。
+访问 http://localhost:8000，初始账号 `admin / Init@123456`（统一为 .env `RESET_PASSWORD` 默认值；Windows dev 与生产部署一致，部署后每次重置为该密码，登录后建议尽快修改（不强制）改密）。
 
 ### 运行测试
 
@@ -49,7 +49,7 @@ cd src && python app.py
 # 另一个终端运行测试
 cd tests
 python test_api.py
-# 预期：193项测试全部通过，通过率100%
+# 预期：250项测试全部通过，通过率100%（Windows dev）；WSL 测试环境 249 项（production 模式环境自适应差异 1 项）
 ```
 
 ### 一键部署（服务器，Rocky Linux）
@@ -62,7 +62,7 @@ cd /opt/securetrans
 # 2. 一键部署（9步自动化：Python 3.12 获取 → venv → 依赖 → .env → systemd → 启动验证）
 sudo bash infra/deploy.sh
 
-# 3. 部署验证（193项全量测试；admin 凭据自动取 .env RESET_PASSWORD；BASE_URL 自动适配 .env HOST/PORT；若 admin 密码已手工修改，用 VERIFY_ADMIN_PASS 显式传入）
+# 3. 部署验证（250项全量测试；admin 凭据自动取 .env RESET_PASSWORD；BASE_URL 自动适配 .env HOST/PORT；若 admin 密码已手工修改，用 VERIFY_ADMIN_PASS 显式传入）
 bash infra/verify.sh
 
 # 4. 防火墙放行 8000（Alpha 内测：内网 + 办公外网访问）
@@ -92,7 +92,7 @@ SecureTrans/
 │   ├── .env.production       # 生产环境配置模板（唯一生产配置源）
 │   └── static/               # 前端静态文件（SPA + 登录页）
 ├── tests/                    # 自动化测试
-│   └── test_api.py           # 全量API测试脚本（193项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
+│   └── test_api.py           # 全量API测试脚本（250项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
 ├── docs/                     # 统一文档（数字前缀排序，持续刷新）
 │   ├── 00-lean-startup-phase-map.md   # Lean Startup三阶段映射与决策门
 │   ├── 01-scrum-io-definition.md      # Scrum各阶段输入输出定义
@@ -100,7 +100,7 @@ SecureTrans/
 │   ├── 03-psf-process.md              # PSF阶段标准流程
 │   ├── 04-pmf-process.md              # PMF阶段标准流程（下一阶段准备）
 │   ├── 05-test-cases.md               # 测试用例
-│   ├── 06-test-report.md              # 测试报告（193项全通过）
+│   ├── 06-test-report.md              # 测试报告（250项全通过）
 │   ├── 07-psf-sprint4-retrospective.md # PSF阶段迭代小结
 │   ├── 08-cicd-gitops-architecture.md # CICD/GitOps架构规划
 │   ├── 09-preprod-verification.md     # 生产预验收清单
@@ -110,7 +110,7 @@ SecureTrans/
 └── infra/                    # 基础设施配置
     ├── deploy.sh             # 一键部署脚本（9步自动化, Linux）
     ├── deploy.ps1            # 一键部署脚本（Windows）
-    ├── verify.sh             # 部署验证脚本（193项，BASE_URL 自适应 + 凭据自动取 .env RESET_PASSWORD）
+    ├── verify.sh             # 部署验证脚本（250项，BASE_URL 自适应 + 凭据自动取 .env RESET_PASSWORD）
     ├── get-offline-python.sh # 离线 Python 3.12 RPM 获取（联网 Rocky8 跑一次）
     ├── nginx-securetrans.conf        # Nginx双网卡配置
     ├── nginx-securetrans-single.conf # Nginx单网卡配置
@@ -177,13 +177,14 @@ SecureTrans/
 | GET/PUT | /api/config/system | 系统配置（有效期/大小上限/免审批总开关） |
 | GET | /api/audit-logs | 审计日志（时间线 + 统计） |
 | GET | /api/stats | 统计数据 |
-| GET | /api/health | 健康检查（含 deployMode 字段） |
+| GET | /api/health | 健康检查（含 deployMode/stage/resetPassword 字段） |
 
 ---
 
 ## 发布与版本
 
 - **版本号单一来源**：`src/app.py` 的 `APP_VERSION`（前端 index.html 同步），文档内版本号统一
+- **发布阶段（.env APP_STAGE，显示 vX.Y.Z-stage）**：alpha=自测 → beta=内部测试 → rtm=内部使用 → release=正式发布；`/api/health` 返回 `stage`，登录页/品牌副标题/页面显示 `vX.Y.Z-stage`，运维期可随时改 .env 切换阶段
 - **打包**：`bash infra/package.sh <版本>` → `packages/securetrans-<版本>.tar.gz`（含 offline-deps 离线 wheel）
 - **发布**：`powershell -File infra/release.ps1 -Version v<版本>` → Gitea Release（源码包 + 离线依赖包）
 - **版本记录**：Git tag（`v2.2.x`）+ Gitea Release 资产 + SHA256 校验
@@ -217,7 +218,7 @@ main ────●────●────●────●────  �
 - **Commit 规范**：`<type>(<scope>): <描述>`，不强制带 Sprint 编号，可关联 Story 编号
 
 ### 当前阶段
-**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，235项自动化测试 100% + 800MB 性能压力测试通过（MD5 端到端一致），内部人工测试启动中（内网全功能 + 办公外网下载）。
+**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，250项自动化测试 100%（WSL production 249 项）+ 800MB 性能压力测试通过（MD5 端到端一致），内部人工测试启动中（内网全功能 + 办公外网下载）。
 
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
@@ -225,7 +226,7 @@ main ────●────●────●────●────  �
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（238项全通过）](docs/06-test-report.md)
+- [测试报告（250项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
 - [部署指南（唯一部署文档）](docs/DEPLOY.md)
@@ -310,17 +311,16 @@ main ────●────●────●────●────  �
 - **已落点**：v2.2.14（单网卡单端口 + INTERNAL_CIDRS + get_network_zone 两级识别；nginx-securetrans-single.conf
   单网卡配置 + nginx-securetrans.conf 双网卡配置保留备用）
 
-### ADR-009：部署凭据策略——每次部署重置 admin 密码为 .env RESET_PASSWORD
-- **背景**：verify.sh 原用写死的 admin/Admin@123 登录验证；生产环境 admin 密码被手工修改后验证直接 401 失败。
-  且用户重置密码（Init@123456）固定不可配、界面显示与 .env 可能不一致。
-- **决策**：
-  - **单一来源**：`.env RESET_PASSWORD` 是重置密码唯一配置源（默认 Init@123456），界面"重置密码"显示、部署重置、verify 凭据三者同源，禁止其他位置出现第二份默认密码
-  - **每次部署重置**：deploy.sh 9.7 步调用 `python app.py --reset-admin-password`，将 admin 密码重置为 .env RESET_PASSWORD 并置强制改密标记（幂等；保证部署完成即可登录、verify 直接通过）；`--reset-admin-password` 为独立 CLI，不启动 Web 服务
-  - **verify 凭据自适应**：verify.sh 自动从 .env RESET_PASSWORD 取凭据（`VERIFY_ADMIN_USER`/`VERIFY_ADMIN_PASS` 环境变量可显式覆盖）；admin 密码被手工修改后，验证时显式传 `VERIFY_ADMIN_PASS=xxx`
-  - **测试不碰真实密码**：test_api.py 凭据参数化（TEST_ADMIN_USER/TEST_ADMIN_PASS）；改密测试用专用用户 testpwuser（创建→改密→新密码登录→改回→清理），绝不修改真实 admin 密码（生产安全）
-  - **deploy.sh 兜底**：.env 缺失 RESET_PASSWORD 行时自动追加默认值，避免 verify 凭据与部署重置不一致（此坑已在 WSL 环境实测命中）
-- **已落点**：v2.2.18（app.py CLI / deploy.sh 9.7+4.6 / verify.sh 凭据读取 / test_api.py 参数化+专用用户）
-- **边界**：Windows dev 场景 admin 初始仍为 Admin@123（init_db 首次创建），不随部署重置；生产环境以 RESET_PASSWORD 为准
+### ADR-009：部署凭据策略——admin 密码全链路统一（部署重置=测试默认=界面提示，不强制改密）
+- **背景**：verify.sh 原用写死的 admin/Admin@123 登录验证；生产环境 admin 密码被手工修改后验证直接 401 失败；init_db 首次播种写死 Admin@123、登录页写死提示、deploy.sh 重置为 RESET_PASSWORD、verify 又取另一套——三处不一致导致反复出现"部署后 verify 用户名或密码错""界面显示与实情不符"。
+- **决策（全链路统一，禁止出现第二份默认密码）**：
+  - **单一来源**：`.env RESET_PASSWORD` 是唯一重置密码配置源（默认 Init@123456）。init_db 首次播种 admin、deploy.sh 每次部署重置、verify.sh/test_api.py 测试默认凭据、登录页提示、admin 重置密码接口——**全部同源**，默认值统一 Init@123456
+  - **每次部署重置**：deploy.sh 9.7 步调用 `python app.py --reset-admin-password`，将 admin 密码重置为 .env RESET_PASSWORD（幂等；保证部署完成即可登录、verify 直接通过）；`--reset-admin-password` 为独立 CLI，不启动 Web 服务
+  - **不强制改密，仅建议**：去掉"首次登录强制修改"，改为"登录后建议尽快修改（不强制）"；admin 可自行修改，修改后 verify 用 `VERIFY_ADMIN_PASS` 显式传当前密码
+  - **verify 凭据自适应**：verify.sh 自动从 .env RESET_PASSWORD 取凭据（`VERIFY_ADMIN_USER`/`VERIFY_ADMIN_PASS` 环境变量可显式覆盖）
+  - **测试不碰真实密码**：test_api.py 凭据参数化（TEST_ADMIN_USER/TEST_ADMIN_PASS，默认取 RESET_PASSWORD）；改密测试用专用用户 testpwuser（创建→改密→新密码登录→改回→清理），绝不修改真实 admin 密码（生产安全）
+  - **deploy.sh 兜底**：.env 缺失 RESET_PASSWORD 行时自动追加默认值，避免 verify 凭据与部署重置不一致
+- **已落点**：v2.2.27（app.py init_db 播种 RESET_PASSWORD / CLI --reset-admin-password / 登录页动态显示密码+建议改密 / 全库清理 Admin@123 硬编码；deploy.sh/verify.sh/test_api.py 文案与凭据统一）
 
 ### ADR-010：.env 与 SQLite 配置一致性——配置权威矩阵（强制）
 - **背景**：system_config 存 SQLite、AD 参数在 .env、另有 feature_rules/approvers 等，长期调整后文本配置与数据库共存，管理员和开发者不清楚哪个生效，出现"改了 .env 没生效 / 改了界面被 .env 覆盖"等配置错误与遗忘问题。
@@ -328,6 +328,7 @@ main ────●────●────●────●────  �
   - **部署级配置（.env 唯一，进程启动读取，改后 restart 生效）**：DEPLOY_MODE / HOST / PORT / INTERNAL_CIDRS / NAS_ROOT / SECURETRANS_DATA / SECRET_KEY / RESET_PASSWORD。由 systemd EnvironmentFile 机制加载，.env 是唯一操作点，界面只读展示（配置总览页）。
   - **运行时配置（SQLite 唯一，界面可改、即时生效，不再回写 .env）**：system_config（app_name / auto_approval_enabled / default_expiry_days / max_file_size_mb）。api_update_system_config 已删除 .env 回写，防止两处漂移。
   - **AD 连接配置（从 .env 过渡迁移到 SQLite ad_config，管理页可配，运行期 DB 权威）**：10 个键（ad_enabled / ad_host / ad_domain / ad_base_dn / ad_bind_dn / ad_bind_password / ad_user_field / ad_display_field / ad_mail_field / ad_group_field）。首次部署 init_db 在表空时从 .env 播种一次（source=env）；系统配置页"从 .env 导入"可把 .env 当前值导入 DB；保存后 source=db 即时生效（无需重启）；某键为空值时读取回退 .env/默认。AD 登录、AD 用户查询、登录域后缀判断全部改运行时读取。
+  - **AD 手工验证（/api/admin/ad/search 返回 verifyCommand）**：AD 用户搜索接口同源生成 `ldapsearch` 验证命令（bind 密码用 **** 占位），管理员可在服务器上手工执行确认 bind 凭据/网络连通；**程序直连 AD 无需服务器入域、无需 SSSD**——应用通过 ldap3 协议 bind 查询，与服务器是否加入 AD 域完全独立（用户已有大规模 sssd 场景不受影响，二者互不干扰）
 - **一致性机制**：①播种一次（ad_config 空表从 .env 导入，避免手工重复录入）；②**配置总览页**（系统配置页卡片：左 .env 部署级只读 + 右 DB 运行时配置，逐项标来源 env/db 与更新时间，防遗忘）；③**冲突规则：DB 优先**（运行时配置界面保存即权威，.env 不再回写）；④**文档化**：本 ADR + AGENTS.md + DEPLOY.md 三处同步，明文公开口径。
 - **边界**：部署级配置不迁 DB（systemd EnvironmentFile 机制依赖 .env）；AD_BIND_PASSWORD 脱敏显示（前2位+****），重新输入才覆盖；.env 仅负责部署级参数与首次播种，运行期不再参与业务判断。
 - **已落点**：v2.2.20（app.py：ad_config 表/AD_ENV_MAP/get_ad_config_value/mask_secret/authenticate_ad·api_login·api_search_ad 运行时读取/api_update_system_config 去回写 + 3 个管理 API：GET·PUT /api/admin/ad-config、POST /api/admin/ad-config/import、GET /api/admin/config-overview + 前端 AD 配置卡片与配置总览卡片 + test_api.py 201 项全量回归）
@@ -335,10 +336,10 @@ main ────●────●────●────●────  �
 ### ADR-011：数据生命周期与运维功能化（强制）
 - **背景**：测试环境部署时需要清空老库/恢复初始配置，生产环境原则上不能动数据但需要按需备份+清理、备份、恢复；开发/测试/生产环境代码配置数据不分离导致验证不可靠。业界最佳实践：运维期内有用的功能应收尽收进系统（Web API + 界面 + TDD 可调），脚本只保留首部署与离线场景。
 - **决策（三环境一套代码配置数据脚本）**：dev(Windows) / test(WSL) / prod(Rocky) 程序与配置完全一致（DEPLOY_MODE 开关 + .env）；差异只在数据策略——dev/test 用**模拟数据 + verify.sh 全量验证**闭环，prod 用**备份/恢复/出厂重置**；代码、配置、数据三者分离可自由组合。
-- **系统功能（admin 菜单"系统工具"，确认码保护）**：备份 `POST /api/admin/ops/backup` + 列表 `GET /api/admin/ops/backups`（DB sqlite backup API 一致性快照 + NAS 业务目录 → data/backups/backup-<ts>）；恢复 `POST /api/admin/ops/restore`（确认码 RESTORE，回退=再恢复之前的备份）；出厂重置 `POST /api/admin/ops/reset-factory`（确认码 RESET，**自动先备份** → 清空 → init_db 重建 → admin 密码重置为 .env RESET_PASSWORD）；模拟数据 `POST /api/admin/ops/mock-data`（确认码 MOCK，**仅 testing 模式**，生产 403）。
-- **离线脚本（infra/，服务停止时最安全）**：`ops-backup.sh` / `ops-restore.sh <name>` / `ops-reset.sh`（备份+清理，调 CLI `--reset-factory`）/ `ops-mock.sh`（调 CLI `--mock-data`）；deploy.sh 支持 `RESET_DB=1` 部署时出厂重置（测试环境用）。
+- **系统功能（admin 菜单"系统工具"，确认码保护）**：备份 `POST /api/admin/ops/backup` + 列表 `GET /api/admin/ops/backups`（**scope 拆分**：`system`=仅系统 DB（升级前后回退用）/ `business`=仅 NAS 业务文件（换存储/归档用）/ `all`=两者，界面系统/业务两个备份卡 + 列表 hasDb/hasNas 标记；DB 用 sqlite backup API 一致性快照 + NAS 业务目录 → data/backups/backup-<ts>）；恢复 `POST /api/admin/ops/restore`（确认码 RESTORE，支持 scope，回退=再恢复之前的备份）；出厂重置 `POST /api/admin/ops/reset-factory`（确认码 RESET，**自动先备份** → 清空 → init_db 重建 → admin 密码重置为 .env RESET_PASSWORD）；模拟数据 `POST /api/admin/ops/mock-data`（确认码 MOCK，**仅 testing 模式**，生产 403）。
+- **离线脚本（infra/，服务停止时最安全）**：`ops-backup.sh [all|system|business]` / `ops-restore.sh <name> [all|system|business]` / `ops-reset.sh`（备份+清理，调 CLI `--reset-factory`）/ `ops-mock.sh`（调 CLI `--mock-data`）；deploy.sh 支持 `RESET_DB=1` 部署时出厂重置（测试环境用）。
 - **与 ADR-010 不重叠**：ADR-010 管配置权威（静态三档），ADR-011 管数据生命周期与运维操作（动态）；mock+verify 构成 ADR-007 调测门禁的执行闭环。
-- **已落点**：v2.2.23（app.py ops 路由 + CLI --reset-factory/--mock-data + 前端系统工具页 + test_api.py 221 项 + infra/ops-*.sh + deploy.sh 9.8 RESET_DB）
+- **已落点**：v2.2.27（app.py ops 路由 scope 拆分 + 前端系统/业务备份卡 + ops-*.sh scope 参数 + test_api.py 250 项 + deploy.sh 9.8 RESET_DB；v2.2.23 初版：ops 路由 + CLI --reset-factory/--mock-data + 前端系统工具页 + test_api.py 221 项 + infra/ops-*.sh）
 
 ### ADR-012：性能与文件完整性——800MB 全链路压力测试 + MD5 端到端四方一致（强制）
 - **背景**：生产部署前需要正式的性能与完整性验证——800MB 大文件 上传→审批摆渡→下载 全链路性能；文件完整性（MD5）端到端保证，防止传输/摆渡过程损坏。
@@ -358,5 +359,5 @@ main ────●────●────●────●────  �
 
 ---
 
-*SecureTrans v2.2.26 | 2026-09-10*
+*SecureTrans v2.2.27 | 2026-09-10*
 

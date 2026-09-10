@@ -23,6 +23,8 @@
 > **配置权威（ADR-010）**：AD 连接参数运行期以 SQLite `ad_config` 为唯一权威，`.env` 仅作部署模板与首次播种。
 > 首次启用 AD：部署完成后登录 admin →「系统配置 → AD 配置」→ 点 **从 .env 导入**（把下方 .env 值读入数据库）→ 按需修改 → **保存**（即时生效，无需重启）。
 > 之后改 AD 参数在管理页操作，**改 .env 不再生效**；如需重置回 .env 值，再次点"从 .env 导入"。
+> **程序直连 AD 无需服务器入域、无需 SSSD**（v2.2.27 确认）：应用通过 ldap3 协议 bind 查询，与服务器是否加入 AD 域完全独立，与既有 sssd 大规模使用互不干扰。
+> **手工验证命令（v2.2.27）**：用户管理/审批人 → AD 用户搜索 → 复制页面生成的 `ldapsearch` 命令到服务器执行（bind 密码处替换为实际密码），可独立确认 AD 连通与凭据；`52e` = bind 凭据错误，先查账号密码与 bind DN。
 
 | 配置项（.env 键） | 管理页键 | 默认值 | 说明 |
 |--------|------|--------|------|
@@ -79,7 +81,7 @@ INTERNAL_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16   # 逗号分隔，留空
 powershell -ExecutionPolicy Bypass -File infra/deploy.ps1 -InstallDir C:\SecureTrans -Start
 ```
 
-访问 http://localhost:8000，账号 `admin / Admin@123`（Windows dev 场景；生产部署后 admin 密码自动重置为 .env `RESET_PASSWORD`，见 3.0）。
+访问 http://localhost:8000，账号 `admin / Init@123456`（统一为 .env `RESET_PASSWORD` 默认值，ADR-009 全链路统一；Windows dev 与生产一致，每次部署重置，见 3.0）。
 
 运行测试（另一个终端）：
 ```bash
@@ -113,7 +115,7 @@ cd ~/securetrans/tests && python3 test_api.py   # 201项全通过
 ### 2.4 测试验证清单
 
 - [ ] 访问 http://服务器IP:8000 显示登录页
-- [ ] admin 登录成功（生产密码 = .env `RESET_PASSWORD`；Windows dev = Admin@123），首次登录强制改密
+- [ ] admin 登录成功（密码 = .env `RESET_PASSWORD`，默认 Init@123456，部署重置=测试默认=界面提示；登录后建议尽快修改，不强制）
 - [ ] 上传 PDF（匹配特征码，免审批自动通过）
 - [ ] 上传 EXE（不匹配，进入人工审批）
 - [ ] 上传 ZIP/TAR.GZ（自动解包列清单）
@@ -131,7 +133,7 @@ cd ~/securetrans/tests && python3 test_api.py   # 201项全通过
 RESET_DB=1 sudo bash infra/deploy.sh
 # 或运行期：系统工具页点"模拟数据"（确认码 MOCK），或离线脚本
 sudo bash infra/ops-mock.sh
-# 全量自动化验证（Windows dev 238项 / WSL 生产面 237项，凭据自动取 .env RESET_PASSWORD）
+# 全量自动化验证（Windows dev 250项 / WSL 生产面 249项，凭据自动取 .env RESET_PASSWORD）
 sudo bash infra/verify.sh
 ```
 
@@ -174,12 +176,12 @@ sudo bash infra/verify.sh
 tar xzf securetrans-<版本>.tar.gz -C /opt/securetrans --strip-components=1
 # 2. 一键部署（root 运行）
 sudo bash /opt/securetrans/infra/deploy.sh
-# 3. 全量验证（201项，admin 凭据自动取 .env RESET_PASSWORD）
+# 3. 全量验证（250项，admin 凭据自动取 .env RESET_PASSWORD）
 sudo bash /opt/securetrans/infra/verify.sh
 ```
 
-> **部署凭据（ADR-009）**：**每次运行 deploy.sh 都会将 admin 密码重置为 `.env` 的 `RESET_PASSWORD`**
-> （默认 `Init@123456`，界面"重置密码"显示与 .env 同源），并置"首次登录强制改密"。因此：
+> **部署凭据（ADR-009，全链路统一）**：**每次运行 deploy.sh 都会将 admin 密码重置为 `.env` 的 `RESET_PASSWORD`**
+> （默认 `Init@123456`；init_db 播种 / 部署重置 / verify·test 默认凭据 / 登录页提示全部同源）。因此：
 > - 部署完成即可用 `admin / <RESET_PASSWORD>` 登录，verify.sh 自动使用该凭据验证
 > - 登录后请立即修改 admin 密码；之后若需再跑 verify，用 `VERIFY_ADMIN_PASS=<你的密码> sudo bash infra/verify.sh` 显式传参
 > - `.env` 缺失 `RESET_PASSWORD` 行时 deploy.sh 自动追加默认值；改密码只改 .env 这一处
@@ -280,7 +282,7 @@ python3 test_api.py
 **通过标准**
 - [ ] 健康检查返回 `deployMode":"testing"`
 - [ ] 201项测试 100% 通过
-- [ ] 浏览器访问 `http://<内网IP>:8000`，admin 登录（密码 = .env `RESET_PASSWORD`，首次强制改密）
+- [ ] 浏览器访问 `http://<内网IP>:8000`，admin 登录（密码 = .env `RESET_PASSWORD`，默认 Init@123456；登录后建议尽快修改，不强制）
 
 ### 阶段3：生产环境部署 + 自动化测试（DEPLOY_MODE=production）
 
@@ -412,7 +414,7 @@ systemctl stop securetrans
 rm -f /opt/securetrans/data/securetrans.db /opt/securetrans/data/securetrans.log
 rm -rf /opt/securetrans/nas/staging/* /opt/securetrans/nas/external/* /opt/securetrans/nas/archive/*
 systemctl start securetrans
-# 首次启动自动重建 admin/Admin@123、默认系统配置、特征码模板(默认禁用)
+# 首次启动自动重建 admin/Init@123456（= .env RESET_PASSWORD 默认）、默认系统配置、特征码模板(默认禁用)
 # 方式B：仅清理业务数据（保留配置，用 Web 界面删测试用户/合作方/特征码）
 ```
 
@@ -428,7 +430,7 @@ systemctl start securetrans
 
 | # | 验收项 | 结果 |
 |---|--------|------|
-| 1 | admin 登录 + 强制改密 | ☐ |
+| 1 | admin 登录（密码 = .env RESET_PASSWORD，默认 Init@123456）+ 建议尽快修改（不强制） | ☐ |
 | 2 | 普通用户内网面菜单（文件提交/我的提交/外网下载） | ☐ |
 | 3 | 外网面仅下载、管理菜单不可见 | ☐ |
 | 4 | 提交文件→特征码匹配免审批直通 / 不匹配进审批 | ☐ |
@@ -576,7 +578,7 @@ Windows 服务化（开机自启）可用 NSSM：`nssm install SecureTrans` 指�
 | 运行时配置 | 数据库 system_config | 系统配置页（界面） | 即时生效，**不再回写 .env** |
 | AD 连接配置 | 数据库 ad_config | 系统配置页 → AD 配置（导入 .env / 保存） | 即时生效，空值回退 .env/默认 |
 
-- 部署级配置 = DEPLOY_MODE / HOST / PORT / INTERNAL_CIDRS / NAS_ROOT / SECURETRANS_DATA / SECRET_KEY / RESET_PASSWORD
+- 部署级配置 = DEPLOY_MODE / HOST / PORT / INTERNAL_CIDRS / NAS_ROOT / SECURETRANS_DATA / SECRET_KEY / RESET_PASSWORD / APP_STAGE（发布阶段 alpha→beta→rtm→release，页面显示 vX.Y.Z-stage）
 - 运行时配置 = app_name / auto_approval_enabled / default_expiry_days / max_file_size_mb（界面保存即权威，.env 同步回写已删除，防两处漂移）
 - AD 连接配置 = 上方 AD 表 10 键；首次部署表空自动从 .env 播种（source=env），管理页可"从 .env 导入"/保存（source=db）
 - **防遗忘机制**：系统配置页「配置总览」卡片左右对照——左 `.env` 只读、右 DB 配置，逐项标来源 env/db 与更新时间
@@ -599,15 +601,18 @@ sudo sqlite3 /opt/securetrans/data/securetrans.db ".backup /backup/securetrans_$
 代码、配置、数据三者分离，可自由组合。运维期内有用的功能已收进系统（admin 菜单"系统工具"），脚本仅保留离线场景。
 
 **方式 A：系统工具页（在线，推荐日常使用）**——admin 登录 → 系统工具：
-- 立即备份 / 备份列表 / 恢复（确认码 RESTORE）
+- 立即备份 / 备份列表 / 恢复（确认码 RESTORE），**备份拆分 scope（v2.2.27）**：
+  - **系统备份（system）**：仅系统 DB（system_config/ad_config/users/audit 等），升级/回退前后用
+  - **业务数据备份（business）**：仅 NAS 业务文件（staging/external/archive），更换存储目录/历史归档用
+  - 列表含 hasDb/hasNas 标记，恢复按备份类型还原
 - 出厂重置（确认码 RESET；**自动先备份** → 清空 → 出厂状态，admin 密码重置为 .env RESET_PASSWORD）
 - 模拟数据（确认码 MOCK；**仅 DEPLOY_MODE=testing**，生产 403）
 
 **方式 B：离线脚本（服务停止时最安全；生产手工运维首选）**：
 ```bash
 sudo systemctl stop securetrans                       # 可选，文件级操作更安全
-sudo bash infra/ops-backup.sh                         # 备份 → data/backups/backup-<时间戳>
-sudo bash infra/ops-restore.sh backup-20260909_120000 # 恢复（先 ls data/backups/ 看名称）
+sudo bash infra/ops-backup.sh [all|system|business]   # 备份 → data/backups/backup-<时间戳>（scope 默认 all）
+sudo bash infra/ops-restore.sh backup-20260909_120000 [all|system|business] # 恢复（先 ls data/backups/ 看名称）
 sudo bash infra/ops-reset.sh                          # 备份+清理 → 出厂重置（admin 密码= .env RESET_PASSWORD）
 sudo bash infra/ops-mock.sh                           # 模拟数据（仅 testing 环境；配 verify.sh 做验证闭环）
 ```
@@ -657,11 +662,11 @@ sudo systemctl restart securetrans
 │   ├── .env.production       # 生产环境配置模板
 │   └── static/               # 前端SPA（index.html，单页应用）
 ├── tests/
-│   └── test_api.py           # 238项全量测试（WSL 生产面 237项）
+│   └── test_api.py           # 250项全量测试（WSL 生产面 249项）
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署 (Linux，RESET_DB=1 部署时出厂重置)
 │   ├── deploy.ps1            # 一键部署 (Windows)
-│   ├── verify.sh             # 部署验证（237项全量测试，凭据自动取 .env RESET_PASSWORD）
+│   ├── verify.sh             # 部署验证（249项全量测试，凭据自动取 .env RESET_PASSWORD）
 │   ├── ops-backup.sh / ops-restore.sh / ops-reset.sh / ops-mock.sh  # 数据生命周期离线脚本（ADR-011）
 │   ├── env-refresh.sh        # .env 配置刷新（备份+只增不覆盖，ADR-010/5.4）
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式

@@ -40,7 +40,10 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.2.26"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.2.27"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+# 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
+# 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
+APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
 
 # 安全配置
 SECRET_KEY = os.getenv("SECRET_KEY", "securetrans-dev-secret-change-in-production")
@@ -445,7 +448,9 @@ def init_db():
     # 注意：gunicorn 多 worker 并发启动时，每个 worker 都执行 init_db()。
     # 若用 SELECT-COUNT + INSERT 检查，两个 worker 可能同时判定 admin 不存在并插入 → UNIQUE 冲突，
     # 导致 worker 启动失败。必须用 INSERT OR IGNORE（用户名 UNIQUE 约束冲突时忽略，幂等安全）。
-    admin_hash = bcrypt.hashpw("Admin@123".encode(), bcrypt.gensalt()).decode()
+    # 密码 = RESET_PASSWORD（默认 Init@123456）：与 deploy.sh 部署重置 / verify.sh 测试凭据 /
+    # 登录页提示 统一同源，全链路一致（ADR-013 密码策略）。must_change_password=1 仅作"建议修改"提示，不强制。
+    admin_hash = bcrypt.hashpw(RESET_PASSWORD.encode(), bcrypt.gensalt()).decode()
     conn.execute(
         "INSERT OR IGNORE INTO local_users (id,username,password_hash,display_name,email,role,status,must_change_password,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
         (str(uuid.uuid4()), "admin", admin_hash, "系统管理员", "admin@localhost", "admin", "active", 1, now_str())
@@ -1047,8 +1052,8 @@ def login_page():
     .hint{font-size:12px;color:#666;margin-top:16px;line-height:1.6}</style></head>
     <body><div class="box"><h1>🔐 SecureTrans</h1>
     <form method="POST" action="/api/auth/login"><input name="username" placeholder="用户名" required><input type="password" name="password" placeholder="密码" required><button type="submit">登 录</button></form>
-    <div class="hint">初始管理员：admin / Admin@123<br>AD用户请输入 域\\用户名 格式</div></div></body></html>
-    """
+    <div class="hint">管理员初始密码 = __RESET_PWD__（每次部署重置为 .env RESET_PASSWORD，登录后建议尽快修改）<br>AD用户请输入 域\\用户名 格式<br>版本：__VER__</div></div></body></html>
+    """.replace("__RESET_PWD__", RESET_PASSWORD).replace("__VER__", f"{APP_VERSION}-{APP_STAGE}")
 
 # ============================================================
 # 路由：认证 API
@@ -1692,9 +1697,27 @@ def api_delete_role_mapping(mapping_id):
 @login_required
 @role_required("admin")
 def api_search_ad():
-    """搜索 AD 用户（PMF 阶段模拟，生产接入真实 LDAP 查询）"""
+    """搜索 AD 用户（PMF 阶段模拟，生产接入真实 LDAP 查询）
+    同时返回 verifyCommand：可直接在服务器/AD 管理机手工执行的 ldapsearch 验证命令
+    （与程序同源读取 ad_config/.env，避免界面配置与手工验证不一致；bind 密码不回显明文，用 **** 占位提示替换）。"""
     keyword = request.form.get("keyword", "") if request.form else (request.get_json() or {}).get("keyword", "")
-    if get_ad_config_value("ad_enabled", "false").lower() != "true":
+    ad_enabled = get_ad_config_value("ad_enabled", "false").lower()
+    ad_host = get_ad_config_value("ad_host", os.getenv("AD_HOST", ""))
+    ad_bind_dn = get_ad_config_value("ad_bind_dn", os.getenv("AD_BIND_DN", ""))
+    ad_base_dn = get_ad_config_value("ad_base_dn", os.getenv("AD_BASE_DN", ""))
+    ad_user_field = get_ad_config_value("ad_user_field", os.getenv("AD_USER_FIELD", "sAMAccountName")) or "sAMAccountName"
+    ad_display_field = get_ad_config_value("ad_display_field", os.getenv("AD_DISPLAY_FIELD", "displayName")) or "displayName"
+    ad_mail_field = get_ad_config_value("ad_mail_field", os.getenv("AD_MAIL_FIELD", "mail")) or "mail"
+    verify_cmd = ""
+    if ad_host and ad_base_dn:
+        host_part = ad_host.replace("ldap://", "").replace("ldaps://", "")
+        secure_flag = "-x" if ad_host.startswith("ldaps://") else "-x"
+        bind_part = f"-D '{ad_bind_dn}' -w '****'" if ad_bind_dn else ""
+        verify_cmd = (f"ldapsearch {secure_flag} -H {ad_host} {bind_part} -b '{ad_base_dn}' "
+                      f"'(&(objectClass=user)({ad_user_field}={keyword or '*'}*))' {ad_display_field} {ad_mail_field}"
+                      + ("\n# 注：将 **** 替换为 AD 绑定密码；无 ldapsearch 时可用: "
+                         f"yum install -y openldap-clients" if bind_part else ""))
+    if ad_enabled != "true":
         # 模拟返回
         mock = [
             {"username": "zhangsan", "displayName": "张三", "email": "zhangsan@nexskysemi.com", "department": "研发部"},
@@ -1703,9 +1726,9 @@ def api_search_ad():
             {"username": "zhaoliu", "displayName": "赵六", "email": "zhaoliu@nexskysemi.com", "department": "市场部"},
         ]
         result = [u for u in mock if keyword.lower() in u["username"].lower() or keyword in u["displayName"]]
-        return jsonify(result)
+        return jsonify({"mode": "mock", "users": result, "verifyCommand": verify_cmd})
     # TODO: 生产环境真实 AD 查询
-    return jsonify([])
+    return jsonify({"mode": "ldap", "users": [], "verifyCommand": verify_cmd})
 
 # ============================================================
 # 路由：AD 配置管理 + 配置总览（ADR-010，仅 admin）
@@ -2123,7 +2146,8 @@ def api_stats():
 
 @app.route("/api/health")
 def api_health():
-    return jsonify({"status": "ok", "time": now_str(), "version": APP_VERSION, "deployMode": DEPLOY_MODE})
+    return jsonify({"status": "ok", "time": now_str(), "version": APP_VERSION, "stage": APP_STAGE,
+                    "deployMode": DEPLOY_MODE, "resetPassword": RESET_PASSWORD})
 
 # ============================================================
 # 手动触发过期清理（admin）
@@ -2142,24 +2166,29 @@ def api_cleanup_expired():
 # ============================================================
 BACKUP_DIR = DATA_DIR / "backups"
 
-def _backup_now():
-    """在线备份：DB（sqlite backup API，WAL 安全一致性快照）+ NAS 业务目录 → DATA_DIR/backups/backup-<ts>"""
+def _backup_now(scope="all"):
+    """在线备份 → DATA_DIR/backups/backup-<ts>
+    scope: all=DB+NAS 业务目录（默认，兼容旧版） / system=仅系统（DB：含 system_config/ad_config/local_users 等配置与数据）
+           / business=仅业务数据（NAS staging/external/archive 文件，用于更换存储目录/历史归档）
+    系统备份用于升级前后保证系统可回退；业务备份用于业务文件历史归档与存储迁移（ADR-011 拆分）。"""
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S")
     dest = BACKUP_DIR / f"backup-{ts}"
     (dest / "db").mkdir(parents=True, exist_ok=True)
     (dest / "nas").mkdir(parents=True, exist_ok=True)
-    src_conn = sqlite3.connect(str(DB_PATH))
-    dst_conn = sqlite3.connect(str(dest / "db" / "securetrans.db"))
-    try:
-        src_conn.backup(dst_conn)
-    finally:
-        dst_conn.close()
-        src_conn.close()
-    for sub in ["staging", "external", "archive"]:
-        src = NAS_ROOT / sub
-        if src.exists():
-            shutil.copytree(str(src), str(dest / "nas" / sub))
+    if scope in ("all", "system"):
+        src_conn = sqlite3.connect(str(DB_PATH))
+        dst_conn = sqlite3.connect(str(dest / "db" / "securetrans.db"))
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+            src_conn.close()
+    if scope in ("all", "business"):
+        for sub in ["staging", "external", "archive"]:
+            src = NAS_ROOT / sub
+            if src.exists():
+                shutil.copytree(str(src), str(dest / "nas" / sub))
     return dest
 
 def _list_backups():
@@ -2176,38 +2205,47 @@ def _list_backups():
                     "time": d.name[len("backup-"):].replace("_", " "),
                     "size": size,
                     "hasDb": (d / "db" / "securetrans.db").exists(),
+                    "hasNas": any((d / "nas" / sub).exists() and any((d / "nas" / sub).iterdir()) for sub in ["staging", "external", "archive"]),
                 })
     return out
 
-def _restore_backup(name):
-    """从备份恢复：替换 DB + NAS 业务目录（回退 = 再恢复之前的备份）"""
+def _restore_backup(name, scope="all"):
+    """从备份恢复（scope 同 _backup_now；回退 = 再恢复之前的备份）
+    system：仅替换 DB（配置+数据），不动业务文件；business：仅替换 NAS 业务目录，不动 DB"""
     src = BACKUP_DIR / name
-    if not src.exists() or not (src / "db" / "securetrans.db").exists():
+    if not src.exists():
         return False, "备份不存在"
-    if "db" in g:
-        try:
-            g.db.close()
-        except Exception:
-            pass
-        g.pop("db", None)
-    for suffix in ["", "-wal", "-shm"]:
-        p = Path(str(DB_PATH) + suffix)
-        if p.exists():
+    if scope in ("all", "system") and not (src / "db" / "securetrans.db").exists():
+        return False, f"备份 {name} 不包含系统数据（db），无法按 system/all 恢复"
+    if scope in ("all", "business") and not (src / "nas").exists():
+        return False, f"备份 {name} 不包含业务数据（nas），无法按 business/all 恢复"
+    if scope in ("all", "system"):
+        if "db" in g:
             try:
-                p.unlink()
+                g.db.close()
             except Exception:
                 pass
-    shutil.copy2(str(src / "db" / "securetrans.db"), str(DB_PATH))
-    for sub in ["staging", "external", "archive"]:
-        dst = NAS_ROOT / sub
-        if dst.exists():
-            shutil.rmtree(str(dst), ignore_errors=True)
-        src_nas = src / "nas" / sub
-        if src_nas.exists():
-            shutil.copytree(str(src_nas), str(dst))
-        else:
-            dst.mkdir(parents=True, exist_ok=True)
-    return True, f"恢复完成：{name}；业务数据已回滚至备份时点（{name[len('backup-'):].replace('_', ' ')}），请刷新页面"
+            g.pop("db", None)
+        for suffix in ["", "-wal", "-shm"]:
+            p = Path(str(DB_PATH) + suffix)
+            if p.exists():
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
+        shutil.copy2(str(src / "db" / "securetrans.db"), str(DB_PATH))
+    if scope in ("all", "business"):
+        for sub in ["staging", "external", "archive"]:
+            dst = NAS_ROOT / sub
+            if dst.exists():
+                shutil.rmtree(str(dst), ignore_errors=True)
+            src_nas = src / "nas" / sub
+            if src_nas.exists():
+                shutil.copytree(str(src_nas), str(dst))
+            else:
+                dst.mkdir(parents=True, exist_ok=True)
+    scope_zh = {"all": "系统+业务", "system": "系统", "business": "业务数据"}.get(scope, scope)
+    return True, f"恢复完成：{name}（{scope_zh}）；已回滚至备份时点（{name[len('backup-'):].replace('_', ' ')}），请刷新页面"
 
 def _reset_factory():
     """出厂重置（ADR-011）：先自动备份 → 清空业务库与 NAS → init_db 重建 → admin 密码重置为 .env RESET_PASSWORD"""
@@ -2289,9 +2327,13 @@ def api_ops_backups():
 @login_required
 @role_required("admin")
 def api_ops_backup():
-    dest = _backup_now()
-    add_audit_log(current_user.username, "ops_backup", dest.name, "系统运维：创建数据备份", get_client_ip())
-    return jsonify({"message": "备份创建成功", "name": dest.name})
+    data = request.get_json() or {}
+    scope = data.get("scope", "all")
+    if scope not in ("all", "system", "business"):
+        return jsonify({"error": "scope 仅支持 all/system/business"}), 400
+    dest = _backup_now(scope)
+    add_audit_log(current_user.username, "ops_backup", f"{dest.name}({scope})", f"系统运维：创建{ {'all':'系统+业务','system':'系统','business':'业务数据'}.get(scope,scope) }备份", get_client_ip())
+    return jsonify({"message": "备份创建成功", "name": dest.name, "scope": scope})
 
 @app.route("/api/admin/ops/restore", methods=["POST"])
 @login_required
@@ -2299,12 +2341,15 @@ def api_ops_backup():
 def api_ops_restore():
     data = request.get_json() or {}
     name = data.get("backupName", "")
+    scope = data.get("scope", "all")
+    if scope not in ("all", "system", "business"):
+        return jsonify({"error": "scope 仅支持 all/system/business"}), 400
     if data.get("confirm") != "RESTORE":
         return jsonify({"error": "请输入确认码 RESTORE"}), 400
-    ok, msg = _restore_backup(name)
+    ok, msg = _restore_backup(name, scope)
     if not ok:
         return jsonify({"error": msg}), 400
-    add_audit_log(current_user.username, "ops_restore", name, "系统运维：从备份恢复数据", get_client_ip())
+    add_audit_log(current_user.username, "ops_restore", f"{name}({scope})", "系统运维：从备份恢复数据", get_client_ip())
     return jsonify({"message": msg})
 
 @app.route("/api/admin/ops/reset-factory", methods=["POST"])
@@ -2409,7 +2454,7 @@ if __name__ == "__main__":
                 print(f"[SecureTrans] admin 密码已重置为: {new_pwd}（.env RESET_PASSWORD），首次登录需修改")
                 sys.exit(0)
             else:
-                print("[SecureTrans] admin 用户不存在，跳过重置（首次部署 init_db 已创建 admin/Admin@123）")
+                print("[SecureTrans] admin 用户不存在，跳过重置（首次部署 init_db 已用 RESET_PASSWORD 创建）")
                 sys.exit(0)
     # CLI: 出厂重置（ADR-011，离线脚本 ops-reset.sh 调用；含自动备份 + init_db 重建 + admin 密码重置）
     if "--reset-factory" in sys.argv:

@@ -1,9 +1,25 @@
 # SecureTrans 测试报告
 
-> 版本：v2.2.18 | 日期：2026-09-08 | 阶段：PSF
-> 测试环境：Windows 11 (本地dev) + Rocky Linux 10.1 (WSL2 test)，Python 3.12 + Flask 3.0 + SQLite
+> 版本：v2.2.27 | 日期：2026-09-10 | 阶段：PSF（Alpha）
+> 测试环境：Windows 11 (本地dev) + Rocky Linux (WSL2 test)，Python 3.12 + Flask 3.0 + SQLite
 > 部署模式：DEPLOY_MODE=testing（本地文件系统 + Flask 自带服务器）
 > 测试工具：tests/test_api.py（Python urllib，无额外依赖）
+
+---
+
+## 〇、v2.2.27 回归（2026-09-10）
+
+**总计 250项测试（Windows dev）/ 249项（WSL production）全部通过，通过率 100%。**
+
+**本轮 5 项需求（v2.2.27）**：
+
+1. **admin 密码全链路统一（ADR-009 升级）**：init_db 播种、deploy.sh 部署重置、verify.sh/test_api.py 默认凭据、登录页提示全部同源 `.env RESET_PASSWORD`（默认 Init@123456）；去掉"首次登录强制改密"，改为"登录后建议尽快修改（不强制）"；全库清理 Admin@123 硬编码。验证：health 返回 resetPassword/登录页动态显示、无硬编码 Admin@123。
+2. **发布阶段（APP_STAGE）**：alpha=自测 → beta=内部测试 → rtm=内部使用 → release=正式发布；`.env APP_STAGE` 可配，页面/登录页/健康检查显示 `vX.Y.Z-stage`。
+3. **备份拆分（ADR-011 升级）**：系统备份（system=仅 DB，升级回退用）/ 业务数据备份（business=仅 NAS 业务文件，存储迁移/归档用）/ all；列表 hasDb/hasNas 标记，恢复按类型；界面系统工具页拆系统/业务两个备份卡。
+4. **系统工具页抬头中英双语**：ops 页标题"系统工具 / System Tools"。
+5. **AD 手工验证命令**：/api/admin/ad/search 返回 ldapsearch 验证命令（bind 密码 **** 占位，可复制到服务器执行）；确认程序 ldap3 直连 AD、服务器无需入域/SSSD（与既有 sssd 场景互不干扰）。
+
+**新增断言（12 项）**：health stage/resetPassword、登录页动态密码无硬编码、前端品牌阶段+建议改密、ops 双语标题+备份拆分卡、scope=system/business 备份成功、非法 scope 400、备份列表 hasDb/hasNas、恢复缺失备份 400、AD 搜索 verifyCommand、app.py 资源检查（APP_STAGE/scope/RESET_PASSWORD 播种/无 Admin@123）。
 
 ---
 

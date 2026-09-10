@@ -13,9 +13,12 @@ import tempfile
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 
-# 管理凭据参数化（生产环境 admin 密码可能已修改；verify.sh 通过环境变量传入，默认 admin/Admin@123）
+# 管理凭据参数化（生产环境 admin 密码可能已修改；verify.sh 通过环境变量传入）
+# 默认 = 重置密码 Init@123456：与 app.py RESET_PASSWORD 默认 / deploy.sh 部署重置 / 登录页提示 同源统一
+# （ADR-013 密码策略：部署重置=测试默认=界面提示，全链路一致）
 ADMIN_USER = os.environ.get("TEST_ADMIN_USER", "admin")
-ADMIN_PASS = os.environ.get("TEST_ADMIN_PASS", "Admin@123")
+ADMIN_PASS = os.environ.get("TEST_ADMIN_PASS", os.environ.get("RESET_PASSWORD", "Init@123456"))
+RESET_PWD = os.environ.get("RESET_PASSWORD", "Init@123456")
 
 def _resolve_nas_root():
     """NAS_ROOT 解析优先级：环境变量 > 安装目录 .env > 本地开发默认(src/nas)
@@ -271,13 +274,13 @@ test("清理随机密码用户", code == 200, f"code={code}")
 
 code, data = request('POST', '/api/admin/local-users/testuser01/reset-password')
 test("重置本地用户密码", code == 200, f"code={code}, data={data}")
-test("重置密码为可配置默认值(Init@123456)", code == 200 and 'Init@123456' in data.get('message', ''),
+test("重置密码为可配置默认值(Init@123456)", code == 200 and RESET_PWD in data.get('message', ''),
      f"code={code}, msg={data.get('message', '')}")
 
 # 用户自行修改密码（原密码 → 新密码）
-code, data = request('POST', '/api/auth/login', json_data={"username": "testuser01", "password": "Init@123456"})
+code, data = request('POST', '/api/auth/login', json_data={"username": "testuser01", "password": RESET_PWD})
 test("重置后的默认密码可登录", code == 200, f"code={code}")
-code, data = request('POST', '/api/auth/change-password', json_data={"old_password": "Init@123456", "new_password": "NewPwd@123456"})
+code, data = request('POST', '/api/auth/change-password', json_data={"old_password": RESET_PWD, "new_password": "NewPwd@123456"})
 test("用户自行修改密码", code == 200, f"code={code}, data={data}")
 code, data = request('POST', '/api/auth/login', json_data={"username": "testuser01", "password": "NewPwd@123456"})
 test("修改后新密码登录成功", code == 200, f"code={code}")
@@ -307,8 +310,11 @@ code, data = request('POST', '/api/admin/role-mappings', json_data={
 })
 test("非法角色映射被拒绝(仅admin/internal-user)", code == 400, f"code={code}, data={data}")
 
-code, data = request('POST', '/api/admin/ad/search', data={"keyword": "zhang"})
-test("搜索 AD 用户（打桩模拟）", code == 200 and isinstance(data, list), f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
+code, data = request('POST', '/api/admin/ad/search', json_data={"keyword": "zhang"})
+test("搜索 AD 用户（打桩模拟）",
+     code == 200 and isinstance(data, dict) and isinstance(data.get('users'), list)
+     and data.get('mode') in ('mock', 'ldap'),
+     f"code={code}, mode={data.get('mode') if isinstance(data, dict) else 'NA'}, count={len(data.get('users', [])) if isinstance(data, dict) else 'N/A'}")
 
 # 21. 合作方白名单（partners）
 print("\n--- 10f. 合作方白名单（partners） ---")
@@ -1313,8 +1319,10 @@ if _code_ov == 200 and isinstance(_cfg, dict):
     _ad_on = _cfg.get('runtime_db', {}).get('ad_config', {}).get('ad_enabled', {}).get('value', 'false') == 'true'
 code, data = request('POST', '/api/admin/ad/search', json_data={"keyword": ""})
 test("AD用户: /api/admin/ad/search 返回结果(admin)",
-     code == 200 and isinstance(data, list) and (len(data) >= 1 or _ad_on),
-     f"code={code} len={len(data) if isinstance(data, list) else 'NA'} ad_enabled={_ad_on}")
+     code == 200 and isinstance(data, dict) and isinstance(data.get('users'), list)
+     and (len(data.get('users', [])) >= 1 or _ad_on)
+     and 'verifyCommand' in data,
+     f"code={code} n={len(data.get('users', [])) if isinstance(data, dict) else 'NA'} ad_enabled={_ad_on}")
 test("AD用户: 审批人弹窗支持AD来源+搜索",
      'id="apprSource"' in _html and 'id="apprAdBlock"' in _html and 'function searchAdUsers' in _html
      and 'function switchApproverSource' in _html)
@@ -1501,6 +1509,59 @@ test("打包: package.sh 排除 .env 且 infra 整体打包(env-refresh.sh 随�
      _os.path.exists(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'infra', 'package.sh'))
      and '.env" -type f -delete' in open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'infra', 'package.sh'), encoding='utf-8').read()
      and 'cp -r "$PROJECT_ROOT/infra"' in open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'infra', 'package.sh'), encoding='utf-8').read())
+
+# ============================================================
+# v2.2.27 回归组：密码策略统一 / 发布阶段 / 备份拆分 / AD 手工验证命令
+# ============================================================
+print("\n--- 16. v2.2.27 密码策略/发布阶段/备份拆分/AD验证 ---")
+# 1) health 返回 stage + resetPassword（前端登录页/品牌副标题同源显示）
+code, data = request('GET', '/api/health')
+test("版本: health 返回 stage 与 resetPassword（与凭据同源）",
+     code == 200 and isinstance(data, dict) and data.get('stage') in ('alpha', 'beta', 'rtm', 'release')
+     and data.get('resetPassword') == RESET_PWD, f"code={code}, data={data}")
+# 2) 登录页提示不再硬编码 Admin@123（login.html 动态取 health）
+_login_html = ''
+try:
+    _lr = _ur.urlopen(BASE_URL + '/login', timeout=10)
+    _login_html = _lr.read().decode('utf-8', 'ignore')
+except Exception:
+    pass
+test("密码: 登录页提示动态显示重置密码(无硬编码 Admin@123)",
+     'adminPwd' in _login_html and '/api/health' in _login_html and 'Admin@123' not in _login_html.replace('RESET_PASSWORD', ''),
+     "login 页需动态显示")
+# 3) 前端：品牌副标题显示版本-阶段 + 建议改密提示 + 系统工具双语标题
+test("前端: 品牌副标题显示版本-阶段 + 建议改密提示",
+     "window._APP_STAGE" in _html and "APP_VERSION + (window._APP_STAGE" in _html
+     and 'pwd.suggestChange' in _html and 'mustChangePassword' in _html)
+test("前端: 系统工具页抬头中英双语 + 备份拆分卡片",
+     "'系统工具 / System Tools'" in _html and 'ops.sysTitle' in _html and 'ops.bizTitle' in _html
+     and "opsBackup('system')" in _html and "opsBackup('business')" in _html)
+# 4) 备份拆分：scope=system/business 创建成功，列表含 hasDb/hasNas
+code, data = request('POST', '/api/admin/ops/backup', json_data={"scope": "system"})
+test("运维: 系统备份(scope=system)成功", code == 200 and data.get('scope') == 'system', f"code={code}, data={data}")
+code, data = request('POST', '/api/admin/ops/backup', json_data={"scope": "business"})
+test("运维: 业务数据备份(scope=business)成功", code == 200 and data.get('scope') == 'business', f"code={code}, data={data}")
+code, data = request('POST', '/api/admin/ops/backup', json_data={"scope": "bad"})
+test("运维: 非法 scope 返回400", code == 400, f"code={code}")
+code, data = request('GET', '/api/admin/ops/backups')
+test("运维: 备份列表含 hasDb/hasNas 类型标记",
+     code == 200 and isinstance(data, list) and len(data) >= 1 and 'hasDb' in data[0] and 'hasNas' in data[0],
+     f"code={code}")
+code, data = request('POST', '/api/admin/ops/restore', json_data={"backupName": "backup-x", "scope": "system", "confirm": "RESTORE"})
+test("运维: 恢复缺失备份返回400", code == 400, f"code={code}")
+# 5) AD 搜索返回手工验证命令（ldapsearch，与程序同源）
+code, data = request('POST', '/api/admin/ad/search', json_data={"keyword": "zha"})
+test("AD: 搜索返回 mode/users/verifyCommand(ldapsearch)",
+     code == 200 and isinstance(data, dict) and 'users' in data and 'verifyCommand' in data
+     and (data.get('verifyCommand', '') == '' or data.get('verifyCommand', '').startswith('ldapsearch')),
+     f"code={code}, mode={data.get('mode') if isinstance(data,dict) else 'NA'}, keys={list(data.keys()) if isinstance(data,dict) else 'NA'}")
+# 6) 后端资源：APP_STAGE / 备份 scope / init_db 播种用 RESET_PASSWORD / 登录 fallback 无 Admin@123
+test("后端: app.py 含 APP_STAGE + 备份 scope 拆分 + init_db 播种 RESET_PASSWORD",
+     'APP_STAGE = os.getenv("APP_STAGE"' in _app_src and 'def _backup_now(scope="all")' in _app_src
+     and 'RESET_PASSWORD.encode()' in _app_src and '_restore_backup(name, scope="all")' in _app_src)
+test("后端: app.py 登录 fallback 页不再写死 Admin@123（动态 RESET_PASSWORD）",
+     'Admin@123' not in _app_src.replace('RESET_PASSWORD', '').replace('RESET_PWD', '')
+     or '__RESET_PWD__' in _app_src)
 
 # ============================================================
 # 测试报告

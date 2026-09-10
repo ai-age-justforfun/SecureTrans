@@ -66,8 +66,9 @@
     <div class="error-msg" id="errorMsg"></div>
   </form>
   <div class="hint">
-    <p><span data-i18n="login.adminHint">初始管理员：</span><code>admin / Admin@123</code><span data-i18n="login.adminHint2">（首次登录强制修改密码）</span></p>
+    <p><span data-i18n="login.adminHint">初始/重置密码：</span><code>admin / <span id="adminPwd">…</span></code><span data-i18n="login.adminHint2">（每次部署重置为 .env RESET_PASSWORD，登录后建议尽快修改）</span></p>
     <p><span data-i18n="login.adHint">AD 用户请输入</span> <code>域\用户名</code> <span data-i18n="login.adHint2">格式</span></p>
+    <p style="margin-top:8px;" data-i18n="login.version">版本</p>
   </div>
 </div>
 <script>
@@ -77,8 +78,9 @@ const I18N_LOGIN = {
     'login.username': '用户名', 'login.usernamePh': '请输入用户名',
     'login.password': '密码', 'login.passwordPh': '请输入密码',
     'login.btn': '登 录', 'login.btnLoading': '登录中...',
-    'login.adminHint': '初始管理员：', 'login.adminHint2': '（首次登录强制修改密码）',
+    'login.adminHint': '初始/重置密码：', 'login.adminHint2': '（每次部署重置为 .env RESET_PASSWORD，登录后建议尽快修改）',
     'login.adHint': 'AD 用户请输入', 'login.adHint2': '格式',
+    'login.version': '版本',
     'login.failDefault': '登录失败', 'login.netError': '网络错误，请重试'
   },
   en: {
@@ -86,8 +88,9 @@ const I18N_LOGIN = {
     'login.username': 'Username', 'login.usernamePh': 'Enter username',
     'login.password': 'Password', 'login.passwordPh': 'Enter password',
     'login.btn': 'Sign In', 'login.btnLoading': 'Signing in...',
-    'login.adminHint': 'Initial admin: ', 'login.adminHint2': ' (password change required on first login)',
+    'login.adminHint': 'Initial/reset password: ', 'login.adminHint2': ' (reset to .env RESET_PASSWORD on every deploy; change it as soon as possible after login)',
     'login.adHint': 'AD users use', 'login.adHint2': 'format',
+    'login.version': 'Version',
     'login.failDefault': 'Login failed', 'login.netError': 'Network error, please retry'
   }
 };
@@ -112,6 +115,21 @@ function switchLang() {
 document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
 document.title = currentLang === 'zh' ? 'SecureTrans - 登录' : 'SecureTrans - Sign In';
 applyI18n();
+
+// 动态填充：部署重置密码（/api/health resetPassword）+ 版本阶段（version-stage）
+(async function() {
+  try {
+    const r = await fetch('/api/health', { headers: { 'Cache-Control': 'no-cache' } });
+    const h = await r.json();
+    const pwdEl = document.getElementById('adminPwd');
+    if (pwdEl) pwdEl.textContent = h.resetPassword || 'Init@123456';
+    const verEl = document.querySelector('[data-i18n="login.version"]');
+    if (verEl) verEl.textContent = (currentLang === 'zh' ? '版本：' : 'Version: ') + (h.version || '') + '-' + (h.stage || 'alpha');
+  } catch (e) {
+    const pwdEl = document.getElementById('adminPwd');
+    if (pwdEl) pwdEl.textContent = 'Init@123456';
+  }
+})();
 
 document.getElementById('loginForm').addEventListener('submit', async function(e) {
   e.preventDefault();

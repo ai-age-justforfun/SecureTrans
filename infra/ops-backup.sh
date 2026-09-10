@@ -41,10 +41,16 @@ if [ -z "$PY" ]; then
 fi
 
 TS="$(date +%Y%m%d_%H%M%S)"
+SCOPE="${1:-all}"   # all=系统+业务(默认) / system=仅系统DB / business=仅业务文件（与界面系统工具一致，ADR-011 拆分）
+case "$SCOPE" in
+  all|system|business) ;;
+  *) echo "[错误] SCOPE 仅支持 all/system/business（用法: sudo bash ops-backup.sh [all|system|business]）" >&2; exit 1 ;;
+esac
 DEST="$BACKUP_ROOT/backup-$TS"
 mkdir -p "$DEST/db" "$DEST/nas"
 
-# 1. 数据库一致性快照（sqlite backup API，WAL 安全）
+# 1. 数据库一致性快照（sqlite backup API，WAL 安全）—— system/all
+if [ "$SCOPE" = "system" ] || [ "$SCOPE" = "all" ]; then
 "$PY" - "$DB_PATH" "$DEST/db/securetrans.db" <<'PYEOF'
 import sqlite3, sys
 src = sqlite3.connect(sys.argv[1])
@@ -54,14 +60,19 @@ try:
 finally:
     dst.close(); src.close()
 PYEOF
+fi
 
-# 2. NAS 业务目录（staging/external/archive）
+# 2. NAS 业务目录（staging/external/archive）—— business/all
+if [ "$SCOPE" = "business" ] || [ "$SCOPE" = "all" ]; then
 for sub in staging external archive; do
     if [ -d "$NAS_ROOT/$sub" ]; then
         cp -a "$NAS_ROOT/$sub" "$DEST/nas/$sub"
     fi
 done
+fi
 
+SCOPE_ZH="all:系统+业务|system:系统|business:业务数据"
+SCOPE_TXT="${SCOPE_ZH#*$SCOPE:}"; SCOPE_TXT="${SCOPE_TXT%%|*}"
 SIZE="$(du -sh "$DEST" 2>/dev/null | cut -f1)"
-echo "[OK] 备份完成: $DEST（$SIZE）"
-echo "     恢复: sudo bash infra/ops-restore.sh backup-$TS"
+echo "[OK] 备份完成: $DEST（$SCOPE_TXT，$SIZE）"
+echo "     恢复: sudo bash infra/ops-restore.sh backup-$TS [$SCOPE]"

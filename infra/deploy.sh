@@ -369,7 +369,7 @@ else
     RESET_PY="$PY_CMD"
 fi
 (cd "$INSTALL_DIR/src" && RESET_PASSWORD="$ENV_RESET_PWD" "$RESET_PY" app.py --reset-admin-password 2>/dev/null | grep "admin 密码已重置" || echo "  (admin 用户不存在，跳过)")
-echo -e "  admin 密码 = ${ENV_RESET_PWD}（.env RESET_PASSWORD），首次登录强制修改 ${GREEN}OK${NC}"
+echo -e "  admin 密码 = ${ENV_RESET_PWD}（.env RESET_PASSWORD），登录后建议尽快修改（不强制） ${GREEN}OK${NC}"
 
 # 9.8 可选出厂重置（ADR-011）：测试环境部署时清空老库恢复出厂状态
 #     触发方式：RESET_DB=1 bash deploy.sh（生产环境默认不触发；按需重置用 infra/ops-reset.sh 或系统工具页）
@@ -390,7 +390,7 @@ echo "  安装目录:   ${INSTALL_DIR}"
 echo "  配置文件:   ${INSTALL_DIR}/.env"
 echo "  存储目录:   ${NAS_ROOT}"
 echo "  访问地址:   http://<服务器IP>:${ENV_PORT}  (或通过 nginx 代理)"
-echo "  初始账号:   admin / ${ENV_RESET_PWD}  (每次部署重置为 .env RESET_PASSWORD，首次登录强制修改)"
+echo "  初始账号:   admin / ${ENV_RESET_PWD}  (每次部署重置为 .env RESET_PASSWORD，登录后建议尽快修改（不强制）)"
 echo ""
 echo -e "${YELLOW}  后续步骤:${NC}"
 echo "  1. 编辑 .env 确认 NAS_ROOT / INTERNAL_CIDRS（单网卡按网段隔离时）"
