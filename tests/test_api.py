@@ -1404,6 +1404,13 @@ else:
 test("前端: 提交表单含公司内部类型+类型/密级前置+条件字段",
      'id="receiverType"' in _html and 'value="internal"' in _html and 'onReceiverTypeChange' in _html
      and 'receiverOrgWrap' in _html and 'submit.internal' in _html and 'submit.receiverEmailOpt' in _html)
+test("前端: 公司内部选项文案简化为'公司内部'且初始隐藏接收方单位",
+     "'submit.internal': '公司内部'" in _html and "'submit.internal': 'Internal'" in _html
+     and 'id="receiverOrgWrap" style="display:none;"' in _html)
+test("前端: 合作方下拉含'其他(自行填写)'选项+选中合作方单位只读",
+     "'__custom__'" in _html and 'submit.partnerOther' in _html
+     and 'orgInput.readOnly = true' in _html and 'orgInput.readOnly = false' in _html
+     and 'onReceiverTypeChange(); // 初始化条件字段' in _html)
 test("前端: 系统工具菜单+页面+备份/重置/模拟数据卡片",
      'data-page="ops"' in _html and 'async function renderOps' in _html and 'function opsBackup' in _html
      and 'function opsReset' in _html and 'function opsMock' in _html

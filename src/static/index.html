@@ -206,7 +206,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.2.27';
+const APP_VERSION = 'v2.2.28';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -264,10 +264,10 @@ const I18N = {
     'submit.receiverName': '接收方姓名 *', 'submit.receiverNamePh': '如：张三',
     'submit.receiverOrg': '接收方单位 *', 'submit.receiverOrgPh': '如：XX科技有限公司',
     'submit.receiverEmail': '接收方邮箱', 'submit.receiverEmailPh': '如：zhangsan@partner.com',
-    'submit.receiverType': '接收方类型', 'submit.internal': '公司内部（仅接收人）', 'submit.nonPartner': '非合作方（需二级审批）', 'submit.partner': '合作方（一级审批即可）',
+    'submit.receiverType': '接收方类型', 'submit.internal': '公司内部', 'submit.nonPartner': '非合作方（需二级审批）', 'submit.partner': '合作方（一级审批即可）',
     'submit.securityLevel': '接收密级', 'submit.secInternal': '内部', 'submit.secSecret': '秘密', 'submit.secConfidential': '机密',
-    'submit.partnerSelectLabel': '选择已配置合作方（不在清单可直接在下方的接收方单位中填写，提交后自动加入清单）',
-    'submit.partnerSelectPh': '-- 选择已配置合作方 --', 'submit.partnerNone': '-- 暂无合作方，可自定义填写 --',
+    'submit.partnerSelectLabel': '选择已配置合作方；若无合适选项请选择"其他（自行填写）"，填写后提交将自动加入合作方清单',
+    'submit.partnerSelectPh': '-- 选择已配置合作方 --', 'submit.partnerOther': '其他（自行填写）', 'submit.partnerNone': '-- 暂无已配置合作方，请选择"其他"自行填写 --',
     'submit.receiverEmailOpt': '接收方邮箱（可选）',
     'submit.reason': '外发事由', 'submit.reasonPh': '请说明文件外发的原因和用途',
     'submit.btnSubmit': '提交审批',
@@ -396,10 +396,10 @@ const I18N = {
     'submit.receiverName': 'Recipient Name *', 'submit.receiverNamePh': 'e.g. Zhang San',
     'submit.receiverOrg': 'Recipient Org *', 'submit.receiverOrgPh': 'e.g. XX Technology Co., Ltd.',
     'submit.receiverEmail': 'Recipient Email', 'submit.receiverEmailPh': 'e.g. zhangsan@partner.com',
-    'submit.receiverType': 'Recipient Type', 'submit.internal': 'Internal (recipient name only)', 'submit.nonPartner': 'Non-partner (requires L2 approval)', 'submit.partner': 'Partner (L1 approval only)',
+    'submit.receiverType': 'Recipient Type', 'submit.internal': 'Internal', 'submit.nonPartner': 'Non-partner (requires L2 approval)', 'submit.partner': 'Partner (L1 approval only)',
     'submit.securityLevel': 'Security Level', 'submit.secInternal': 'Internal', 'submit.secSecret': 'Secret', 'submit.secConfidential': 'Confidential',
-    'submit.partnerSelectLabel': 'Select a configured partner (or type custom org below; it will be added to the list after submit)',
-    'submit.partnerSelectPh': '-- Select configured partner --', 'submit.partnerNone': '-- No partner yet, you may type custom --',
+    'submit.partnerSelectLabel': 'Select a configured partner; if none fits, choose "Other" and fill in below (it will be added to the list after submit)',
+    'submit.partnerSelectPh': '-- Select configured partner --', 'submit.partnerOther': 'Other (fill in)', 'submit.partnerNone': '-- No partner configured, choose "Other" to fill in --',
     'submit.receiverEmailOpt': 'Recipient Email (optional)',
     'submit.reason': 'Reason for Transfer', 'submit.reasonPh': 'Explain why and how the files are used',
     'submit.btnSubmit': 'Submit for Approval',
@@ -801,7 +801,7 @@ function renderSubmit() {
       <div class="form-row">
         <div class="form-group"><label data-i18n="submit.receiverType">接收方类型</label>
           <select id="receiverType" onchange="onReceiverTypeChange()">
-            <option value="internal" data-i18n="submit.internal">公司内部（仅接收人）</option>
+            <option value="internal" data-i18n="submit.internal">公司内部</option>
             <option value="partner" data-i18n="submit.partner">合作方（一级审批即可）</option>
             <option value="non-partner" data-i18n="submit.nonPartner">非合作方（需二级审批）</option>
           </select>
@@ -816,7 +816,7 @@ function renderSubmit() {
       </div>
       <div class="form-row" id="partnerSelectRow" style="display:none;">
         <div class="form-group" style="flex:1;">
-          <label data-i18n="submit.partnerSelectLabel">选择已配置合作方（不在清单可直接在下方的接收方单位中填写，提交后自动加入清单）</label>
+          <label data-i18n="submit.partnerSelectLabel">选择已配置合作方；若无合适选项请选择"其他（自行填写）"，填写后提交将自动加入合作方清单</label>
           <select id="partnerSelect" onchange="onPartnerSelected()">
             <option value="" data-i18n="submit.partnerSelectPh">-- 选择已配置合作方 --</option>
           </select>
@@ -824,7 +824,7 @@ function renderSubmit() {
       </div>
       <div class="form-row">
         <div class="form-group"><label data-i18n="submit.receiverName">接收方姓名 *</label><input type="text" id="receiverName" placeholder="${t('submit.receiverNamePh')}"></div>
-        <div class="form-group" id="receiverOrgWrap"><label data-i18n="submit.receiverOrg">接收方单位 *</label><input type="text" id="receiverOrg" placeholder="${t('submit.receiverOrgPh')}"></div>
+        <div class="form-group" id="receiverOrgWrap" style="display:none;"><label id="receiverOrgLabel" data-i18n="submit.receiverOrg">接收方单位 *</label><input type="text" id="receiverOrg" placeholder="${t('submit.receiverOrgPh')}"></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label data-i18n="submit.receiverEmailOpt">接收方邮箱（可选）</label><input type="email" id="receiverEmail" placeholder="${t('submit.receiverEmailPh')}"></div>
@@ -837,6 +837,7 @@ function renderSubmit() {
     </div>
   `;
   applyI18n();
+  onReceiverTypeChange(); // 初始化条件字段（internal 默认隐藏单位；partner 加载合作方下拉）
 
   const zone = document.getElementById('uploadZone');
   const input = document.getElementById('fileInput');
@@ -907,24 +908,51 @@ async function onReceiverTypeChange() {
   const orgWrap = document.getElementById('receiverOrgWrap');
   const type = document.getElementById('receiverType').value;
   row.style.display = type === 'partner' ? 'flex' : 'none';
+  // 公司内部：仅需接收人，无单位字段；合作方/非合作方：显示单位（合作方选中清单时自动带出只读）
   orgWrap.style.display = type === 'internal' ? 'none' : 'block';
   if (type === 'partner') {
     try {
       const partners = await api('/api/partners');
       const sel = document.getElementById('partnerSelect');
-      sel.innerHTML = `<option value="">${t('submit.partnerSelectPh')}</option>` +
-        partners.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+      let opts = `<option value="">${t('submit.partnerSelectPh')}</option>`;
+      if (partners.length > 0) {
+        opts += partners.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+      } else {
+        opts += `<option value="" disabled>${t('submit.partnerNone')}</option>`;
+      }
+      opts += `<option value="__custom__">${t('submit.partnerOther')}</option>`;
+      sel.innerHTML = opts;
     } catch (e) {
-      document.getElementById('partnerSelect').innerHTML = `<option value="">${t('submit.partnerNone')}</option>`;
+      const sel = document.getElementById('partnerSelect');
+      sel.innerHTML = `<option value="">${t('submit.partnerNone')}</option>
+        <option value="__custom__">${t('submit.partnerOther')}</option>`;
     }
+    // 默认引导选择"其他"时展开手工填写；若之前未选则清空单位
+    const sel = document.getElementById('partnerSelect');
+    if (!sel.value) {
+      document.getElementById('receiverOrg').value = '';
+      document.getElementById('receiverOrg').readOnly = false;
+    }
+  } else {
+    // internal/non-partner：单位字段恢复可编辑（internal 已隐藏）
+    document.getElementById('receiverOrg').readOnly = false;
   }
 }
 
 function onPartnerSelected() {
   const name = document.getElementById('partnerSelect').value;
-  if (name) {
-    // 合作方为单位：接收方单位=合作方名；姓名保持用户填写（联系人）
-    document.getElementById('receiverOrg').value = name;
+  const orgInput = document.getElementById('receiverOrg');
+  if (name === '__custom__') {
+    // 其他（自行填写）：单位可编辑必填，提交后自动加入合作方清单
+    orgInput.value = '';
+    orgInput.readOnly = false;
+  } else if (name) {
+    // 选择已配置合作方：单位自动带出（只读），姓名/邮箱为联系人信息
+    orgInput.value = name;
+    orgInput.readOnly = true;
+  } else {
+    orgInput.value = '';
+    orgInput.readOnly = false;
   }
 }
 

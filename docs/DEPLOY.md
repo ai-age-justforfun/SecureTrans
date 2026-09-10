@@ -133,7 +133,7 @@ cd ~/securetrans/tests && python3 test_api.py   # 201项全通过
 RESET_DB=1 sudo bash infra/deploy.sh
 # 或运行期：系统工具页点"模拟数据"（确认码 MOCK），或离线脚本
 sudo bash infra/ops-mock.sh
-# 全量自动化验证（Windows dev 250项 / WSL 生产面 249项，凭据自动取 .env RESET_PASSWORD）
+# 全量自动化验证（Windows dev 252项 / WSL 生产面 251项，凭据自动取 .env RESET_PASSWORD）
 sudo bash infra/verify.sh
 ```
 
@@ -662,11 +662,11 @@ sudo systemctl restart securetrans
 │   ├── .env.production       # 生产环境配置模板
 │   └── static/               # 前端SPA（index.html，单页应用）
 ├── tests/
-│   └── test_api.py           # 250项全量测试（WSL 生产面 249项）
+│   └── test_api.py           # 252项全量测试（WSL 生产面 251项）
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署 (Linux，RESET_DB=1 部署时出厂重置)
 │   ├── deploy.ps1            # 一键部署 (Windows)
-│   ├── verify.sh             # 部署验证（249项全量测试，凭据自动取 .env RESET_PASSWORD）
+│   ├── verify.sh             # 部署验证（251项全量测试，凭据自动取 .env RESET_PASSWORD）
 │   ├── ops-backup.sh / ops-restore.sh / ops-reset.sh / ops-mock.sh  # 数据生命周期离线脚本（ADR-011）
 │   ├── env-refresh.sh        # .env 配置刷新（备份+只增不覆盖，ADR-010/5.4）
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式
