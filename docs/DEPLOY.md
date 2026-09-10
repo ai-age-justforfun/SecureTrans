@@ -131,7 +131,7 @@ cd ~/securetrans/tests && python3 test_api.py   # 201项全通过
 RESET_DB=1 sudo bash infra/deploy.sh
 # 或运行期：系统工具页点"模拟数据"（确认码 MOCK），或离线脚本
 sudo bash infra/ops-mock.sh
-# 全量自动化验证（221项，凭据自动取 .env RESET_PASSWORD）
+# 全量自动化验证（Windows dev 238项 / WSL 生产面 237项，凭据自动取 .env RESET_PASSWORD）
 sudo bash infra/verify.sh
 ```
 
@@ -619,6 +619,31 @@ sudo bash infra/ops-mock.sh                           # 模拟数据（仅 testi
 - 恢复应在同一部署路径执行（提交单 current_path 为绝对路径，跨机器恢复会断链）。
 - 备份位置 `data/backups/` 建议定期归档到备份存储，不随业务 NAS 混放。
 
+### 5.4 .env 生命周期：生成 / 保留 / 刷新（v2.2.26 起显式机制）
+
+**发布包不含 .env**（`.gitignore` 排除 + package.sh 打包时删除），三个模板随包携带：`src/.env.example`（示例）/ `.env.testing`（测试环境）/ `.env.production`（生产环境）。
+
+| 场景 | 机制 | 说明 |
+|------|------|------|
+| **首次部署** | `deploy.sh` 检测 `.env` 不存在 → 从 `src/.env.production` 复制生成 + **随机 SECRET_KEY** | 之后编辑 `.env` 改 NAS_ROOT/INTERNAL_CIDRS 等 |
+| **升级部署（默认）** | `deploy.sh` 检测 `.env` 已存在 → **原样保留**（先备份 `.env.deploybak`，tar 解包排除 `.env`/`.env.*`，解包后恢复） | 老配置（IP/网段/密钥/AD）绝不被覆盖 |
+| **刷新格式（按需）** | `sudo bash infra/env-refresh.sh` | 备份 → 按模板**只增不覆盖**追加缺失键 → 报告新增/保留/旧键 |
+
+**env-refresh.sh 行为（安全三原则）**：
+1. 先备份 `.env` → `.env.bak-<时间戳>`（可回退）
+2. 模板有、现有缺失的键 → 追加模板默认值；**已有键原值绝不覆盖**；`SECRET_KEY` 缺失时随机生成（不从模板占位符复制）；`AD_BIND_PASSWORD` 缺失时留空并提示
+3. 模板已删除的旧键（如 `MAX_CONTENT_LENGTH`）→ **提示不自动删**，确认后手工清理
+4. 完成后 `sudo systemctl restart securetrans` 生效（systemd EnvironmentFile）
+
+**典型用法（v2.2.24 起 MAX_CONTENT_LENGTH → MAX_FILE_SIZE_MB 迁移）**：
+```bash
+sudo bash infra/env-refresh.sh   # 追加 MAX_FILE_SIZE_MB=800 等新键，保留原有值
+# 按报告提示删除旧键 MAX_CONTENT_LENGTH=（可选，程序对旧键有兼容兜底：上限自动=该值-1MB）
+sudo systemctl restart securetrans
+```
+
+**为什么不自动刷新**：升级静默改动生产配置有风险（如新增键默认值可能不适合实际环境）；刷新是**显式运维动作**，只增不覆盖，避免"升级后配置被悄悄改掉"。
+
 ---
 
 ## 六、文件清单
@@ -632,12 +657,13 @@ sudo bash infra/ops-mock.sh                           # 模拟数据（仅 testi
 │   ├── .env.production       # 生产环境配置模板
 │   └── static/               # 前端SPA（index.html，单页应用）
 ├── tests/
-│   └── test_api.py           # 221项全量测试
+│   └── test_api.py           # 238项全量测试（WSL 生产面 237项）
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署 (Linux，RESET_DB=1 部署时出厂重置)
 │   ├── deploy.ps1            # 一键部署 (Windows)
-│   ├── verify.sh             # 部署验证（221项全量测试，凭据自动取 .env RESET_PASSWORD）
+│   ├── verify.sh             # 部署验证（237项全量测试，凭据自动取 .env RESET_PASSWORD）
 │   ├── ops-backup.sh / ops-restore.sh / ops-reset.sh / ops-mock.sh  # 数据生命周期离线脚本（ADR-011）
+│   ├── env-refresh.sh        # .env 配置刷新（备份+只增不覆盖，ADR-010/5.4）
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式
 │   ├── nginx-securetrans-single.conf # Nginx 单网卡模式
 │   ├── securetrans.service   # systemd 服务
@@ -651,4 +677,4 @@ sudo bash infra/ops-mock.sh                           # 模拟数据（仅 testi
 
 ---
 
-*部署指南 v2.2.25 | 2026-09-10*
+*部署指南 v2.2.26 | 2026-09-10*

@@ -1481,6 +1481,28 @@ test("前端: 登录初始化外网面直进外网下载页(管理页被外网�
      "init 外网分支缺失")
 
 # ============================================================
+# v2.2.26 回归组：.env 模板口径统一（MAX_FILE_SIZE_MB）+ env-refresh.sh 刷新机制
+# ============================================================
+print("\n--- 15. .env 模板与刷新机制 ---")
+# 模板统一：三模板用 MAX_FILE_SIZE_MB，不含旧键 MAX_CONTENT_LENGTH=
+_env_prod = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'src', '.env.production'), encoding='utf-8').read()
+_env_test = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'src', '.env.testing'), encoding='utf-8').read()
+_env_ex = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'src', '.env.example'), encoding='utf-8').read()
+test("模板: 三个.env模板统一用MAX_FILE_SIZE_MB且不含旧键MAX_CONTENT_LENGTH=",
+     'MAX_FILE_SIZE_MB=800' in _env_prod and 'MAX_FILE_SIZE_MB=800' in _env_test and 'MAX_FILE_SIZE_MB=800' in _env_ex
+     and not any(l.startswith('MAX_CONTENT_LENGTH=') for l in _env_prod.splitlines())
+     and not any(l.startswith('MAX_CONTENT_LENGTH=') for l in _env_test.splitlines())
+     and not any(l.startswith('MAX_CONTENT_LENGTH=') for l in _env_ex.splitlines()))
+test("脚本: env-refresh.sh 存在且含备份+只增不覆盖逻辑",
+     _os.path.exists(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'infra', 'env-refresh.sh'))
+     and 'env-refresh.sh' in open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'infra', 'env-refresh.sh'), encoding='utf-8').read()
+     and '.env.bak-' in open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'infra', 'env-refresh.sh'), encoding='utf-8').read())
+test("打包: package.sh 排除 .env 且 infra 整体打包(env-refresh.sh 随包)",
+     _os.path.exists(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'infra', 'package.sh'))
+     and '.env" -type f -delete' in open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'infra', 'package.sh'), encoding='utf-8').read()
+     and 'cp -r "$PROJECT_ROOT/infra"' in open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'infra', 'package.sh'), encoding='utf-8').read())
+
+# ============================================================
 # 测试报告
 # ============================================================
 print("\n" + "=" * 70)

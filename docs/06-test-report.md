@@ -370,6 +370,13 @@
 - **实测 Bug 修复（800MB 文件 413）**：MAX_CONTENT_LENGTH 原严格等于 800MB，multipart 封装（boundary+头部）使请求体 > 限制被 Flask 拒绝。修复：新增 `MAX_FILE_SIZE_MB`（.env 新键，默认 800，单文件上限），请求体限制 `MAX_CONTENT_LENGTH = MAX_FILE_SIZE + 1MB`（multipart 封装余量）；兼容旧 .env（仅配 MAX_CONTENT_LENGTH 时，文件上限=该值-1MB）；上传校验/413 文案/系统配置 max_file_size_mb 全部改用 MAX_FILE_SIZE_MB。
 - **800MB 实测结果（Windows dev，修复后）**：生成 1.26s；上传 2.36s（338.4 MB/s）；审批+os.rename 摆渡 34ms（含 API 往返）；下载 2.28s（350.5 MB/s）；全链路 5.94s；MD5 四方一致（e67ea69b2c5bc10399e324fc8819bc4c）；删除清理成功；退出码 0 全部通过。
 - 测试 221 → 233 项（Windows，+12：MD5 完整性 5 + 删除提交单 5 + 源码/工具存在性 2）；WSL production 232 项（mock 403 分支）；双环境 100%，v2.2.24 已发布
+### 12.15 v2.2.26 .env 生命周期机制（2026-09-10）
+
+- 审计发现三个 .env 模板（example/production/testing）仍用旧键 `MAX_CONTENT_LENGTH`，与 v2.2.24 新口径 `MAX_FILE_SIZE_MB` 不同步（新部署会落入 799MB 兼容分支）→ 三模板统一为 `MAX_FILE_SIZE_MB=800`，注释说明禁止手工配置 MAX_CONTENT_LENGTH。
+- 新建 `infra/env-refresh.sh`（.env 刷新机制）：备份 → 按模板只增不覆盖追加缺失键 → 报告新增/保留/旧键 → LF+640。WSL 实测：备份 ✓、新增 16 键 ✓、已有值原样保留 ✓、提示清理旧键 ✓。
+- DEPLOY.md 新增 5.4「.env 生命周期：生成 / 保留 / 刷新」：首次部署 deploy.sh 从模板生成；升级自动保留（tar 排除 + .env.deploybak 恢复）；刷新格式显式运行 env-refresh.sh。
+- 测试 235 → 238 项（Windows）/ 234 → 237 项（WSL），新增 3 项：模板口径统一、env-refresh.sh 存在性、打包排除 .env + infra 整体打包。
+
 ### 12.14 v2.2.25 外网面语言切换 403 修复（2026-09-10）
 - **问题**：外网面点击右上角 EN/中文 切换语言，内容区提示"加载失败: 外网面仅提供文件下载服务，管理操作请从内网访问"。
 - **根因**：登录初始化 `navigate(admin?'dashboard':'submit')` 在外网面被 navigate 外网校验拦截（只允许 external），但 `currentPage` 保持初始 'dashboard' 且内容区未渲染；语言切换 `switchLang()` 绕过 navigate 直接 `renderPage(currentPage)` → renderDashboard 调 `/api/stats` → 外网 403。
