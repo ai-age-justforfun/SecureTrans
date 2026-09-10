@@ -8,9 +8,14 @@
 # ============================================================
 set -euo pipefail
 
-VERSION="${1:-1.5.0}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# v2.2.31：版本号单一来源——默认自动从 src/app.py 的 APP_VERSION 读取（可选参数覆盖）
+if [ -n "${1:-}" ]; then
+    VERSION="$1"
+else
+    VERSION="$(grep -m1 '^APP_VERSION = "v' "$PROJECT_ROOT/src/app.py" | sed -E 's/.*"v([^"]+)".*/\1/')"
+fi
 BUILD_DIR="/tmp/securetrans-build"
 PACKAGE_NAME="securetrans-${VERSION}"
 OFFLINE_DEPS="$PROJECT_ROOT/packages/securetrans-offline-deps.tar.gz"
