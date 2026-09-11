@@ -733,6 +733,8 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
          f"code={code}, default_expiry_days={data.get('default_expiry_days')}")
     test("最大文件大小为800MB", code == 200 and data.get('max_file_size_mb') == '800',
          f"code={code}, max_file_size_mb={data.get('max_file_size_mb')}")
+    test("批量文件数上限默认18", code == 200 and data.get('max_batch_files') == '18',
+         f"code={code}, max_batch_files={data.get('max_batch_files')}")
     test("免审批总开关存在", code == 200 and 'auto_approval_enabled' in data,
          f"code={code}, auto_approval_enabled={data.get('auto_approval_enabled')}")
 

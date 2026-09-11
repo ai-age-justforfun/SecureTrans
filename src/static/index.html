@@ -207,7 +207,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.3.5';
+const APP_VERSION = 'v2.3.6';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -265,7 +265,7 @@ const I18N = {
     'dash.step3': '人工审批', 'dash.step3d': '：不匹配特征码 → 部门主管一级审批 → 非合作方需高管二级审批',
     'dash.step4': '下载', 'dash.step4d': '：摆渡完成的文件可从 external 目录流式下载',
     'dash.step5': '归档', 'dash.step5d': '：超过有效期的文件每天凌晨 2 点自动 os.rename 到 archive',
-    'submit.uploadTitle': '上传文件', 'submit.uploadHint': '点击或拖拽文件到此处上传', 'submit.uploadLimit': '支持单文件最大 1GB，一次最多提交 18 个文件', 'submit.uploadDir': '选择文件夹（批量上传目录内文件，最多 18 个）', 'submit.batchOver': '一次最多提交 {0} 个文件（当前已选 {1} 个），请分批提交',
+    'submit.uploadTitle': '上传文件', 'submit.uploadHint': '点击或拖拽文件到此处上传', 'submit.uploadLimit': '上传大小与批量数量以系统配置为准', 'submit.uploadDir': '选择文件夹（批量上传目录内文件）', 'submit.batchOver': '一次最多提交 {0} 个文件（当前已选 {1} 个），请分批提交',
     'submit.infoTitle': '提交信息',
     'submit.receiverName': '接收方姓名 *', 'submit.receiverNamePh': '如：张三',
     'submit.receiverOrg': '接收方单位 *', 'submit.receiverOrgPh': '如：XX科技有限公司',
@@ -311,7 +311,7 @@ const I18N = {
     'partner.email': '邮箱', 'partner.emailPh': '如：contact@partner.com', 'partner.initialState': '初始状态',
     'partner.confirmToggle': '确定{0}该合作方？', 'partner.confirmDelete': '确定删除合作方 "{0}"？此操作不可恢复。',
     'config.title': '系统配置', 'config.appName': '应用名称', 'config.autoApproval': '免审批开关',
-    'config.on': '开启', 'config.off': '关闭', 'config.defaultExpiry': '默认有效期（天）', 'config.maxSize': '最大文件大小（MB）',
+    'config.on': '开启', 'config.off': '关闭', 'config.defaultExpiry': '默认有效期（天）', 'config.maxSize': '最大文件大小（MB）', 'config.maxBatch': '批量文件数上限（单次最多提交）',
     'config.save': '保存配置', 'config.cleanup': '手动触发过期清理',
     'config.rulesTitle': '特征码规则（匹配的文件可免审批）', 'config.newRule': '+ 新增规则',
     'config.ruleName': '规则名称', 'config.ruleType': '类型', 'config.pattern': '匹配模式',
@@ -404,7 +404,7 @@ const I18N = {
     'dash.step3': 'Manual approval', 'dash.step3d': ': Non-matching files: L1 dept-head approval, then L2 executive approval for non-partners',
     'dash.step4': 'Download', 'dash.step4d': ': Ferried files can be streamed from external directory',
     'dash.step5': 'Archive', 'dash.step5d': ': Expired files are auto os.rename to archive at 2:00 AM daily',
-    'submit.uploadTitle': 'Upload Files', 'submit.uploadHint': 'Click or drag files here to upload', 'submit.uploadLimit': 'Max 1GB per file, up to 18 files per batch', 'submit.uploadDir': 'Choose folder (batch upload files inside, max 18)', 'submit.batchOver': 'Max {0} files per batch ({1} already selected), please submit in batches',
+    'submit.uploadTitle': 'Upload Files', 'submit.uploadHint': 'Click or drag files here to upload', 'submit.uploadLimit': 'Upload size and batch limit follow system config', 'submit.uploadDir': 'Choose folder (batch upload files inside)', 'submit.batchOver': 'Max {0} files per batch ({1} already selected), please submit in batches',
     'submit.infoTitle': 'Submission Info',
     'submit.receiverName': 'Recipient Name *', 'submit.receiverNamePh': 'e.g. Zhang San',
     'submit.receiverOrg': 'Recipient Org *', 'submit.receiverOrgPh': 'e.g. XX Technology Co., Ltd.',
@@ -450,7 +450,7 @@ const I18N = {
     'partner.email': 'Email', 'partner.emailPh': 'e.g. contact@partner.com', 'partner.initialState': 'Initial State',
     'partner.confirmToggle': '{0} this partner?', 'partner.confirmDelete': 'Delete partner "{0}"? This cannot be undone.',
     'config.title': 'System Config', 'config.appName': 'App Name', 'config.autoApproval': 'Auto-Approval Switch',
-    'config.on': 'On', 'config.off': 'Off', 'config.defaultExpiry': 'Default Expiry (days)', 'config.maxSize': 'Max File Size (MB)',
+    'config.on': 'On', 'config.off': 'Off', 'config.defaultExpiry': 'Default Expiry (days)', 'config.maxSize': 'Max File Size (MB)', 'config.maxBatch': 'Max Batch Files (per submit)',
     'config.save': 'Save Config', 'config.cleanup': 'Trigger Expired Cleanup',
     'config.rulesTitle': 'Signature Rules (matching files can skip approval)', 'config.newRule': '+ New Rule',
     'config.ruleName': 'Rule Name', 'config.ruleType': 'Type', 'config.pattern': 'Pattern',
@@ -557,8 +557,8 @@ function applyI18n() {
   if (_uh && window._uploadMaxMb) {
     const _zh = currentLang === 'zh';
     _uh.textContent = _zh
-      ? '支持单文件最大 ' + window._uploadMaxMb + 'MB，一次最多提交 18 个文件'
-      : 'Max ' + window._uploadMaxMb + 'MB per file, multiple uploads allowed';
+      ? '支持单文件最大 ' + window._uploadMaxMb + 'MB，一次最多提交 ' + (window._uploadMaxBatch || 18) + ' 个文件'
+      : 'Max ' + window._uploadMaxMb + 'MB per file, up to ' + (window._uploadMaxBatch || 18) + ' files per batch';
   }
 }
 // 语言偏好初始化（默认中文）
@@ -811,7 +811,7 @@ function renderSubmit() {
       </div>
       <input type="file" id="fileInput" multiple style="display:none">
       <div style="margin-top:10px;text-align:center;">
-        <button type="button" class="btn btn-secondary" id="dirBtn" data-i18n="submit.uploadDir" onclick="document.getElementById('dirInput').click()">选择文件夹（批量上传目录内文件，最多 18 个）</button>
+        <button type="button" class="btn btn-secondary" id="dirBtn" data-i18n="submit.uploadDir" onclick="document.getElementById('dirInput').click()">选择文件夹（批量上传目录内文件，最多 ${window._uploadMaxBatch || 18} 个）</button>
       </div>
       <input type="file" id="dirInput" webkitdirectory style="display:none">
       <div class="file-list" id="fileList"></div>
@@ -874,17 +874,22 @@ function renderSubmit() {
       const hint = document.getElementById('uploadLimitHint');
       if (hint && cfg.max_file_size_mb) {
         window._uploadMaxMb = cfg.max_file_size_mb;
+        window._uploadMaxBatch = parseInt(cfg.max_batch_files || 18, 10) || 18;
         const zh = (localStorage.getItem('lang') || 'zh') === 'zh';
         hint.textContent = zh
-          ? '支持单文件最大 ' + cfg.max_file_size_mb + 'MB，一次最多提交 18 个文件'
-          : 'Max ' + cfg.max_file_size_mb + 'MB per file, multiple uploads allowed';
+          ? '支持单文件最大 ' + cfg.max_file_size_mb + 'MB，一次最多提交 ' + window._uploadMaxBatch + ' 个文件'
+          : 'Max ' + cfg.max_file_size_mb + 'MB per file, up to ' + window._uploadMaxBatch + ' files per batch';
+        const dirBtn = document.getElementById('dirBtn');
+        if (dirBtn) dirBtn.textContent = zh
+          ? '选择文件夹（批量上传目录内文件，最多 ' + window._uploadMaxBatch + ' 个）'
+          : 'Choose folder (batch upload files inside, max ' + window._uploadMaxBatch + ')';
       }
     } catch (e) {}
   })();
 }
 
 async function handleFiles(files) {
-  const MAX_BATCH = 18;
+  const MAX_BATCH = parseInt(window._uploadMaxBatch || 18, 10) || 18;
   const room = MAX_BATCH - uploadedFiles.length;
   if (room <= 0) {
     toast(t('submit.batchOver', String(MAX_BATCH), String(uploadedFiles.length)), 'error');
@@ -1728,6 +1733,7 @@ async function renderConfig() {
           </div>
           <div class="form-group"><label data-i18n="config.defaultExpiry">默认有效期（天）</label><input type="number" id="cfg_default_expiry" value="${config.default_expiry_days || 7}"></div>
           <div class="form-group"><label data-i18n="config.maxSize">最大文件大小（MB）</label><input type="number" id="cfg_max_size" value="${config.max_file_size_mb || 800}"></div>
+          <div class="form-group"><label data-i18n="config.maxBatch">批量文件数上限（单次最多提交）</label><input type="number" id="cfg_max_batch" value="${config.max_batch_files || 18}" min="1"></div>
         </div>
         <button class="btn btn-primary" onclick="saveConfig()" data-i18n="config.save">保存配置</button>
         <button class="btn btn-secondary" style="margin-left:8px;" onclick="triggerCleanup()" data-i18n="config.cleanup">手动触发过期清理</button>
@@ -1837,7 +1843,8 @@ async function saveConfig() {
         app_name: document.getElementById('cfg_app_name').value,
         auto_approval_enabled: document.getElementById('cfg_auto_approval').value,
         default_expiry_days: document.getElementById('cfg_default_expiry').value,
-        max_file_size_mb: document.getElementById('cfg_max_size').value
+        max_file_size_mb: document.getElementById('cfg_max_size').value,
+        max_batch_files: document.getElementById('cfg_max_batch').value
       }
     });
     toast(t('toast.configSaved'), 'success');
