@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.3.2（APP_STAGE=beta，显示 v2.3.2-beta）（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步；发布阶段 .env APP_STAGE，显示 vX.Y.Z-stage）
+- **当前版本**：v2.3.3（APP_STAGE=beta，显示 v2.3.3-beta）（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步；发布阶段 .env APP_STAGE，显示 vX.Y.Z-stage）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
@@ -114,6 +114,7 @@
 | ADR-016 | 12-Factor 三环境一体化：env/ 分层配置（dev/test/prod 模板）、AD_MOCK_MODE 模拟目录、tests/mock 种子与 RTM（docs/07）、.env 启动自动加载、Gitea Actions CI（.gitea/workflows/ci.yml） |
 | ADR-017 | 测试/生产环境隔离（三合一）：test_api.py 单脚本 + 双入口（verify.sh=dev/test/CI 全量；infra/smoke.sh=生产 allowlist 只读冒烟）+ ENV_ROLE fail-safe（prod/冒烟下组 1~23 整组不执行，仅组 24 白名单 10 项只读），/api/health 暴露 envRole |
 | ADR-018 | CI/CD 分层与质量门禁：fast-check（秒级静态门禁：语法/版本双源一致性/env ENV_ROLE/脚本完整性）前置，tdd-verify（全量，needs fast-check fail-fast），package（仅 tag v* 自动构建发布包到共享 packages/，build once deploy many）；test_api.py 报告段加计数基线门禁（全量 ≥300 / 冒烟 ==10，防静默删减）；离线环境不用 actions/upload-artifact@v4（无 node/网络），制品走共享目录 + release.ps1 |
+| ADR-019 | CI 运行环境隔离与静态门禁：① act_runner 改 systemd 常驻（Restart=always，WSL rocky10-st 开机自启，解决偶发 shutdown）；② 静态检查前置 fast-check（infra/static_check.py，零依赖 AST：语法/未定义名称/重复定义/未使用 import）；③ 目标态 CI 容器化隔离（securetrans-ci:3.12 镜像 + infra/ci_test.sh，每次 job 全新容器+新配置+新数据，零宿主污染；待 Docker Desktop WSL Integration 启用后切换 act_runner docker:// 模式，消除公开仓库逃逸风险） |
 ### ADR-005 详述：非硬编码原则（强制）
 
 prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → 测试(WSL) → 生产(Rocky) 环境差异大，
@@ -377,6 +378,15 @@ main ────●────●────●────●────  �
 ---
 
 *AGENTS.md v1.11 | 2026-09-10*
+
+### ADR-019：CI 运行环境隔离与静态门禁（强制）
+
+- **背景**：CI 首跑发现 ① act_runner 偶发 shutdown（WSL 会话回收，导致 push 漏跑）；② act_runner 直接在宿主执行 job，公开仓库有逃逸到主机的风险；③ CI 与测试环境共用 /opt/securetrans，存在版本/数据干扰。
+- **决策**：
+  1. **runner 常驻**：act_runner 以 systemd 单元（`/etc/systemd/system/act_runner.service`）常驻，`Restart=always` + 开机自启（WSL 重启/崩溃自动拉起）。
+  2. **静态门禁前置**：新增 `infra/static_check.py`（零依赖 AST 检查：语法编译 / 未定义名称（作用域链）/ 重复函数类定义 / 未使用 import），挂入 ci.yml fast-check 第一步之后；已清理历史遗留未使用 import（app.py render_template、test_api.py time）。
+  3. **CI 容器化隔离（目标态）**：构建可复用镜像 `securetrans-ci:3.12`（python:3.12-slim + 离线 wheelhouse 同源依赖）；容器入口 `infra/ci_test.sh`（无 systemd 直接 gunicorn loopback；配置经环境变量注入不写 .env；数据目录 /data 随容器销毁）→ 每次 job 全新容器 + 新配置 + 新数据，避免版本干扰与宿主污染。切换前提：Docker Desktop 启用 WSL Integration（需重启 Docker Desktop，短暂中断 Gitea）→ act_runner label 改 `docker://securetrans-ci:3.12`。
+  4. **与 ADR-016/017/018 关系**：ADR-016 管三环境配置/数据分层；ADR-017 管测试/生产执行隔离；ADR-018 管流水线结构与计数门禁；ADR-019 管 runner 运行方式与 job 运行环境隔离。
 
 ### ADR-018：CI/CD 分层与质量门禁（强制）
 - **背景**：原 CI 仅单 job 全量回归（push 触发），无秒级门禁、无测试计数防缩水、发布包靠本地手工 package.sh。

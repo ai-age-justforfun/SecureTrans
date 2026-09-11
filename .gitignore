@@ -48,3 +48,6 @@ packages/*.md5
 packages/*.sha256
 
 packages/offline-deps-win/wheelhouse/
+
+# CI 镜像构建上下文（由 packages/securetrans-offline-deps.tar.gz 解压生成，见 infra/docker/README）
+infra/docker/wheelhouse/

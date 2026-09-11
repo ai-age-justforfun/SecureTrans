@@ -1,3 +1,15 @@
+## ◎ v2.3.3-beta 回归（2026-09-11）
+**总计 309 项测试（Windows dev）/ 308 项（WSL test）全部通过，通过率 100%；容器内（securetrans-ci:3.12）全量 309/309 通过。**
+
+**本轮变更（ADR-019 · CI 运行环境隔离与静态门禁）：**
+1. **静态门禁前置**：新增 `infra/static_check.py`（零依赖 AST：语法/未定义名称/重复定义/未使用 import），挂入 fast-check；清理历史未使用 import（app.py render_template、test_api.py time）。
+2. **act_runner systemd 常驻**：`Restart=always` + 开机自启，解决偶发 shutdown 导致 push 漏跑。
+3. **CI 容器化（目标态）**：构建 `securetrans-ci:3.12` 镜像（387MB，python:3.12-slim + 离线 wheelhouse）；容器入口 `infra/ci_test.sh`（无 systemd、环境变量注入零污染、/data 随容器销毁）→ 本地容器全量 TDD 309/309 通过，工作区零残留（git status 前后一致）。
+4. **验证**：容器内 fast-check（py_compile + static_check）PASS；容器内全量 TDD 309/309。
+**双环境基线**：Windows dev 309/309、WSL test 308/308、容器 CI 309/309，均 100%。
+
+---
+
 ## ◎ v2.3.2-beta 回归（2026-09-11）
 **总计 309 项测试（Windows dev）/ 308 项（WSL test）全部通过，通过率 100%；生产冒烟（smoke.sh）11/11 通过。**
 

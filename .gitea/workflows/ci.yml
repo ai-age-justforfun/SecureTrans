@@ -33,12 +33,13 @@ jobs:
           sudo git clone "http://localhost:3000/openwrtadmin/SecureTrans.git" /opt/securetrans-ci-fast
           sudo chmod -R a+rX /opt/securetrans-ci-fast
 
-      - name: Python 语法编译检查
+      - name: Python 静态检查（语法/未定义名称/重复定义/未使用 import）
         run: |
           set -euo pipefail
           cd /opt/securetrans-ci-fast
-          /opt/securetrans/venv/bin/python -m py_compile src/app.py tests/test_api.py
-          echo "语法编译: PASS"
+          /opt/securetrans/venv/bin/python -m py_compile src/app.py tests/test_api.py infra/static_check.py
+          /opt/securetrans/venv/bin/python infra/static_check.py src/app.py tests/test_api.py
+          echo "静态检查: PASS"
 
       - name: 版本号双源一致性（app.py ↔ index.html）
         run: |

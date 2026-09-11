@@ -71,3 +71,6 @@ sudo act_runner daemon --config /var/lib/act_runner/config.yaml &
 - `on: push: tags: ['v*']` 触发打包：`bash infra/package.sh` → 上传 Release 资产（release.ps1 逻辑）
 - 生产部署 job（ssh）：解压 → `deploy.sh`（保留 .env）→ 冒烟 → 通知人工验收门禁
 - 生产**不做**写数据自动化测试（冲击真实数据），验收按 RTM 走冒烟 + 人工（见 docs/07）
+
+- **常驻**：act_runner 以 systemd 服务运行（`systemctl status act_runner`，Restart=always，开机自启）；日志 `/var/log/act_runner.log`。
+- **容器化目标态（ADR-019）**：镜像 `securetrans-ci:3.12`（infra/docker/Dockerfile + 离线 wheelhouse）；容器入口 `infra/ci_test.sh`（无 systemd、环境变量注入、/data 随容器销毁）。切换步骤：Docker Desktop → Resources → WSL Integration 勾选 rocky10-st → 重启 → `.runner` label 改 `docker://securetrans-ci:3.12` → 重启 act_runner。

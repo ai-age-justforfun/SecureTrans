@@ -1,0 +1,17 @@
+[Unit]
+Description=Gitea Actions Runner (SecureTrans CI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/securetrans
+ExecStart=/usr/local/bin/act_runner daemon --config /opt/securetrans/.runner
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/act_runner.log
+StandardError=append:/var/log/act_runner.log
+
+[Install]
+WantedBy=multi-user.target

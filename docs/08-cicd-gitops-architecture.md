@@ -304,3 +304,23 @@ AI Agent 生成代码 → 自动运行测试 → 提交到 Git → CI 自动验�
 ---
 
 *文档结束 | SecureTrans CI/CD + GitOps 架构 v1.0 | 2026-08-27*
+
+
+---
+
+## 九、CI 运行器落地状态与 Backlog（2026-09-11）
+
+### 已落地（ADR-018 / ADR-019）
+1. **分层流水线**：fast-check（秒级静态门禁，含 py_compile + static_check.py 零依赖 AST 检查）→ tdd-verify（全量，fail-fast）→ package（仅 tag v* 构建发布包到共享 packages/）。
+2. **质量门禁**：test_api.py 计数基线（全量 ≥300 / 冒烟 ==10）。
+3. **runner 常驻**：act_runner → systemd（Restart=always，开机自启），解决 WSL 会话回收导致的偶发 shutdown。
+4. **容器化试点**：`securetrans-ci:3.12` 镜像 + `infra/ci_test.sh`，本地容器全量 TDD 309/309 通过、工作区零残留；证明"每次 CI 干净环境 + 新配置 + 新数据"可行。
+
+### Backlog（按优先级）
+| # | 事项 | 状态 | 说明 |
+|---|------|------|------|
+| B1 | 启用 Docker Desktop WSL Integration（勾选 rocky10-st）| ⏳ 待执行 | 需重启 Docker Desktop，短暂中断 Gitea（~1min）；启用后 act_runner label 改 `docker://securetrans-ci:3.12`，CI 切容器 job，消除公开仓库逃逸宿主风险 |
+| B2 | 容器 job 的 workspace 策略 | ⏳ 待定 | 挂载卷仅含 clone 代码（ci_test.sh 已不写 .env、数据落容器内 /data），确认 act_runner 容器 job 的 workspace 持久化行为 |
+| B3 | 数据中心离线 CI 独立化 | 📌 远期 | 生产服务器（隔离互联网）若建 CI，需离线 RPM 装 docker-ce + 镜像导入（docker save/load），或独立 WSL2 发行版（rocky-ci）过渡 |
+| B4 | 镜像版本管理 | 📌 远期 | 依赖变更时重建镜像并打标签（如 securetrans-ci:3.12-2），Dockerfile 与 wheelhouse 已入仓（infra/docker/）可追溯 |
+

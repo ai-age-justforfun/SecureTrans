@@ -8,7 +8,6 @@ import urllib.parse
 import urllib.error
 import http.cookiejar
 import os
-import time
 import tempfile
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
