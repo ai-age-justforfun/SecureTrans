@@ -1,6 +1,6 @@
 # SecureTrans 部署指南
 
-> 版本：v2.3.1 | 日期：2026-09-10（ADR-017 测试/生产隔离：生产只跑 smoke.sh 只读冒烟）
+> 版本：v2.3.2 | 日期：2026-09-11（ADR-017 测试/生产隔离 + ADR-018 CI/CD 分层与质量门禁）
 > 唯一部署文档：测试环境（本地/WSL）? 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
 > 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
@@ -57,6 +57,7 @@
 - **背景（v2.2.31 用户验收 6+1 组问题）**：① verify.sh 生产业务备份 500（v2.2.29 基线，本地/WSL 全过但生产 NAS 环境失败——copytree 对已存在目标/符号链接/特殊文件名不健壮）；② 改密提示方位写"右上角"，实际按钮在左下角；③ 备份界面仍混合（"全部备份"按钮 + 列表含 all 类型 + "恢复系统"文案混淆）；④ 免审批开关已关仍显示"匹配特征码"；⑤ 合作方选中后接收方单位仍显示；⑥ 外网下载显示所有人文件（应仅本人且已走完审批）；⑦ 无审批人配置时提交 pending 永久卡死。
 | ADR-016 | 12-Factor 三环境一体化：env/ 分层配置（dev/test/prod 模板）、AD_MOCK_MODE 模拟目录、tests/mock 种子与 RTM（docs/07）、.env 启动自动加载、Gitea Actions CI（.gitea/workflows/ci.yml） |
 | ADR-017 | 测试/生产环境隔离（三合一）：test_api.py 单脚本 + 双入口（verify.sh=dev/test/CI 全量；infra/smoke.sh=生产 allowlist 只读冒烟）+ ENV_ROLE fail-safe（prod/冒烟下组 1~23 整组不执行，仅组 24 白名单 10 项只读），/api/health 暴露 envRole |
+| ADR-018 | CI/CD 分层与质量门禁：fast-check（秒级静态门禁：语法/版本双源一致性/env ENV_ROLE/脚本完整性）前置，tdd-verify（全量，needs fast-check fail-fast），package（仅 tag v* 自动构建发布包到共享 packages/，build once deploy many）；test_api.py 报告段加计数基线门禁（全量 ≥300 / 冒烟 ==10，防静默删减）；离线环境不用 actions/upload-artifact@v4（无 node/网络），制品走共享目录 + release.ps1 |
 - **决策**：
   1. **备份健壮化**：copytree 加 `dirs_exist_ok=True + symlinks=True + ignore 临时/锁文件(.nfs*/.DS_Store/*.tmp/*.lock)`，异常清理半成品并返回可读错误（不再裸 500）。
   2. **备份界面彻底分离**：移除"全部备份"按钮与列表 all 混合过滤；系统区块只列 backup-system-*（创建/列表/恢复/删除），业务区块只列 backup-business-*（创建/列表/恢复/删除）；恢复按钮统一"恢复"；旧版混合备份 backup-all-* 不显示，给出提示建议删除。API 层保留 all 兼容（旧脚本），界面不暴露。
@@ -738,6 +739,15 @@ sudo systemctl restart securetrans
 ---
 
 *部署指南 v2.3.0 | 2026-09-10*
+
+### ADR-018：CI/CD 分层与质量门禁（强制）
+- **背景**：原 CI 仅单 job 全量回归（push 触发），无秒级门禁、无测试计数防缩水、发布包靠本地手工 package.sh。
+- **决策**：
+  1. **分层流水线（最便宜门禁先失败）**：`fast-check`（语法 py_compile / 版本号双源一致性 / env 模板 ENV_ROLE / 关键脚本完整性，秒级，总是执行）→ `tdd-verify`（全量 TDD，needs fast-check 失败即停）→ `package`（仅 `tags: v*` 触发）。
+  2. **质量门禁（防静默删减）**：`test_api.py` 报告段断言计数基线——全量模式 ≥300 项、冒烟模式 ==10 项（白名单为显式维护集合，增减需同步门禁）。
+  3. **tag 驱动发布构建（build once, deploy many）**：push tag v* 自动 clone 该 tag → 复用 /opt/securetrans/packages 的 offline-deps → package.sh 构建 → 制品落到共享 packages/（离线环境无 node/网络，不使用 actions/upload-artifact@v4）；实际 Release 资产由 `infra/release.ps1` 手工上传同一制品（发布策略 ADR-014：调测期密集手工，关键点人工发布）。
+  4. **并行与 fail-fast**：tdd-verify needs fast-check（秒级门禁失败不浪费全量资源）；package needs 前两者。
+  5. **与 ADR-016/017 不重叠**：ADR-016 管三环境配置/数据分层，ADR-017 管测试/生产执行隔离，ADR-018 管流水线结构与门禁。
 
 ### ADR-017：测试/生产环境隔离（三合一，强制）
 - **背景**：verify.sh 原为三环境同一全量脚本，生产跑全量必污染（建用户/上传/审批/备份/改配置/改密/清理归档）。

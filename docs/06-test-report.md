@@ -1,3 +1,15 @@
+## ◎ v2.3.2-beta 回归（2026-09-11）
+**总计 309 项测试（Windows dev）/ 308 项（WSL test）全部通过，通过率 100%；生产冒烟（smoke.sh）11/11 通过。**
+
+**本轮变更（ADR-018 · CI/CD 分层与质量门禁）：**
+1. **CI 分层**：`.gitea/workflows/ci.yml` 重写为 fast-check（秒级静态门禁：语法/版本双源一致性/env ENV_ROLE/脚本完整性）→ tdd-verify（全量，fail-fast）→ package（仅 tag v* 自动构建发布包）。
+2. **质量门禁**：`test_api.py` 报告段新增计数基线断言——全量 ≥300 项 / 冒烟 ==10 项（防静默删减，随用例增长只增不减）。
+3. **tag 驱动构建**：push tag v* 自动构建发布包到共享 packages/（离线环境无 node/网络，不用 upload-artifact@v4）；Release 资产仍由 release.ps1 手工发布同一制品。
+4. **验证**：fast-check 四步预演全过；新增门禁项使 Windows 309/WSL 308（全量）与 11/11（冒烟）。
+**双环境基线**：Windows dev 309/309、WSL test 308/308、冒烟（Windows+WSL）11/11，均 100%。
+
+---
+
 ## ◎ v2.3.1-beta 回归（2026-09-10）
 **总计 308 项测试（Windows dev）/ 307 项（WSL test）全部通过，通过率 100%；生产冒烟（smoke.sh）10/10 通过。**
 

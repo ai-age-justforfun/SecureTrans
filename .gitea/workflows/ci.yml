@@ -1,23 +1,81 @@
 name: CI-TDD
 
-# SecureTrans 持续集成（ADR-016 · 12-Factor 三环境一体化）
-# 触发：push 到 main 后，在本地测试环境 runner（securetrans-wsl，WSL rocky10-st）执行全量 TDD 回归
+# SecureTrans 持续集成（ADR-016 12-Factor 三环境一体化 · ADR-018 CI 分层与质量门禁）
+# 触发：push 到 main 或 push tag v*，在本地测试环境 runner（securetrans-wsl，WSL rocky10-st）
+# 分层（最便宜门禁先失败）：
+#   1. fast-check  —— 秒级静态门禁（语法/版本一致性/配置模板/脚本完整性），总跑
+#   2. tdd-verify  —— 全量 TDD 回归（verify.sh，307 项基线；含 ADR-017 测试/生产隔离）
+#   3. package     —— 仅 tag v* 触发：复用 offline-deps 构建发布包并上传 CI 制品（artifact）
+#                     实际 Release 资产仍由 infra/release.ps1 手工发布（发布策略 ADR-014）
 # 前置：
 #   1. Gitea 启用 Actions（站点配置 → Actions → 启用）
 #   2. 注册本地 runner：见 infra/ci-runner.md（labels=securetrans-wsl）
-#   3. 仓库为 public 时 clone 无需凭据；private 化后在 Settings → Actions Secrets 配置 GITEA_TOKEN
+#   3. 仓库为 public 时 clone 无需凭据；private 化后在 Settings → Actions Secrets 配置
 # 说明：测试环境 = 生产配置镜像（systemd + gunicorn），数据为 mock（AD_MOCK_MODE=true，不触网）；
-#       生产环境不做写数据自动化测试，仅冒烟 + 人工验收（RTM，见 docs/07-requirements-traceability.md）。
+#       生产环境不做写数据自动化测试，仅冒烟 + 人工验收（ADR-017，docs/07-requirements-traceability.md）。
 
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
 
 jobs:
-  tdd-verify:
+  # ============================================================
+  # 1. 秒级静态门禁（总是执行，最便宜先失败）
+  # ============================================================
+  fast-check:
     runs-on: securetrans-wsl
     steps:
-      - name: Clone latest code (public repo, local Gitea)
+      - name: Clone latest code
+        run: |
+          set -euo pipefail
+          sudo rm -rf /opt/securetrans-ci-fast
+          sudo git clone "http://localhost:3000/openwrtadmin/SecureTrans.git" /opt/securetrans-ci-fast
+          sudo chmod -R a+rX /opt/securetrans-ci-fast
+
+      - name: Python 语法编译检查
+        run: |
+          set -euo pipefail
+          cd /opt/securetrans-ci-fast
+          /opt/securetrans/venv/bin/python -m py_compile src/app.py tests/test_api.py
+          echo "语法编译: PASS"
+
+      - name: 版本号双源一致性（app.py ↔ index.html）
+        run: |
+          set -euo pipefail
+          cd /opt/securetrans-ci-fast
+          V_BE=$(grep -m1 '^APP_VERSION = "v' src/app.py | sed -E 's/.*"v([^"]+)".*/\1/')
+          V_FE=$(grep -m1 "const APP_VERSION = 'v" src/static/index.html | sed -E "s/.*'v([^']+)'.*/\1/")
+          echo "  backend: ${V_BE} | frontend: ${V_FE}"
+          [ "$V_BE" = "$V_FE" ] || { echo "版本不一致: FAIL"; exit 1; }
+          echo "版本一致性: PASS"
+
+      - name: env 模板 ENV_ROLE 正确性
+        run: |
+          set -euo pipefail
+          cd /opt/securetrans-ci-fast
+          grep -q '^ENV_ROLE=test' env/dev.env || { echo "env/dev.env 缺少 ENV_ROLE=test"; exit 1; }
+          grep -q '^ENV_ROLE=test' env/test.env || { echo "env/test.env 缺少 ENV_ROLE=test"; exit 1; }
+          grep -q '^ENV_ROLE=prod' env/prod.env.template || { echo "env/prod.env.template 缺少 ENV_ROLE=prod"; exit 1; }
+          echo "env 模板 ENV_ROLE: PASS"
+
+      - name: 关键脚本完整性（deploy/verify/smoke/package/release）
+        run: |
+          set -euo pipefail
+          cd /opt/securetrans-ci-fast
+          for f in infra/deploy.sh infra/verify.sh infra/smoke.sh infra/package.sh infra/release.ps1; do
+            [ -f "$f" ] || { echo "缺少 $f"; exit 1; }
+          done
+          echo "脚本完整性: PASS"
+
+  # ============================================================
+  # 2. 全量 TDD 回归（依赖 fast-check 通过；测试/生产隔离见 ADR-017）
+  # ============================================================
+  tdd-verify:
+    runs-on: securetrans-wsl
+    needs: fast-check
+    steps:
+      - name: Clone latest code
         run: |
           set -euo pipefail
           sudo rm -rf /opt/securetrans-ci
@@ -40,6 +98,46 @@ jobs:
           sleep 3
           curl -sf http://127.0.0.1:8000/api/health || curl -sf "http://$(grep -E '^HOST=' /opt/securetrans/.env | cut -d= -f2 | tr -d '\r'):8000/api/health"
 
-      - name: Full TDD regression (verify.sh)
+      - name: Full TDD regression (verify.sh, ADR-017 fail-safe)
         run: |
           cd /opt/securetrans && sudo -E bash infra/verify.sh
+
+  # ============================================================
+  # 3. 发布构建（仅 tag v* 触发）：复用 offline-deps → 构建发布包 → 上传 CI 制品
+  #    实际 Release 资产由 infra/release.ps1 手工上传（同一制品，可追溯）
+  # ============================================================
+  package:
+    runs-on: securetrans-wsl
+    needs: [ fast-check, tdd-verify ]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Clone tagged code
+        run: |
+          set -euo pipefail
+          sudo rm -rf /opt/securetrans-ci
+          sudo git clone --depth 1 --branch "${{ github.ref_name }}" \
+            "http://localhost:3000/openwrtadmin/SecureTrans.git" /opt/securetrans-ci
+          sudo chmod -R a+rX /opt/securetrans-ci
+
+      - name: Prepare offline-deps (reuse pre-built wheel bundle)
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /opt/securetrans-ci/packages
+          sudo cp /opt/securetrans/packages/securetrans-offline-deps.tar.gz /opt/securetrans-ci/packages/ 2>/dev/null \
+            || echo "WARN: offline-deps 未找到，包将不含离线 wheel（联网环境可 pip download 生成）"
+
+      - name: Build release package (package.sh)
+        run: |
+          set -euo pipefail
+          cd /opt/securetrans-ci && sudo bash infra/package.sh
+          ls -la /opt/securetrans-ci/packages/securetrans-*.tar.gz*
+
+      - name: Publish artifacts to shared packages dir (for release.ps1)
+        run: |
+          set -euo pipefail
+          # 离线环境无 node/网络，不使用 actions/upload-artifact@v4；
+          # 构建制品落到 WSL 共享 packages/（build once, deploy many），
+          # 发布时：wsl cp packages/securetrans-<v>.tar.gz* <win>/packages/ && infra/release.ps1 -Version v<v>
+          sudo cp /opt/securetrans-ci/packages/securetrans-*.tar.gz* /opt/securetrans/packages/
+          echo "--- 共享 packages/ 制品 ---"
+          ls -la /opt/securetrans/packages/ | tail -6

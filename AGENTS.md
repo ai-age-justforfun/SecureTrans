@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.3.1（APP_STAGE=beta，显示 v2.3.1-beta）（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步；发布阶段 .env APP_STAGE，显示 vX.Y.Z-stage）
+- **当前版本**：v2.3.2（APP_STAGE=beta，显示 v2.3.2-beta）（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步；发布阶段 .env APP_STAGE，显示 vX.Y.Z-stage）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
@@ -113,6 +113,7 @@
 
 | ADR-016 | 12-Factor 三环境一体化：env/ 分层配置（dev/test/prod 模板）、AD_MOCK_MODE 模拟目录、tests/mock 种子与 RTM（docs/07）、.env 启动自动加载、Gitea Actions CI（.gitea/workflows/ci.yml） |
 | ADR-017 | 测试/生产环境隔离（三合一）：test_api.py 单脚本 + 双入口（verify.sh=dev/test/CI 全量；infra/smoke.sh=生产 allowlist 只读冒烟）+ ENV_ROLE fail-safe（prod/冒烟下组 1~23 整组不执行，仅组 24 白名单 10 项只读），/api/health 暴露 envRole |
+| ADR-018 | CI/CD 分层与质量门禁：fast-check（秒级静态门禁：语法/版本双源一致性/env ENV_ROLE/脚本完整性）前置，tdd-verify（全量，needs fast-check fail-fast），package（仅 tag v* 自动构建发布包到共享 packages/，build once deploy many）；test_api.py 报告段加计数基线门禁（全量 ≥300 / 冒烟 ==10，防静默删减）；离线环境不用 actions/upload-artifact@v4（无 node/网络），制品走共享目录 + release.ps1 |
 ### ADR-005 详述：非硬编码原则（强制）
 
 prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → 测试(WSL) → 生产(Rocky) 环境差异大，
@@ -376,6 +377,15 @@ main ────●────●────●────●────  �
 ---
 
 *AGENTS.md v1.11 | 2026-09-10*
+
+### ADR-018：CI/CD 分层与质量门禁（强制）
+- **背景**：原 CI 仅单 job 全量回归（push 触发），无秒级门禁、无测试计数防缩水、发布包靠本地手工 package.sh。
+- **决策**：
+  1. **分层流水线（最便宜门禁先失败）**：`fast-check`（语法 py_compile / 版本号双源一致性 / env 模板 ENV_ROLE / 关键脚本完整性，秒级，总是执行）→ `tdd-verify`（全量 TDD，needs fast-check 失败即停）→ `package`（仅 `tags: v*` 触发）。
+  2. **质量门禁（防静默删减）**：`test_api.py` 报告段断言计数基线——全量模式 ≥300 项、冒烟模式 ==10 项（白名单为显式维护集合，增减需同步门禁）。
+  3. **tag 驱动发布构建（build once, deploy many）**：push tag v* 自动 clone 该 tag → 复用 /opt/securetrans/packages 的 offline-deps → package.sh 构建 → 制品落到共享 packages/（离线环境无 node/网络，不使用 actions/upload-artifact@v4）；实际 Release 资产由 `infra/release.ps1` 手工上传同一制品（发布策略 ADR-014：调测期密集手工，关键点人工发布）。
+  4. **并行与 fail-fast**：tdd-verify needs fast-check（秒级门禁失败不浪费全量资源）；package needs 前两者。
+  5. **与 ADR-016/017 不重叠**：ADR-016 管三环境配置/数据分层，ADR-017 管测试/生产执行隔离，ADR-018 管流水线结构与门禁。
 
 ### ADR-017：测试/生产环境隔离（三合一，强制）
 - **背景**：verify.sh 原为三环境同一全量脚本，生产跑全量必污染（建用户/上传/审批/备份/改配置/改密/清理归档）。

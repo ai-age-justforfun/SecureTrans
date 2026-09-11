@@ -3,10 +3,14 @@
 目标：push 到 main 后，在本地测试环境（WSL rocky10-st）自动执行全量 TDD 回归（verify.sh），
 形成"开发（Windows）→ 测试（WSL）→ 持续集成"闭环；后续打通 ssh 后可扩展为 CD（自动部署生产，保留人工门禁）。
 
-## 架构
+## 架构（ADR-018 分层流水线）
 
 - **Runner**：Gitea Actions 的本地执行器，运行在 WSL rocky10-st（`labels=securetrans-wsl`）
-- **执行内容**：clone 最新 main → 同步到 `/opt/securetrans`（保留 .env/data/nas/venv）→ restart → `verify.sh` 全量回归
+- **分层（最便宜门禁先失败）**：
+  1. **fast-check**（总是执行，秒级）：py_compile 语法 / 版本号双源一致性（app.py ↔ index.html）/ env 模板 ENV_ROLE / 关键脚本完整性（deploy/verify/smoke/package/release）
+  2. **tdd-verify**（needs fast-check）：clone 最新 main → 同步到 `/opt/securetrans`（保留 .env/data/nas/venv）→ restart → `verify.sh` 全量回归（含 ADR-017 fail-safe 与 ADR-018 计数门禁）
+  3. **package**（仅 push tag v*，needs 前两者）：clone 该 tag → 复用 `/opt/securetrans/packages` 的 offline-deps → `package.sh` 构建 → 制品落到共享 packages/（build once, deploy many；离线环境无 node/网络，不用 actions/upload-artifact@v4）
+- **发布**：CI 构建产物在 WSL packages/ 后，发布时 `wsl cp packages/securetrans-<v>.tar.gz* <win>/packages/` 再 `infra/release.ps1 -Version v<v>` 上传 Release 资产（发布策略 ADR-014）
 - **测试环境配置**：`env/test.env`（AD_MOCK_MODE=true，内置模拟目录，不触网）
 
 ## 一、Gitea 启用 Actions
