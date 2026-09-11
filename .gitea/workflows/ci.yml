@@ -75,6 +75,27 @@ jobs:
           done
           echo "脚本完整性: PASS"
 
+      - name: 配置键一致性（ADR-020：三环境 env 键集合对齐，防配置漂移）
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE:-/workspace}"
+          python - <<'EOF'
+          import re
+          def keys(p):
+              return {m.group(1) for m in re.finditer(r'^\s*([A-Z][A-Z0-9_]*)=', open(p, encoding='utf-8').read(), re.M)}
+          dev, test, prod = keys('env/dev.env'), keys('env/test.env'), keys('env/prod.env.template')
+          core = dev & test                    # dev 与 test 必须完全一致
+          drift = dev ^ test
+          missing_in_prod = core - prod        # prod 可多（生产增强键），不可缺核心键
+          errs = []
+          if drift: errs.append(f"dev/test 键不一致: {sorted(drift)}")
+          if missing_in_prod: errs.append(f"prod 缺少核心键: {sorted(missing_in_prod)}")
+          if errs:
+              for e in errs: print("FAIL:", e)
+              exit(1)
+          print(f"配置键一致性: PASS (dev={len(dev)} test={len(test)} prod={len(prod)})")
+          EOF
+
   # ============================================================
   # 2. 全量 TDD 回归（容器，每次全新环境；依赖 fast-check 通过）
   # ============================================================
