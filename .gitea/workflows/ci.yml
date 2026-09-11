@@ -170,7 +170,7 @@ jobs:
           md5sum -c "securetrans-${V}.tar.gz.md5"
           sha256sum -c "securetrans-${V}.tar.gz.sha256"
           echo "--- 发布包结构（前 12 项）---"
-          tar -tzf "$PKG" | head -12
+          tar -tzf "$PKG" | head -12 || true  # 修复：head 提前退出致 tar SIGPIPE(141)，pipefail 下误报失败
           [ -f "securetrans-${V}.tar.gz" ] || { echo "发布包缺失"; exit 1; }
           echo "package 完整性: PASS (v${V})"
 
