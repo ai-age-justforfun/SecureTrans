@@ -60,9 +60,14 @@ try {
     }
 }
 
-# 2. 上传资产（packages/ 下所有 tar.gz）
+# 2. 上传资产（packages/ 下所有 tar.gz + md5 + sha256）
+# v2.4.0 修复：Filter *.tar.gz 只选压缩包，.md5/.sha256 校验文件漏传 → CD 下载校验步骤取不到 MD5_URL 失败
 $matchTag = $tag.TrimStart('v')
-$assets = Get-ChildItem "$pkgDir" -Filter "*.tar.gz" | Where-Object { $_.Name -like "securetrans-${matchTag}*" -or $_.Name -eq "securetrans-offline-deps.tar.gz" }
+$assets = @(
+    (Get-ChildItem "$pkgDir" -Filter "*.tar.gz" | Where-Object { $_.Name -like "securetrans-${matchTag}*" -or $_.Name -eq "securetrans-offline-deps.tar.gz" })
+    (Get-ChildItem "$pkgDir" -Filter "*.md5" | Where-Object { $_.Name -like "securetrans-${matchTag}*" })
+    (Get-ChildItem "$pkgDir" -Filter "*.sha256" | Where-Object { $_.Name -like "securetrans-${matchTag}*" })
+) | Where-Object { $_ }
 # 若无匹配资产，不自动上传（避免误传旧版本包）
 foreach ($a in $assets) {
     $name = $a.Name
