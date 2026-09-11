@@ -207,7 +207,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.3.7';
+const APP_VERSION = 'v2.4.0';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -320,6 +320,7 @@ const I18N = {
     'config.ruleModalNew': '新增特征码规则', 'config.ruleModalEdit': '编辑特征码规则',
     'config.ruleNameLbl': '规则名称', 'config.ruleNamePh': '如：PDF文档', 'config.ruleTypeLbl': '规则类型',
     'config.rulePattern': '匹配模式', 'config.rulePatternPh': '如：.pdf 或 hex:504B0304', 'config.ruleEnabled': ' 启用',
+    'config.extPatternLbl': '附加扩展名限制（可选，仅二进制头）', 'config.extPatternPh': '如：.tar.gz,.tgz（特征码 AND 后缀都匹配才命中）',
     'adConfig.title': 'AD 配置（数据库权威，可导入 .env）', 'adConfig.import': '从 .env 导入', 'adConfig.save': '保存 AD 配置',
     'adConfig.enabled': '启用 AD', 'adConfig.host': 'AD_HOST', 'adConfig.domain': 'AD_DOMAIN', 'adConfig.baseDn': 'AD_BASE_DN',
     'adConfig.bindDn': 'AD_BIND_DN（可选）', 'adConfig.bindPwd': 'AD_BIND_PASSWORD（可选）',
@@ -459,6 +460,7 @@ const I18N = {
     'config.ruleModalNew': 'New Signature Rule', 'config.ruleModalEdit': 'Edit Signature Rule',
     'config.ruleNameLbl': 'Rule Name', 'config.ruleNamePh': 'e.g. PDF Documents', 'config.ruleTypeLbl': 'Rule Type',
     'config.rulePattern': 'Pattern', 'config.rulePatternPh': 'e.g. .pdf or hex:504B0304', 'config.ruleEnabled': ' Enable',
+    'config.extPatternLbl': 'Extra extension constraint (optional, binary only)', 'config.extPatternPh': 'e.g. .tar.gz,.tgz (signature AND extension must both match)',
     'adConfig.title': 'AD Config (DB authority, import from .env)', 'adConfig.import': 'Import from .env', 'adConfig.save': 'Save AD Config',
     'adConfig.enabled': 'Enable AD', 'adConfig.host': 'AD_HOST', 'adConfig.domain': 'AD_DOMAIN', 'adConfig.baseDn': 'AD_BASE_DN',
     'adConfig.bindDn': 'AD_BIND_DN (optional)', 'adConfig.bindPwd': 'AD_BIND_PASSWORD (optional)',
@@ -1753,7 +1755,7 @@ async function renderConfig() {
             ${rules.map(r => `<tr>
               <td>${r.name}</td>
               <td>${r.rule_type === 'extension' ? t('config.typeExtension') : r.rule_type === 'filename' ? t('config.typeFilename') : t('config.typeBinary')}</td>
-              <td class="text-sm">${r.pattern}</td>
+              <td class="text-sm">${r.pattern}${r.ext_pattern ? ` <span style="color:#2563eb;">+ ${r.ext_pattern}</span>` : ''}</td>
               <td>${r.enabled ? `<span class="badge badge-approved" data-i18n="common.enabled">启用</span>` : `<span class="badge badge-archived" data-i18n="common.disabled">禁用</span>`}</td>
               <td>
                 <button class="btn btn-sm ${r.enabled ? 'btn-secondary' : 'btn-primary'}" onclick="toggleRule('${r.id}')">${r.enabled ? t('common.disable') : t('common.enable')}</button>
@@ -1817,13 +1819,14 @@ async function renderConfig() {
           <input type="hidden" id="rule_id">
           <div class="form-group"><label data-i18n="config.ruleNameLbl">规则名称</label><input type="text" id="rule_name" placeholder="${t('config.ruleNamePh')}"></div>
           <div class="form-group"><label data-i18n="config.ruleTypeLbl">规则类型</label>
-            <select id="rule_type">
+            <select id="rule_type" onchange="toggleRuleExtGroup()">
               <option value="extension" data-i18n="config.typeExtension">文件扩展名</option>
               <option value="filename" data-i18n="config.typeFilename">文件名正则</option>
               <option value="binary" data-i18n="config.typeBinaryDetail">二进制头（hex:前缀或字符串）</option>
             </select>
           </div>
           <div class="form-group"><label data-i18n="config.rulePattern">匹配模式</label><input type="text" id="rule_pattern" placeholder="${t('config.rulePatternPh')}"></div>
+          <div class="form-group" id="rule_ext_group" style="display:none;"><label data-i18n="config.extPatternLbl">附加扩展名限制（可选）</label><input type="text" id="rule_ext_pattern" placeholder="${t('config.extPatternPh')}"></div>
           <div class="form-group"><label><input type="checkbox" id="rule_enabled" checked><span data-i18n="config.ruleEnabled"> 启用</span></label></div>
           <div style="text-align:right;margin-top:16px;">
             <button class="btn btn-secondary" onclick="closeRuleModal()" data-i18n="common.cancel">取消</button>
@@ -1954,6 +1957,11 @@ async function deleteRule(ruleId) {
   } catch (e) { toast(t('toast.deleteFail', e.message), 'error'); }
 }
 
+function toggleRuleExtGroup() {
+  const el = document.getElementById('rule_ext_group');
+  if (el) el.style.display = document.getElementById('rule_type').value === 'binary' ? '' : 'none';
+}
+
 function openRuleModal(ruleId = null) {
   document.getElementById('ruleModal').style.display = 'flex';
   document.getElementById('rule_id').value = ruleId || '';
@@ -1965,6 +1973,7 @@ function openRuleModal(ruleId = null) {
       document.getElementById('rule_name').value = rule.name;
       document.getElementById('rule_type').value = rule.rule_type;
       document.getElementById('rule_pattern').value = rule.pattern;
+      document.getElementById('rule_ext_pattern').value = rule.ext_pattern || '';
       document.getElementById('rule_enabled').checked = !!rule.enabled;
     }
   } else {
@@ -1972,8 +1981,10 @@ function openRuleModal(ruleId = null) {
     document.getElementById('rule_name').value = '';
     document.getElementById('rule_type').value = 'extension';
     document.getElementById('rule_pattern').value = '';
+    document.getElementById('rule_ext_pattern').value = '';
     document.getElementById('rule_enabled').checked = true;
   }
+  toggleRuleExtGroup();
 }
 
 function closeRuleModal() {
@@ -1986,7 +1997,8 @@ async function saveRule() {
     name: document.getElementById('rule_name').value.trim(),
     ruleType: document.getElementById('rule_type').value,
     pattern: document.getElementById('rule_pattern').value.trim(),
-    enabled: document.getElementById('rule_enabled').checked
+    enabled: document.getElementById('rule_enabled').checked,
+    extPattern: document.getElementById('rule_ext_pattern').value.trim()
   };
   try {
     if (ruleId) {

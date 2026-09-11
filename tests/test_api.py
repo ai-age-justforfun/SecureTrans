@@ -807,6 +807,69 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     code, data = request('DELETE', '/api/admin/feature-rules/nonexistent-id')
     test("删除不存在规则返回404", code == 404, f"code={code}")
 
+    # v2.4.0 组合规则（binary 特征码 AND 后缀）
+    print("\n--- 10h1. 组合规则（特征码+后缀） ---")
+    _set_group("10h1. 组合规则（特征码+后缀）")
+    code, data = request('POST', '/api/admin/feature-rules', json_data={
+        "name": "测试TARGZ组合", "ruleType": "binary", "pattern": "hex:1F8B",
+        "enabled": True, "extPattern": ".tar.gz,.tgz"
+    })
+    tgz_rule_id = data.get('id', '')
+    test("创建组合规则(TAR.GZ)", code == 200 and tgz_rule_id, f"code={code}, id={tgz_rule_id}")
+
+    code, data = request('POST', '/api/admin/feature-rules', json_data={
+        "name": "测试Vivado组合", "ruleType": "binary", "pattern": "hex:AA995566",
+        "enabled": True, "extPattern": ".bin,.bit"
+    })
+    viv_rule_id = data.get('id', '')
+    test("创建组合规则(Vivado)", code == 200 and viv_rule_id, f"code={code}, id={viv_rule_id}")
+
+    # 列表返回 ext_pattern
+    code, rules = request('GET', '/api/config/feature-rules')
+    ext_ok = any(r.get('ext_pattern') == '.tar.gz,.tgz' for r in rules) if isinstance(rules, list) else False
+    test("组合规则列表返回ext_pattern", code == 200 and ext_ok, f"code={code}")
+
+    # 上传 .tar.gz（gzip 内容）→ 组合规则命中
+    tgz_path = os.path.join(test_dir, "test_archive.tar.gz")
+    with open(tgz_path, 'wb') as f:
+        f.write(bytes.fromhex('1F8B0800') + b"fake gzip tar")
+    code, data = upload_file(tgz_path, "test_archive.tar.gz")
+    matched_rules = data.get('matchedRules', [])
+    test("上传.tar.gz命中组合规则", code == 200 and any("测试TARGZ组合" in str(r) for r in matched_rules),
+         f"code={code}, matchedRules={matched_rules}")
+
+    # 上传 .gz（gzip 内容但后缀不符）→ 组合规则不命中（宽松 GZIP 规则仍可命中）
+    gz_path = os.path.join(test_dir, "test_data.gz")
+    with open(gz_path, 'wb') as f:
+        f.write(bytes.fromhex('1F8B0800') + b"fake gzip")
+    code, data = upload_file(gz_path, "test_data.gz")
+    matched_rules = data.get('matchedRules', [])
+    test("上传.gz后缀不符组合规则不命中", code == 200 and not any("测试TARGZ组合" in str(r) for r in matched_rules),
+         f"code={code}, matchedRules={matched_rules}")
+
+    # 上传 .bin 含同步字 → Vivado 组合命中
+    bin_path = os.path.join(test_dir, "test_fpga.bin")
+    with open(bin_path, 'wb') as f:
+        f.write(b"\x00" * 64 + bytes.fromhex('AA995566') + b"\x00" * 64)
+    code, data = upload_file(bin_path, "test_fpga.bin")
+    matched_rules = data.get('matchedRules', [])
+    test("上传.bin含同步字命中组合规则", code == 200 and any("测试Vivado组合" in str(r) for r in matched_rules),
+         f"code={code}, matchedRules={matched_rules}")
+
+    # 上传 .bin 无同步字 → Vivado 组合不命中
+    bin2_path = os.path.join(test_dir, "test_fpga2.bin")
+    with open(bin2_path, 'wb') as f:
+        f.write(b"\x00" * 128)
+    code, data = upload_file(bin2_path, "test_fpga2.bin")
+    matched_rules = data.get('matchedRules', [])
+    test("上传.bin无同步字组合规则不命中", code == 200 and not any("测试Vivado组合" in str(r) for r in matched_rules),
+         f"code={code}, matchedRules={matched_rules}")
+
+    # 清理组合规则
+    request('DELETE', f'/api/admin/feature-rules/{tgz_rule_id}')
+    request('DELETE', f'/api/admin/feature-rules/{viv_rule_id}')
+    test("删除组合规则", code == 200, f"code={code}")
+
     # 22c. 网络面隔离（应用层，模拟 X-Network-Zone 头）
     print("\n--- 10i. 网络面隔离（双网卡应用层兜底） ---")
     _set_group("10i. 网络面隔离（双网卡应用层兜底）")

@@ -524,4 +524,18 @@
 - **根因**：登录初始化 `navigate(admin?'dashboard':'submit')` 在外网面被 navigate 外网校验拦截（只允许 external），但 `currentPage` 保持初始 'dashboard' 且内容区未渲染；语言切换 `switchLang()` 绕过 navigate 直接 `renderPage(currentPage)` → renderDashboard 调 `/api/stats` → 外网 403。
 - **变更（前端 index.html）**：① `switchLang` 外网面强制 `navigate('external')`（复用 navigate 外网校验，仅刷新下载页），内网面维持 renderPage 刷新动态文案；② 登录初始化外网面直进 `navigate('external')`，内容区正确渲染下载页。
 - 测试 233 → 235 项（+2 前端资源断言）；浏览器实测：模拟外网面切换语言仅请求 /api/external/files（无 /api/stats、无 403），下载列表正常渲染；Windows dev 235/235，v2.2.25 待发布。
-*文档结束 | SecureTrans 测试报告 v2.3.0-beta | 2026-09-10*
+### 12.16 v2.4.0 组合特征码规则（binary 特征码 AND 后缀）（2026-09-11）
+- **需求来源**：用户要求支持 tar.gz（Gzip 魔术字节 1F8B AND .tar.gz/.tgz 后缀）与 Vivado Bitstream（0xAA995566 同步字 AND .bin/.bit 后缀）两类组合规则；内置模板默认全部禁用、免审批开关不自动使能，由管理员手工配置（"老规矩"）。
+- **能力确认前置**：match_feature_rules 的 binary 类型读取文件**前 4096 字节做子串搜索**（非仅偏移 0），可识别文件头后 1KB 内的 Vivado 同步字（实测 offset 0/512/257 全命中）。
+- **实现（app.py + index.html）**：
+  - 内置模板元组扩为 5 元素，新增 ext_pattern 字段（仅 binary 类型生效：特征码命中 AND 后缀命中才匹配）；
+  - 新增内置模板（默认禁用）：TAR.GZ组合(特征码+后缀) hex:1F8B + ".tar.gz,.tgz"；Vivado Bitstream组合(特征码+后缀) hex:AA995566 + ".bin,.bit"；
+  - **同步字修正**：旧模板"Vivado Bit同步字" pattern 误写 hex:5599AA66，修正为 Xilinx 标准 0xAA995566，并加迁移 SQL（UPDATE 幂等修正）；
+  - 建表 feature_rules 新增 ext_pattern 列（_column_exists + ALTER TABLE 幂等迁移）；播种/升级迁移适配 5 元组（重置条件含 ext_pattern IS ?，补充播种新模板 enabled=0）；
+  - create/update API 支持 extPattern（仅 binary 存储，其他类型置空/忽略）；审计日志含 "+ 后缀" 描述；
+  - 前端：规则弹窗 binary 类型显示"附加扩展名限制"输入框（toggleRuleExtGroup）；列表"匹配模式"列显示 pattern + 后缀；zh/en i18n 新增两键。
+- **匹配语义**：仍是"或"匹配（任一启用规则命中即 matched）；组合规则用 AND 收紧单条规则自身的判定；后缀用文件名 endswith 匹配（支持多段 .tar.gz，规避 Path.suffix 只取最后一段 .gz 的坑）。
+- **测试 318 → 326 项（Windows，+8 组合规则组 10h1）**：创建组合规则(TAR.GZ/Vivado)、列表返回 ext_pattern、.tar.gz 命中、.gz 后缀不符不命中（宽松 GZIP 规则仍可命中）、.bin 含同步字命中、.bin 无同步字不命中、删除组合规则；
+  - Windows dev（testing）326/326；WSL test（production 模拟）325/325——差异项为环境自适应：Windows 多"模拟数据生成成功/含测试用户"2 项，WSL 多"模拟数据生成被拒(生产)"1 项，公共 324 项完全一致；双环境 100%，v2.4.0 已发布。
+
+*文档结束 | SecureTrans 测试报告 v2.4.0 | 2026-09-11*

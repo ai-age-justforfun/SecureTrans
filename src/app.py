@@ -56,7 +56,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.3.7"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.4.0"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -277,29 +277,34 @@ def close_db(exception):
 # 无启用的规则则无匹配 → 全部走人工审批（默认保守）
 BUILTIN_FEATURE_RULES = [
     # === 文档类（extension）===
-    ("PDF文档", "extension", ".pdf", 0),
-    ("Word文档", "extension", ".doc,.docx", 0),
-    ("Excel表格", "extension", ".xls,.xlsx", 0),
-    ("PPT演示", "extension", ".ppt,.pptx", 0),
-    ("图片文件", "extension", ".png,.jpg,.jpeg,.gif,.bmp,.svg", 0),
-    ("文本文件", "extension", ".txt,.csv,.md,.log,.json,.xml,.yaml,.yml", 0),
+    ("PDF文档", "extension", ".pdf", 0, None),
+    ("Word文档", "extension", ".doc,.docx", 0, None),
+    ("Excel表格", "extension", ".xls,.xlsx", 0, None),
+    ("PPT演示", "extension", ".ppt,.pptx", 0, None),
+    ("图片文件", "extension", ".png,.jpg,.jpeg,.gif,.bmp,.svg", 0, None),
+    ("文本文件", "extension", ".txt,.csv,.md,.log,.json,.xml,.yaml,.yml", 0, None),
     # === 压缩包类（extension）- Linux 默认支持 ===
-    ("ZIP压缩包", "extension", ".zip", 0),
-    ("TAR归档", "extension", ".tar", 0),
-    ("GZIP压缩", "extension", ".gz,.tgz", 0),
-    ("BZIP2压缩", "extension", ".bz2,.tbz2", 0),
-    ("XZ压缩", "extension", ".xz,.txz", 0),
-    ("ZSTD压缩", "extension", ".zst", 0),
+    ("ZIP压缩包", "extension", ".zip", 0, None),
+    ("TAR归档", "extension", ".tar", 0, None),
+    ("GZIP压缩", "extension", ".gz,.tgz", 0, None),
+    ("BZIP2压缩", "extension", ".bz2,.tbz2", 0, None),
+    ("XZ压缩", "extension", ".xz,.txz", 0, None),
+    ("ZSTD压缩", "extension", ".zst", 0, None),
     # === 压缩包类（binary 特征码 / Magic Number）===
-    ("ZIP特征码", "binary", "hex:504B0304", 0),
-    ("GZIP特征码", "binary", "hex:1F8B", 0),
-    ("BZIP2特征码", "binary", "hex:425A68", 0),
-    ("XZ特征码", "binary", "hex:FD377A585A00", 0),
-    ("ZSTD特征码", "binary", "hex:28B52FFD", 0),
-    ("TAR特征码(ustar)", "binary", "ustar", 0),
+    ("ZIP特征码", "binary", "hex:504B0304", 0, None),
+    ("GZIP特征码", "binary", "hex:1F8B", 0, None),
+    ("BZIP2特征码", "binary", "hex:425A68", 0, None),
+    ("XZ特征码", "binary", "hex:FD377A585A00", 0, None),
+    ("ZSTD特征码", "binary", "hex:28B52FFD", 0, None),
+    ("TAR特征码(ustar)", "binary", "ustar", 0, None),
+    # === 组合规则（binary 特征码 AND 后缀，v2.4.0 新增）===
+    ("TAR.GZ组合(特征码+后缀)", "binary", "hex:1F8B", 0, ".tar.gz,.tgz"),
     # === FPGA / EDA ===
-    ("Vivado Bitstream(.bit)", "extension", ".bit", 0),
-    ("Vivado Bit同步字", "binary", "hex:5599AA66", 0),
+    ("Vivado Bitstream(.bit)", "extension", ".bit", 0, None),
+    ("Vivado Bitstream组合(特征码+后缀)", "binary", "hex:AA995566", 0, ".bin,.bit"),
+    # 修复记录：v2.4.0 修正同步字——Xilinx 标准同步字 0xAA995566（AA 99 55 66），
+    # 旧模板误写 hex:5599AA66（字节位置错乱），迁移中自动修正
+    ("Vivado Bit同步字", "binary", "hex:AA995566", 0, None),
 ]
 
 def init_db():
@@ -383,7 +388,8 @@ def init_db():
         rule_type TEXT,
         pattern TEXT,
         enabled INTEGER DEFAULT 1,
-        created_at TEXT
+        created_at TEXT,
+        ext_pattern TEXT
     );
 
     CREATE TABLE IF NOT EXISTS partners (
@@ -461,6 +467,11 @@ def init_db():
             conn.execute("ALTER TABLE download_records ADD COLUMN md5 TEXT")
         except sqlite3.OperationalError:
             pass
+    if not _column_exists("feature_rules", "ext_pattern"):
+        try:
+            conn.execute("ALTER TABLE feature_rules ADD COLUMN ext_pattern TEXT")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
 
     # 初始管理员（幂等插入）
@@ -502,26 +513,42 @@ def init_db():
             conn.execute("UPDATE system_config SET value='false' WHERE key='auto_approval_enabled'")
 
     # 初始特征码规则
+    # v2.4.0 修正：Xilinx 标准同步字为 0xAA995566；旧模板误写 hex:5599AA66，自动修正 pattern
+    _fix = conn.execute(
+        "UPDATE feature_rules SET pattern='hex:AA995566' WHERE name='Vivado Bit同步字' AND pattern='hex:5599AA66'")
+    if _fix.rowcount:
+        logger.info("feature_rules 修正：Vivado Bit同步字 pattern 5599AA66 → AA995566（Xilinx 标准同步字）")
+
     cursor = conn.execute("SELECT COUNT(*) as c FROM feature_rules")
     if cursor.fetchone()["c"] == 0:
         # 内置特征码规则作为【模板】，默认全部禁用（enabled=0），由管理员按需启用。
-        for name, rtype, pattern, enabled in BUILTIN_FEATURE_RULES:
+        for name, rtype, pattern, enabled, ext_pattern in BUILTIN_FEATURE_RULES:
             conn.execute(
-                "INSERT INTO feature_rules (id,name,rule_type,pattern,enabled,created_at) VALUES (?,?,?,?,?,?)",
-                (str(uuid.uuid4()), name, rtype, pattern, enabled, now_str())
+                "INSERT INTO feature_rules (id,name,rule_type,pattern,enabled,created_at,ext_pattern) VALUES (?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), name, rtype, pattern, enabled, now_str(), ext_pattern)
             )
     else:
         # 升级迁移（v2.2.23）：旧库已有规则时不重复播种，但内置模板规则强制重置为禁用。
         # 原因：历史版本默认启用/用户曾启用，升级后应回到"模板默认禁用"安全基线；
-        # 仅重置与内置模板完全一致（name+type+pattern）的规则，用户自定义规则不受影响。
+        # 仅重置与内置模板完全一致（name+type+pattern+ext_pattern）的规则，用户自定义规则不受影响。
         _migrated = 0
-        for _name, _rtype, _pattern, _enabled in BUILTIN_FEATURE_RULES:
+        for _name, _rtype, _pattern, _enabled, _ext in BUILTIN_FEATURE_RULES:
             _cur = conn.execute(
-                "UPDATE feature_rules SET enabled=0 WHERE name=? AND rule_type=? AND pattern=? AND enabled=1",
-                (_name, _rtype, _pattern))
+                "UPDATE feature_rules SET enabled=0 WHERE name=? AND rule_type=? AND pattern=? AND ext_pattern IS ? AND enabled=1",
+                (_name, _rtype, _pattern, _ext))
             _migrated += _cur.rowcount
         if _migrated:
             logger.info("feature_rules 迁移：%d 条内置模板规则已重置为禁用（enabled=0），自定义规则未受影响", _migrated)
+        # v2.4.0 补充播种：新内置模板（如组合规则）在既有库中不存在时补插（默认禁用，安全）
+        for _name, _rtype, _pattern, _enabled, _ext in BUILTIN_FEATURE_RULES:
+            _exists = conn.execute(
+                "SELECT 1 FROM feature_rules WHERE name=? AND rule_type=? AND pattern=? AND ext_pattern IS ? LIMIT 1",
+                (_name, _rtype, _pattern, _ext)).fetchone()
+            if not _exists:
+                conn.execute(
+                    "INSERT INTO feature_rules (id,name,rule_type,pattern,enabled,created_at,ext_pattern) VALUES (?,?,?,?,?,?,?)",
+                    (str(uuid.uuid4()), _name, _rtype, _pattern, _enabled, now_str(), _ext))
+                logger.info("feature_rules 补充播种：%s（enabled=0 模板）", _name)
 
     # 播种 ad_config（ADR-010）：表空时从 .env 读入一次（source=env），此后以管理页保存值（source=db）为准
     seed_rows = conn.execute("SELECT COUNT(*) as c FROM ad_config").fetchone()
@@ -845,6 +872,14 @@ def match_feature_rules(filename: str, file_path: Path = None) -> tuple:
                 matched.append(rule["name"])
         elif rule["rule_type"] == "binary" and file_header:
             pattern = rule["pattern"]
+            # v2.4.0 组合规则：ext_pattern 非空时，特征码命中 AND 后缀匹配才命中（如 tar.gz = hex:1F8B + .tar.gz,.tgz）
+            # 后缀用文件名 endswith 匹配（支持多段后缀 .tar.gz；Path.suffix 只取最后一段 .gz）
+            ext_pattern = (rule["ext_pattern"] or "").strip()
+            if ext_pattern:
+                exts = [e.strip().lower() for e in ext_pattern.split(",") if e.strip()]
+                _fn_lower = filename.lower()
+                if not any(_fn_lower.endswith(e) for e in exts):
+                    continue  # 后缀不匹配 → 该组合规则不命中（不进入特征码判断）
             if pattern.startswith("hex:"):
                 # 十六进制特征码：hex:1F8B / hex:504B0304 / hex:FD377A585A00
                 hex_str = pattern[4:].replace(" ", "").replace(",", "").replace("-", "")
@@ -2206,6 +2241,8 @@ def api_create_feature_rule():
     rule_type = data.get("ruleType", "extension")  # extension / filename / binary
     pattern = data.get("pattern", "").strip()
     enabled = 1 if data.get("enabled", True) else 0
+    # v2.4.0 组合规则：binary 类型可带 extPattern（特征码 AND 后缀），其他类型忽略
+    ext_pattern = (data.get("extPattern") or "").strip() if rule_type == "binary" else ""
     if not name or not pattern:
         return jsonify({"error": "规则名称和匹配模式不能为空"}), 400
     if rule_type not in ("extension", "filename", "binary"):
@@ -2213,12 +2250,12 @@ def api_create_feature_rule():
     db = get_db()
     rule_id = str(uuid.uuid4())
     db.execute(
-        "INSERT INTO feature_rules (id,name,rule_type,pattern,enabled,created_at) VALUES (?,?,?,?,?,?)",
-        (rule_id, name, rule_type, pattern, enabled, now_str())
+        "INSERT INTO feature_rules (id,name,rule_type,pattern,enabled,created_at,ext_pattern) VALUES (?,?,?,?,?,?,?)",
+        (rule_id, name, rule_type, pattern, enabled, now_str(), ext_pattern or None)
     )
     db.commit()
     add_audit_log(current_user.username, "create_feature_rule", rule_id,
-                  f"创建特征码规则: {name} ({rule_type}: {pattern})", get_client_ip())
+                  f"创建特征码规则: {name} ({rule_type}: {pattern}{' + 后缀 ' + ext_pattern if ext_pattern else ''})", get_client_ip())
     return jsonify({"message": "规则创建成功", "id": rule_id})
 
 @app.route("/api/admin/feature-rules/<rule_id>", methods=["PUT"])
@@ -2237,9 +2274,14 @@ def api_update_feature_rule(rule_id):
     enabled = 1 if data.get("enabled", bool(rule["enabled"])) else 0
     if rule_type not in ("extension", "filename", "binary"):
         return jsonify({"error": "规则类型只能为 extension/filename/binary"}), 400
+    # v2.4.0：仅 binary 类型允许 extPattern；未传时保持原值
+    if "extPattern" in data:
+        ext_pattern = (data.get("extPattern") or "").strip() if rule_type == "binary" else ""
+    else:
+        ext_pattern = rule["ext_pattern"] or ""
     db.execute(
-        "UPDATE feature_rules SET name=?, rule_type=?, pattern=?, enabled=? WHERE id=?",
-        (name, rule_type, pattern, enabled, rule_id)
+        "UPDATE feature_rules SET name=?, rule_type=?, pattern=?, enabled=?, ext_pattern=? WHERE id=?",
+        (name, rule_type, pattern, enabled, ext_pattern or None, rule_id)
     )
     db.commit()
     add_audit_log(current_user.username, "update_feature_rule", rule_id,
