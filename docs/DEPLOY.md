@@ -1,6 +1,6 @@
 # SecureTrans 部署指南
 
-> 版本：v2.3.3 | 日期：2026-09-11（ADR-017 测试/生产隔离 + ADR-018 CI/CD 分层 + ADR-019 CI 容器隔离与静态门禁）
+> 版本：v2.3.6 | 日期：2026-09-11（ADR-017 测试/生产隔离 + ADR-018 CI/CD 分层 + ADR-019 CI 容器隔离与静态门禁）
 > 唯一部署文档：测试环境（本地/WSL）? 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
 > 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
@@ -53,22 +53,6 @@
 
 
 
-### ADR-015：备份彻底分离 + 生产备份健壮性 + 可见性治理 + 审批人闭环（强制）
-- **背景（v2.2.31 用户验收 6+1 组问题）**：① verify.sh 生产业务备份 500（v2.2.29 基线，本地/WSL 全过但生产 NAS 环境失败——copytree 对已存在目标/符号链接/特殊文件名不健壮）；② 改密提示方位写"右上角"，实际按钮在左下角；③ 备份界面仍混合（"全部备份"按钮 + 列表含 all 类型 + "恢复系统"文案混淆）；④ 免审批开关已关仍显示"匹配特征码"；⑤ 合作方选中后接收方单位仍显示；⑥ 外网下载显示所有人文件（应仅本人且已走完审批）；⑦ 无审批人配置时提交 pending 永久卡死。
-| ADR-016 | 12-Factor 三环境一体化：env/ 分层配置（dev/test/prod 模板）、AD_MOCK_MODE 模拟目录、tests/mock 种子与 RTM（docs/07）、.env 启动自动加载、Gitea Actions CI（.gitea/workflows/ci.yml） |
-| ADR-017 | 测试/生产环境隔离（三合一）：test_api.py 单脚本 + 双入口（verify.sh=dev/test/CI 全量；infra/smoke.sh=生产 allowlist 只读冒烟）+ ENV_ROLE fail-safe（prod/冒烟下组 1~23 整组不执行，仅组 24 白名单 10 项只读），/api/health 暴露 envRole |
-| ADR-018 | CI/CD 分层与质量门禁：fast-check（秒级静态门禁：语法/版本双源一致性/env ENV_ROLE/脚本完整性）前置，tdd-verify（全量，needs fast-check fail-fast），package（仅 tag v* 自动构建发布包到共享 packages/，build once deploy many）；test_api.py 报告段加计数基线门禁（全量 ≥300 / 冒烟 ==10，防静默删减）；离线环境不用 actions/upload-artifact@v4（无 node/网络），制品走共享目录 + release.ps1 |
-| ADR-019 | CI 运行环境隔离与静态门禁：① act_runner 改 systemd 常驻（Restart=always，WSL rocky10-st 开机自启，解决偶发 shutdown）；② 静态检查前置 fast-check（infra/static_check.py，零依赖 AST：语法/未定义名称/重复定义/未使用 import）；③ 目标态 CI 容器化隔离（securetrans-ci:3.12 镜像 + infra/ci_test.sh，每次 job 全新容器+新配置+新数据，零宿主污染；待 Docker Desktop WSL Integration 启用后切换 act_runner docker:// 模式，消除公开仓库逃逸风险） |
-- **决策**：
-  1. **备份健壮化**：copytree 加 `dirs_exist_ok=True + symlinks=True + ignore 临时/锁文件(.nfs*/.DS_Store/*.tmp/*.lock)`，异常清理半成品并返回可读错误（不再裸 500）。
-  2. **备份界面彻底分离**：移除"全部备份"按钮与列表 all 混合过滤；系统区块只列 backup-system-*（创建/列表/恢复/删除），业务区块只列 backup-business-*（创建/列表/恢复/删除）；恢复按钮统一"恢复"；旧版混合备份 backup-all-* 不显示，给出提示建议删除。API 层保留 all 兼容（旧脚本），界面不暴露。
-  3. **特征码匹配受免审批总开关约束**：MD5 必选；匹配判定 = 免审批开关开启 且 对应特征码启用，否则 matched=false、matchedRules=[]（不显示"匹配特征码"）。
-  4. **合作方选中隐藏姓名/单位/邮箱**：仅"其他（自行填写）"显示三字段（提交后自动加入合作方清单，去重）。
-  5. **外网可见性治理**：外网列表/详情/下载三处均校验 submitter=当前用户——每个用户只能看自己提交且已批准（approved/downloaded）的文件，杜绝看/下载他人文件。
-  6. **审批人闭环**：init_db 幂等播种 admin 为一级+二级审批人（界面可见、逻辑闭环）；提交时按接收方类型校验审批人存在——公司内部/合作方必须有一级审批人，非合作方必须有一级+二级审批人，缺失则提交失败返回可读提示（不产生无法审批的死单）。
-  7. **改密提示方位**：左下角（实际按钮在侧栏底部）。
-- **已落点**：v2.2.31（Windows 291 / WSL 290 全过；生产业务备份 500 修复后需在服务器重跑 verify 复验）
-
 ### 1.1 网络模式（单网卡 / 双网卡，部署时二选一）
 
 | 模式 | 配置 | 识别方式 | 适用 |
@@ -108,7 +92,7 @@ powershell -ExecutionPolicy Bypass -File infra/deploy.ps1 -InstallDir C:\SecureT
 运行测试（另一个终端）：
 ```bash
 cd tests
-python test_api.py    # 201项全通过
+python test_api.py    # 318项全通过
 ```
 
 ### 2.3 方式 B：WSL Rocky Linux（模拟生产环境）
@@ -131,7 +115,7 @@ python app.py    # 部署模式: testing
 
 Windows 浏览器访问 http://localhost:8000（WSL2 自动端口转发）。运行测试：
 ```bash
-cd ~/securetrans/tests && python3 test_api.py   # 201项全通过
+cd ~/securetrans/tests && python3 test_api.py   # 318项全通过
 ```
 
 ### 2.4 测试验证清单
@@ -155,7 +139,7 @@ cd ~/securetrans/tests && python3 test_api.py   # 201项全通过
 RESET_DB=1 sudo bash infra/deploy.sh
 # 或运行期：系统工具页点"模拟数据"（确认码 MOCK），或离线脚本
 sudo bash infra/ops-mock.sh
-# 全量自动化验证（Windows dev 266项 / WSL 生产面 265项，凭据自动取 .env RESET_PASSWORD）
+# 全量自动化验证（Windows dev 318项 / WSL 生产面 318项，凭据自动取 .env RESET_PASSWORD）
 sudo bash infra/verify.sh
 ```
 
@@ -289,7 +273,7 @@ python3 -m venv venv
 
 ### 阶段2：测试环境部署 + 自动化测试（DEPLOY_MODE=testing）
 
-> 目的：先用最简模式（本地文件系统 + Flask 自带服务器）确认程序在服务器上能跑、201项全过。
+> 目的：先用最简模式（本地文件系统 + Flask 自带服务器）确认程序在服务器上能跑、318项全过。
 
 ```bash
 cd /opt/securetrans/src
@@ -303,12 +287,12 @@ curl -s http://127.0.0.1:8000/api/health
 
 cd /opt/securetrans/tests
 python3 test_api.py
-# 预期: 总计187 | 通过187 | 通过率100.0%
+# 预期: 总计318 | 通过318 | 通过率100.0%
 ```
 
 **通过标准**
 - [ ] 健康检查返回 `deployMode":"testing"`
-- [ ] 201项测试 100% 通过
+- [ ] 318项测试 100% 通过
 - [ ] 浏览器访问 `http://<内网IP>:8000`，admin 登录（密码 = .env `RESET_PASSWORD`，默认 Init@123456；登录后建议尽快修改，不强制）
 
 ### 阶段3：生产环境部署 + 自动化测试（DEPLOY_MODE=production）
@@ -351,12 +335,12 @@ systemctl is-active securetrans       # 预期 active
 cd /opt/securetrans/tests
 python3 test_api.py    # 自动读取 /opt/securetrans/.env 的 NAS_ROOT，无需手工传参；
                         # 若 .env 缺失（直接跑 app.py 未部署），才需手工指定：NAS_ROOT=... python3 test_api.py
-# 预期: 总计187 | 通过187 | 通过率100.0%
+# 预期: 总计318 | 通过318 | 通过率100.0%
 ```
 
 **通过标准**
 - [ ] systemd 服务 active，`deployMode":"production"`
-- [ ] 201项测试 100% 通过（生产模式）
+- [ ] 318项测试 100% 通过（生产模式）
 - [ ] 确认 gunicorn 多 worker 无并发初始化报错
 - [ ] 首次访问初始化正常：`/opt/securetrans/data/securetrans.db`、`/opt/securetrans/nas/{staging,external,archive}` 自动创建
 
@@ -388,7 +372,7 @@ df -h /mnt/nas/securetrans/staging /mnt/nas/securetrans/external /mnt/nas/secure
 
 **通过标准**
 - [ ] NAS 三个目录同一文件系统
-- [ ] 生产模式在 NAS 上再跑 201项自动化测试 100%
+- [ ] 生产模式在 NAS 上再跑 318项自动化测试 100%
 - [ ] os.rename 0拷贝：上传→审批→摆渡 毫秒级
 
 > **说明：测试/内网试用阶段不需要 Nginx**——gunicorn 已是生产 WSGI 服务器，直接监听 8000 即可完整服务。
@@ -510,7 +494,7 @@ systemctl start securetrans
 **网络面隔离（无 Nginx 时仍生效）**：
 应用层 `get_network_zone()` 两级识别——① 优先读 Nginx 注入的 `X-Network-Zone` 头；② 未注入时按
 客户端 IP + `INTERNAL_CIDRS` 网段兜底（直连/无代理场景）。因此不启动 Nginx 时，外网 IP 访问管理接口
-仍返回 403，隔离能力不丢失（201项测试含网络面用例）。
+仍返回 403，隔离能力不丢失（318项测试含网络面用例）。
 
 **Alpha 测试访问路径**：数据中心内网与办公外网用户访问**同一网址** `http://10.10.30.8:8000`，
 应用层按源 IP 自动分面——内网网段（10.10.10.0/24、10.10.30.0/24）→ internal 全功能（提交/审批/管理）；
@@ -545,7 +529,7 @@ ss -tlnp | grep 8000        # 期望 0.0.0.0:8000 或 <内网IP>:8000（非仅 1
 # 办公外网如需经防火墙 DNAT/路由转发，须保留原始源 IP（不 SNAT），应用层才能正确分面
 
 # 5. 回归确认
-cd /opt/securetrans/tests && python3 test_api.py   # 201项全通过
+cd /opt/securetrans/tests && python3 test_api.py   # 318项全通过
 ```
 
 **何时再引入 Nginx**（Alpha 验证结束、正式发布前）：
@@ -586,7 +570,7 @@ Windows 服务化（开机自启）可用 NSSM：`nssm install SecureTrans` 指�
 | 1 | `python --version` ≥ 3.10（deploy.ps1 自动检测） | ? |
 | 2 | 一键部署成功，`C:\SecureTrans\.env` 生成 | ? |
 | 3 | 访问 http://localhost:8000，admin 登录（密码 = .env RESET_PASSWORD） | ? |
-| 4 | 运行全量测试：`cd tests; python test_api.py`（201项） | ? |
+| 4 | 运行全量测试：`cd tests; python test_api.py`（318项） | ? |
 | 5 | waitress 生产启动健康检查通过 | ? |
 | 6 | 单网卡隔离：内网段全功能，非内网段仅登录+下载（管理接口403） | ? |
 | 7 | NSSM/计划任务服务化（可选） | ? |
@@ -679,7 +663,7 @@ sudo systemctl restart securetrans
 
 ---
 
-## 五.5、12-Factor 三环境一体化（ADR-016）
+## 5.5、12-Factor 三环境一体化（ADR-016）
 
 ### 环境矩阵
 
@@ -716,13 +700,13 @@ sudo systemctl restart securetrans
 │   ├── test.env              # 测试环境（WSL + AD mock）
 │   └── prod.env.template     # 生产环境模板（真实 AD，NAS）
 ├── tests/
-│   ├── test_api.py           # 298项全量测试（WSL 生产面 297项）
+│   ├── test_api.py           # 318项全量测试（WSL 生产面 318项）
 │   └── mock/                 # 模拟数据与 AD 模拟目录（ADR-016：mock_ad.py 校验 / mock_expected.json 基线）
 ├── .gitea/workflows/ci.yml  # Gitea Actions CI（本地 runner，全量 TDD 回归）
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署 (Linux，RESET_DB=1 部署时出厂重置)
 │   ├── deploy.ps1            # 一键部署 (Windows)
-│   ├── verify.sh             # 部署验证（297项全量测试，凭据自动取 .env RESET_PASSWORD）
+│   ├── verify.sh             # 部署验证（318项全量测试，凭据自动取 .env RESET_PASSWORD）
 │   ├── ops-backup.sh / ops-restore.sh / ops-reset.sh / ops-mock.sh  # 数据生命周期离线脚本（ADR-011）
 │   ├── env-refresh.sh        # .env 配置刷新（备份+只增不覆盖，ADR-010/5.4）
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式
@@ -739,30 +723,6 @@ sudo systemctl restart securetrans
 
 ---
 
-*部署指南 v2.3.0 | 2026-09-10*
+---
 
-### ADR-019：CI 运行环境隔离与静态门禁（强制）
-
-- **背景**：CI 首跑发现 ① act_runner 偶发 shutdown（WSL 会话回收，导致 push 漏跑）；② act_runner 直接在宿主执行 job，公开仓库有逃逸到主机的风险；③ CI 与测试环境共用 /opt/securetrans，存在版本/数据干扰。
-- **决策**：
-  1. **runner 常驻**：act_runner 以 systemd 单元（`/etc/systemd/system/act_runner.service`）常驻，`Restart=always` + 开机自启（WSL 重启/崩溃自动拉起）。
-  2. **静态门禁前置**：新增 `infra/static_check.py`（零依赖 AST 检查：语法编译 / 未定义名称（作用域链）/ 重复函数类定义 / 未使用 import），挂入 ci.yml fast-check 第一步之后；已清理历史遗留未使用 import（app.py render_template、test_api.py time）。
-  3. **CI 容器化隔离（目标态）**：构建可复用镜像 `securetrans-ci:3.12`（python:3.12-slim + 离线 wheelhouse 同源依赖）；容器入口 `infra/ci_test.sh`（无 systemd 直接 gunicorn loopback；配置经环境变量注入不写 .env；数据目录 /data 随容器销毁）→ 每次 job 全新容器 + 新配置 + 新数据，避免版本干扰与宿主污染。切换前提：Docker Desktop 启用 WSL Integration（需重启 Docker Desktop，短暂中断 Gitea）→ act_runner label 改 `docker://securetrans-ci:3.12`。
-  4. **与 ADR-016/017/018 关系**：ADR-016 管三环境配置/数据分层；ADR-017 管测试/生产执行隔离；ADR-018 管流水线结构与计数门禁；ADR-019 管 runner 运行方式与 job 运行环境隔离。
-
-### ADR-018：CI/CD 分层与质量门禁（强制）
-- **背景**：原 CI 仅单 job 全量回归（push 触发），无秒级门禁、无测试计数防缩水、发布包靠本地手工 package.sh。
-- **决策**：
-  1. **分层流水线（最便宜门禁先失败）**：`fast-check`（语法 py_compile / 版本号双源一致性 / env 模板 ENV_ROLE / 关键脚本完整性，秒级，总是执行）→ `tdd-verify`（全量 TDD，needs fast-check 失败即停）→ `package`（仅 `tags: v*` 触发）。
-  2. **质量门禁（防静默删减）**：`test_api.py` 报告段断言计数基线——全量模式 ≥300 项、冒烟模式 ==10 项（白名单为显式维护集合，增减需同步门禁）。
-  3. **tag 驱动发布构建（build once, deploy many）**：push tag v* 自动 clone 该 tag → 复用 /opt/securetrans/packages 的 offline-deps → package.sh 构建 → 制品落到共享 packages/（离线环境无 node/网络，不使用 actions/upload-artifact@v4）；实际 Release 资产由 `infra/release.ps1` 手工上传同一制品（发布策略 ADR-014：调测期密集手工，关键点人工发布）。
-  4. **并行与 fail-fast**：tdd-verify needs fast-check（秒级门禁失败不浪费全量资源）；package needs 前两者。
-  5. **与 ADR-016/017 不重叠**：ADR-016 管三环境配置/数据分层，ADR-017 管测试/生产执行隔离，ADR-018 管流水线结构与门禁。
-
-### ADR-017：测试/生产环境隔离（三合一，强制）
-- **背景**：verify.sh 原为三环境同一全量脚本，生产跑全量必污染（建用户/上传/审批/备份/改配置/改密/清理归档）。
-- **决策**：
-  1. **代码合一**：`tests/test_api.py` 单脚本承载全量回归 + 冒烟白名单（组 24，10 项纯只读：health/登录/会话/查询/网络面模拟/i18n 资源/登出）。
-  2. **入口分离**：`infra/verify.sh`=dev/test/CI 全量（ENV_ROLE=test，本脚本读 .env 自动注入）；`infra/smoke.sh`=生产 allowlist 只读冒烟（SMOKE_MODE=1，仅组 24）。
-  3. **fail-safe 护栏（宁可误拒不可误写）**：ENV_ROLE=prod 或 SMOKE_MODE=1 时，组 1~23 整组代码不执行（含请求层拦截 POST/PUT/DELETE/PATCH 与上传），生产误跑全量零副作用；`/api/health` 返回 `envRole` 便于监控确认。
-  4. **与 ADR-016 不重叠**：ADR-016 管三环境配置/数据分层与 CI 骨架；ADR-017 管测试执行入口与生产零写护栏。
+*部署指南 v2.3.6 | 2026-09-11*

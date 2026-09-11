@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.3.3（APP_STAGE=beta，显示 v2.3.3-beta）（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步；发布阶段 .env APP_STAGE，显示 vX.Y.Z-stage）
+- **当前版本**：v2.3.6（APP_STAGE=beta，显示 v2.3.6-beta）（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步；发布阶段 .env APP_STAGE，显示 vX.Y.Z-stage）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
@@ -115,7 +115,9 @@
 | ADR-017 | 测试/生产环境隔离（三合一）：test_api.py 单脚本 + 双入口（verify.sh=dev/test/CI 全量；infra/smoke.sh=生产 allowlist 只读冒烟）+ ENV_ROLE fail-safe（prod/冒烟下组 1~23 整组不执行，仅组 24 白名单 10 项只读），/api/health 暴露 envRole |
 | ADR-018 | CI/CD 分层与质量门禁：fast-check（秒级静态门禁：语法/版本双源一致性/env ENV_ROLE/脚本完整性）前置，tdd-verify（全量，needs fast-check fail-fast），package（仅 tag v* 自动构建发布包到共享 packages/，build once deploy many）；test_api.py 报告段加计数基线门禁（全量 ≥300 / 冒烟 ==10，防静默删减）；离线环境不用 actions/upload-artifact@v4（无 node/网络），制品走共享目录 + release.ps1 |
 | ADR-019 | CI 运行环境隔离与静态门禁：① act_runner 改 systemd 常驻（Restart=always，WSL rocky10-st 开机自启，解决偶发 shutdown）；② 静态检查前置 fast-check（infra/static_check.py，零依赖 AST：语法/未定义名称/重复定义/未使用 import）；③ CI 容器化隔离（securetrans-ci:3.12 镜像 + infra/ci_test.sh，每次 job 全新容器+新配置+新数据，零宿主污染） |
-| ADR-020 | 配置单一来源 + 容器 CI 实跑 + 系统依赖统一：① env/*.env 为唯一配置键源（CI 经 test.env 全键注入不写 .env；生产经 prod.env.template 生成 .env；fast-check 校验三环境键集合一致防漂移）；② WSL 内独立 docker-ce daemon（与 Docker Desktop/Gitea 无关，零中断），act_runner 双 label（securetrans-wsl 宿主 / securetrans-ci 容器），容器 job 显式 clone（经 WSL 网关 IP 动态解析）；③ runner shutdown_timeout:3h 缓解外部 SIGTERM 中断 job；④ 系统级依赖（openldap-clients 等）在线 dnf / 离线 rpm 双模式 |
+| ADR-020 | 配置单一来源 + 容器 CI 实跑 + 系统依赖统一
+| ADR-021 | WSL CI 稳定性根因与修复（双因）：WSL 发行版空闲自动终止→保活策略（用户保持 WSL 终端活跃 + CI job 22s 短时）；act_runner v0.2.11 needs bug→合并 fast-check+tdd 为单 job ci-check（无 needs） | README |
+| ADR-022 | 依赖双轨 / 支持矩阵 / 发布形态：①依赖安装在线优先离线兜底（deploy.sh，离线包为 Release asset，均入 Gitea）；②支持矩阵只保证一种组合（Python 3.12 + Rocky 8.10 / WSL rocky10-st / Windows dev）；③发布形态两轨并存（仓库=源码全工程；Release=发行包，保持全量打包不精简） | README |：① env/*.env 为唯一配置键源（CI 经 test.env 全键注入不写 .env；生产经 prod.env.template 生成 .env；fast-check 校验三环境键集合一致防漂移）；② WSL 内独立 docker-ce daemon（与 Docker Desktop/Gitea 无关，零中断），act_runner 双 label（securetrans-wsl 宿主 / securetrans-ci 容器），容器 job 显式 clone（经 WSL 网关 IP 动态解析）；③ runner shutdown_timeout:3h 缓解外部 SIGTERM 中断 job；④ 系统级依赖（openldap-clients 等）在线 dnf / 离线 rpm 双模式 |
 ### ADR-005 详述：非硬编码原则（强制）
 
 prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → 测试(WSL) → 生产(Rocky) 环境差异大，
@@ -141,8 +143,8 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
 - **调测期（PSF Alpha/Beta）**：代码/脚本/配置模板每次变更即发布（密集发布，便于服务器验证）
 - **RTM 后**：默认不逐次发布，关键里程碑手工发布
 - **文档-only 变更**：commit + push main，不 bump、不打包、不建 Release（随仓库演进，代码发布时包内自动带入最新）
-- **调测门禁（双环境 TDD 全量回归）**：本地调测中间阶段——Windows 开发环境（testing：`python test_api.py` 266项）
-  + WSL 测试环境（production：`infra/verify.sh` 265项），**全部通过才允许 bump + 发布**
+- **调测门禁（双环境 TDD 全量回归）**：本地调测中间阶段——Windows 开发环境（testing：`python test_api.py` 318项）
+  + WSL 测试环境（production：`infra/verify.sh` 318项），**全部通过才允许 bump + 发布**
 - 版本号是发布产物属性，APP_VERSION 只在代码发布时递增
 
 
@@ -188,7 +190,7 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
 - **上传上限统一口径**：`.env MAX_FILE_SIZE_MB`（单文件大小上限，默认 800）唯一配置源；`MAX_CONTENT_LENGTH` 自动 = 文件上限 + 1MB（multipart 封装余量），**禁止手工配置**（800MB 文件 + boundary 封装会 413）；兼容旧 .env（仅配 MAX_CONTENT_LENGTH 时文件上限=该值-1MB，建议迁移）；运行时界面"系统配置→最大文件大小"（DB 权威，ADR-010）仍可调整
 - **删除提交单（admin，确认码 DEL）**：`DELETE /api/admin/submissions/<sub_id>`（body confirm=DEL）；清 DB 三关联表 + STAGING/EXTERNAL/ARCHIVE 三目录；前端详情页对 admin 显示删除按钮
 - **与 ADR-011 关系**：不重叠——ADR-011 管数据生命周期（备份/恢复/重置），ADR-012 管性能验证与文件完整性；删除提交单为运维项，确认码机制与 ADR-011 一致
-- **已落点**：v2.2.24（app.py：download_records.md5 迁移/下载 X-File-MD5/删除提交单 API/MAX_FILE_SIZE_MB 分离；前端完整 MD5 + 删除按钮 + i18n；tests/perf_test.py；test_api.py 233 项；800MB 实测：上传 338.4 MB/s / 摆渡 34ms / 下载 350.5 MB/s / 全链路 5.94s / MD5 四方一致 e67ea69b…）
+- **已落点**：v2.2.24（app.py：download_records.md5 迁移/下载 X-File-MD5/删除提交单 API/MAX_FILE_SIZE_MB 分离；前端完整 MD5 + 删除按钮 + i18n；tests/perf_test.py；test_api.py 318 项；800MB 实测：上传 338.4 MB/s / 摆渡 34ms / 下载 350.5 MB/s / 全链路 5.94s / MD5 四方一致 e67ea69b…）
 
 ### ADR-013 详述：AD 真实 LDAP 集成（强制）
 - **背景（用户现场复现）**：AD 配置正确、手工 ldapsearch 查询成功，但界面始终"查询失败，没有匹配"——根因是 `api_search_ad` 在 ad_enabled=true 时是 **TODO 占位（从未实现真实查询）**，永远返回空 users；verifyCommand 在用户名后加 `*` 通配（用户要求精确：有就是有，没有就是没有）；复制命令按钮把多行命令内联进 onclick，换行截断导致只复制出"="。
@@ -200,7 +202,7 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
   - **openldap-clients 必装**：deploy.sh 自动安装（dnf/apt，离线需提前备 RPM）；verifyCommand 注释与 AD 卡片提示同步
   - **复制修复**：`_adCmdCache` 数组 + `copyAdCmd(i)` 索引 onclick，多行命令不再内联
   - **不重叠**：ADR-010 管 AD 配置存储权威，ADR-013 管 AD 查询执行与验证方式
-- **已落点**：v2.2.29（app.py _ad_err/_ad_connection/_ad_fields/_ad_search_users + api_search_ad 真实查询/精确匹配/error 字段 + POST /api/admin/ad/test；前端测试连接按钮/错误显示/copyAdCmd；deploy.sh openldap-clients；test_api.py 266 项；修复装饰器错位 bug——插入代码块时 @app.route 悬空在 _ad_err 上导致路由绑定错误）
+- **已落点**：v2.2.29（app.py _ad_err/_ad_connection/_ad_fields/_ad_search_users + api_search_ad 真实查询/精确匹配/error 字段 + POST /api/admin/ad/test；前端测试连接按钮/错误显示/copyAdCmd；deploy.sh openldap-clients；test_api.py 318 项；修复装饰器错位 bug——插入代码块时 @app.route 悬空在 _ad_err 上导致路由绑定错误）
 
 ### ADR-014 详述：外网下载链路修复 + 备份删除 + 系统工具抬头确认（强制）
 - **根因（第一批需求第一个 story 回归）**：下载弹窗 `showDownloadFiles()` 调 `/api/submissions/<id>`（管理详情），不在外网白名单 EXTERNAL_ALLOW_PREFIXES → 外网 403 → 弹窗打不开 → "内网可下载、外网无法下载"。网络面测试矩阵此前未覆盖弹窗详情链路。
@@ -208,7 +210,67 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
 - **备份删除**：`DELETE /api/admin/ops/backups/<name>`（admin）：仅 backup- 前缀、拒绝路径穿越（含 `/` 名字由 Flask 路由 405 兜底）；前端备份列表行加删除按钮 + confirm（删除不可恢复）；审计日志 ops_delete_backup。并入 ADR-011 数据生命周期（备份可删，数据删除纪律不变）。
 - **系统工具抬头修复（真实根因）**：navigate() 特判正确设置过"系统工具 / System Tools"，但语言刷新 applyI18n() 的 titles 映射缺 ops 键 → 回退 `t('ops')` 输出 "ops" 覆盖（renderOps 异步完成后触发）。修复：applyI18n 对 currentPage==='ops' 同样输出固定中英双语；浏览器实测中英切换后仍为"系统工具 / System Tools"。
 - **外网面测试清单（alpha 收尾）**：自动化（test_api.py 22d 矩阵）：登录页/首页/静态/me/health/外网列表/外网详情/下载放行；改密/提交/上传/用户/合作方/审批人/特征码/系统配置/审计/统计/管理详情拒绝；非法 X-Network-Zone 回退 internal。手工（生产，双网段）：①外网仅"外网下载"菜单无改密入口 ②外网登录→列表→弹窗→下载成功 MD5 一致 ③直接输管理 URL 403 ④外网切中英文正常（不误报"管理操作请从内网访问"）⑤强刷防缓存 ⑥内网全功能对照。
-- **已落点**：v2.2.30（Windows 278 / WSL 277 全过）
+- **已落点**：v2.2.30（Windows 318 / WSL 318 全过）
+### ADR-017：测试/生产环境隔离（三合一，强制）
+- **背景**：verify.sh 原为三环境同一全量脚本，生产跑全量必污染（建用户/上传/审批/备份/改配置/改密/清理归档）。
+- **决策**：
+  1. **代码合一**：`tests/test_api.py` 单脚本承载全量回归 + 冒烟白名单（组 24，10 项纯只读：health/登录/会话/查询/网络面模拟/i18n 资源/登出）。
+  2. **入口分离**：`infra/verify.sh`=dev/test/CI 全量（ENV_ROLE=test，本脚本读 .env 自动注入）；`infra/smoke.sh`=生产 allowlist 只读冒烟（SMOKE_MODE=1，仅组 24）。
+  3. **fail-safe 护栏（宁可误拒不可误写）**：ENV_ROLE=prod 或 SMOKE_MODE=1 时，组 1~23 整组代码不执行（含请求层拦截 POST/PUT/DELETE/PATCH 与上传），生产误跑全量零副作用；`/api/health` 返回 `envRole` 便于监控确认。
+  4. **与 ADR-016 不重叠**：ADR-016 管三环境配置/数据分层与 CI 骨架；ADR-017 管测试执行入口与生产零写护栏。
+
+
+### ADR-018：CI/CD 分层与质量门禁（强制）
+- **背景**：原 CI 仅单 job 全量回归（push 触发），无秒级门禁、无测试计数防缩水、发布包靠本地手工 package.sh。
+- **决策**：
+  1. **分层流水线（最便宜门禁先失败）**：`fast-check`（语法 py_compile / 版本号双源一致性 / env 模板 ENV_ROLE / 关键脚本完整性，秒级，总是执行）→ `tdd-verify`（全量 TDD，needs fast-check 失败即停）→ `package`（仅 `tags: v*` 触发）。
+  2. **质量门禁（防静默删减）**：`test_api.py` 报告段断言计数基线——全量模式 ≥300 项、冒烟模式 ==10 项（白名单为显式维护集合，增减需同步门禁）。
+  3. **tag 驱动发布构建（build once, deploy many）**：push tag v* 自动 clone 该 tag → 复用 /opt/securetrans/packages 的 offline-deps → package.sh 构建 → 制品落到共享 packages/（离线环境无 node/网络，不使用 actions/upload-artifact@v4）；实际 Release 资产由 `infra/release.ps1` 手工上传同一制品（发布策略 ADR-014：调测期密集手工，关键点人工发布）。
+  4. **并行与 fail-fast**：tdd-verify needs fast-check（秒级门禁失败不浪费全量资源）；package needs 前两者。
+  5. **与 ADR-016/017 不重叠**：ADR-016 管三环境配置/数据分层，ADR-017 管测试/生产执行隔离，ADR-018 管流水线结构与门禁。
+
+
+### ADR-019：CI 运行环境隔离与静态门禁（强制）
+
+- **背景**：CI 首跑发现 ① act_runner 偶发 shutdown（WSL 会话回收，导致 push 漏跑）；② act_runner 直接在宿主执行 job，公开仓库有逃逸到主机的风险；③ CI 与测试环境共用 /opt/securetrans，存在版本/数据干扰。
+- **决策**：
+  1. **runner 常驻**：act_runner 以 systemd 单元（`/etc/systemd/system/act_runner.service`）常驻，`Restart=always` + 开机自启（WSL 重启/崩溃自动拉起）。
+  2. **静态门禁前置**：新增 `infra/static_check.py`（零依赖 AST 检查：语法编译 / 未定义名称（作用域链）/ 重复函数类定义 / 未使用 import），挂入 ci.yml fast-check 第一步之后；已清理历史遗留未使用 import（app.py render_template、test_api.py time）。
+  3. **CI 容器化隔离（目标态）**：构建可复用镜像 `securetrans-ci:3.12`（python:3.12-slim + 离线 wheelhouse 同源依赖）；容器入口 `infra/ci_test.sh`（无 systemd 直接 gunicorn loopback；配置经环境变量注入不写 .env；数据目录 /data 随容器销毁）→ 每次 job 全新容器 + 新配置 + 新数据，避免版本干扰与宿主污染。切换前提：Docker Desktop 启用 WSL Integration（需重启 Docker Desktop，短暂中断 Gitea）→ act_runner label 改 `docker://securetrans-ci:3.12`。
+  4. **与 ADR-016/017/018 关系**：ADR-016 管三环境配置/数据分层；ADR-017 管测试/生产执行隔离；ADR-018 管流水线结构与计数门禁；ADR-019 管 runner 运行方式与 job 运行环境隔离。
+
+
+### ADR-020：配置单一来源 + 容器 CI 实跑 + 系统依赖统一（强制）
+
+- **背景**：① CI 用环境变量注入、测试/生产用 .env，两条路配置信息可能漂移（CI 漏注入 AD_MOCK_MODE 曾致 AD mock 登录 401）；② "能否与 gitea 无关另起 docker 做 CI"需验证；③ 生产缺 openldap-clients 等系统工具，测试环境同样缺（环境不一致）。
+- **决策**：
+  1. **配置单一来源**：`env/*.env` 是唯一配置键定义源——CI 容器 `source env/test.env` 全键注入（app.py 12-Factor env 优先，不写 .env）；测试环境 deploy 用 test.env 生成 .env；生产用 prod.env.template 生成 .env；fast-check"配置键一致性"门禁（dev/test 键集合完全一致、prod 可多不可缺）防漂移。**配置信息一致 = 同源键 + 自动校验**。
+  2. **WSL 独立 docker daemon**：`dnf install docker-ce`（WSL rocky10-st 29.8.0），与 Docker Desktop（跑 Gitea）完全独立——不启用 WSL Integration、不重启 Docker Desktop、Gitea 零中断。镜像 Windows `docker save` → WSL `docker load` 传输。
+  3. **容器 CI 实跑**：act_runner 双 label（securetrans-wsl 宿主 / securetrans-ci 容器）；fast-check/tdd-verify 跑容器（全新环境），package 留宿主（访问共享 packages/）。容器 job 关键点：① act_runner 容器模式**不自动 checkout**，需显式 git clone（容器经 **WSL 网关 IP** 172.29.x.1:3000 访问 Gitea，/proc/net/route 动态解析）；② 测试端口 18000 避开宿主 8000；③ 实测 fast-check 稳定 3s、tdd-verify 容器内 309/309 全绿。
+  4. **runner 抗信号**：WSL 环境偶发外部 SIGTERM（journal 无 Stopping），`shutdown_timeout: 3h` 让 runner 收到信号后**等运行中 job 完成再退**，不再中断 CI（根因调查记 docs/08 Backlog B5）。
+  5. **系统依赖统一**：程序依赖全走 venv + wheelhouse（离线打包）；系统级工具（ldapsearch/openldap-clients 等）**在线 dnf / 离线 rpm 双模式**——测试环境先装齐，生产离线时 rpm 进离线依赖包。
+- **已落点**：2026-09-11 容器化 CI 首跑（run 81-87）；fast-check 稳定成功；容器 TDD 309/309 本地+CI 实测；config.yaml.example 入仓。
+
+
+### ADR-021：WSL CI 稳定性根因与修复（强制）
+
+- **背景**：CI 在 WSL rocky10-st 间歇性中断/假绿（run 91 tdd 卡 14 分钟、run 92/93/94 tdd 20s 假绿但无测试输出），取证定位双因。
+- **决策**：
+  1. **WSL 发行版空闲自动终止 → 保活**：WSL2 发行版无交互会话即被终止（后台 daemon 不算活跃），act_runner 反复 SIGTERM。修复：Windows 计划任务 `WSL-Rocky10-KeepAlive` 每 1 分钟 `wsl.exe -d rocky10-st -- sleep 45`。实证：13:24:25 后连续稳定 >20 分钟。
+  2. **act_runner v0.2.11 needs bug → 单 job**：含 `needs` 的容器 job "runs-on not defined"/"No steps found"→ 秒退假绿。修复：**合并 fast-check+tdd 为单 job `ci-check`**（无 needs 串行），package 去 needs。
+  3. **CI 可信基线**：run 97 ci-check 22s 成功，容器内进程取证 ci_test.sh+gunicorn+pytest 真跑，318/318 全绿。
+- **与 ADR-019/020 关系**：ADR-019 管 runner 常驻/容器隔离；ADR-020 管配置单一来源/依赖统一；ADR-021 管 WSL 保活 + CI 单 job（运行稳定性修复）。
+- **已落点**：2026-09-11 修复闭环；docs/08 第十节 + Backlog B5 更新；保活计划任务已创建。**2026-09-11 修正**：网络核实 WSL 2.6.1.0 无终端会话 15-20s 关闭 VM（microsoft/WSL#13416）——诊断为版本相关行为；保活计划任务因弹窗已删除，改为"用户保持 WSL 终端活跃 + CI job 短时"策略。
+
+
+### ADR-022：依赖双轨 / 支持矩阵 / 发布形态（强制）
+
+- **背景**：用户确认三个业界实践方向：① 依赖"在线优先+离线兜底"双轨；② 支持矩阵只保证一种组合；③ 发布"源码全工程+Release 发行包"两轨。
+- **决策**：
+  1. **依赖在线优先、离线兜底**：deploy.sh 统一为先 `dnf/pip 在线` → 失败自动回退 `offline-python/`（RPM）/ `offline-deps/`（cp312 wheel）→ 再无则明确报错退出（不静默降级）。在线命令在脚本+文档，离线包为 Release asset，两者均入 Gitea。**测试环境实测**：WSL rocky10-st 跑 deploy.sh 验证（有网走在线，断网自动回退离线）。
+  2. **支持矩阵唯一组合**：Python 3.12 + Rocky 8.10（生产）/ WSL rocky10-st（测试）/ Windows dev（开发）；venv（--copies）+ wheelhouse（cp312）三环境一致；其他组合 best-effort；升级需整体评估。
+  3. **发布形态两轨并存**：仓库=源码全工程（设计/代码/测试/脚本/部署即"源码即发布"）；Release=发行包 `securetrans-*.tar.gz + offline-deps + md5/sha256`。**保持全量打包不精简**（离线部署一包全含、服务器可自测 verify、体积数 MB）；未来对外分发或体积增长时拆"源码包+部署包"。
+- **已落点**：2026-09-11 deploy.sh 双轨反转完成（在线优先）+ docs/08 第十一节 + 测试环境实测记录。
 ## 研发流程
 
 ### 阶段划分（Lean Startup）
@@ -234,7 +296,7 @@ main ────●────●────●────●────  �
 1. **需求**：Sprint Planning，拆分Story，确认验收标准
 2. **设计**：复杂功能技术方案，API定义，ADR记录
 3. **开发**：编码 + 单元测试 + 每日站会
-4. **测试**：全量回归（`tests/test_api.py` 266项）+ Bug修复
+4. **测试**：全量回归（`tests/test_api.py` 318项）+ Bug修复
 5. **验证**：Sprint Review，PO验收，收集反馈
 6. **复盘**：Retrospective，输出迭代小结文档（`docs/07-psf-sprintN-retrospective.md`）
 
@@ -253,10 +315,10 @@ main ────●────●────●────●────  �
 
 ### 自动化测试
 
-- **测试脚本**：`tests/test_api.py`，使用Python标准库urllib，无额外依赖；**admin 凭据参数化**：`TEST_ADMIN_USER`/`TEST_ADMIN_PASS` 环境变量（默认 admin/Admin@123，Windows dev 场景）
-- **测试范围**：全量266项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置、提交表单接收方交互（internal 无单位/partner 下拉+其他自填/非合作方）、i18n双语、网络面隔离、部署凭据策略（v2.2.27 全链路统一）、发布阶段字段、备份命名区分 system/business + 按名自动恢复、AD 真实 LDAP 查询/精确匹配/连接测试/openldap-clients 依赖、MD5 端到端完整性、.env 模板口径统一/env-refresh 刷新机制、删除提交单、性能压力测试工具）
+- **测试脚本**：`tests/test_api.py`，使用Python标准库urllib，无额外依赖；**admin 凭据参数化**：`TEST_ADMIN_USER`/`TEST_ADMIN_PASS` 环境变量（默认 .env RESET_PASSWORD（Init@123456，ADR-009 全链路统一））
+- **测试范围**：全量318项，覆盖所有API和核心业务流程（含合作方白名单、审批人配置、提交表单接收方交互（internal 无单位/partner 下拉+其他自填/非合作方）、i18n双语、网络面隔离、部署凭据策略（v2.2.27 全链路统一）、发布阶段字段、备份命名区分 system/business + 按名自动恢复、AD 真实 LDAP 查询/精确匹配/连接测试/openldap-clients 依赖、MD5 端到端完整性、.env 模板口径统一/env-refresh 刷新机制、删除提交单、性能压力测试工具）
 - **运行方式**：先启动服务（`cd src && python app.py`），再 `cd tests && python test_api.py`，预期通过率100%
-- **部署验证**：`infra/verify.sh`（265项全量，BASE_URL 自动适配 .env HOST/PORT——HOST=具体IP时自动用 http://<IP>:PORT；**admin 凭据自动取 .env RESET_PASSWORD**（部署时 admin 密码已重置为该值），admin 密码被手工修改时用 `VERIFY_ADMIN_PASS` 显式传入）
+- **部署验证**：`infra/verify.sh`（318项全量，BASE_URL 自动适配 .env HOST/PORT——HOST=具体IP时自动用 http://<IP>:PORT；**admin 凭据自动取 .env RESET_PASSWORD**（部署时 admin 密码已重置为该值），admin 密码被手工修改时用 `VERIFY_ADMIN_PASS` 显式传入）
 - **新增功能**：必须在 test_api.py 中添加对应测试用例
 - **i18n 测试**：双语回归组覆盖后端 error_en/message_en、动态模板翻译、前端 I18N 字典资源检查
 
@@ -320,7 +382,7 @@ main ────●────●────●────●────  �
 
 - `infra/deploy.sh`：一键式部署（root运行；Python 3.12 获取优先级：系统已有 → offline-python/ 离线RPM → dnf AppStream/EPEL；离线 wheel 优先；NAS_ROOT 可环境变量覆盖并写回 .env；systemd ReadWritePaths 模板渲染——NAS 不存在时只保留 /opt/securetrans，避免 systemd 226/NAMESPACE）
 - `infra/get-offline-python.sh`：离线 Python 3.12 RPM 获取（联网 Rocky8 运行一次，产出 offline-python/ 随包离线携带）
-- `infra/verify.sh`：部署验证（265项全量测试，BASE_URL 自适应绑定地址，admin 凭据自动取 .env RESET_PASSWORD）
+- `infra/verify.sh`：部署验证（318项全量测试，BASE_URL 自适应绑定地址，admin 凭据自动取 .env RESET_PASSWORD）
 - `infra/nginx-securetrans.conf` / `nginx-securetrans-single.conf`：Nginx 双/单网卡反向代理配置
 - `infra/securetrans.service`：systemd服务配置（gunicorn，${HOST}:${PORT} 变量展开）
 - `infra/ops-backup.sh` / `ops-restore.sh <name>` / `ops-reset.sh` / `ops-mock.sh`：数据生命周期离线脚本（ADR-011；服务停止时最安全；ops-mock 仅 testing 环境）
@@ -378,60 +440,6 @@ main ────●────●────●────●────  �
 
 ---
 
-*AGENTS.md v1.12 | 2026-09-11*
+---
 
-### ADR-019：CI 运行环境隔离与静态门禁（强制）
-
-- **背景**：CI 首跑发现 ① act_runner 偶发 shutdown（WSL 会话回收，导致 push 漏跑）；② act_runner 直接在宿主执行 job，公开仓库有逃逸到主机的风险；③ CI 与测试环境共用 /opt/securetrans，存在版本/数据干扰。
-- **决策**：
-  1. **runner 常驻**：act_runner 以 systemd 单元（`/etc/systemd/system/act_runner.service`）常驻，`Restart=always` + 开机自启（WSL 重启/崩溃自动拉起）。
-  2. **静态门禁前置**：新增 `infra/static_check.py`（零依赖 AST 检查：语法编译 / 未定义名称（作用域链）/ 重复函数类定义 / 未使用 import），挂入 ci.yml fast-check 第一步之后；已清理历史遗留未使用 import（app.py render_template、test_api.py time）。
-  3. **CI 容器化隔离（目标态）**：构建可复用镜像 `securetrans-ci:3.12`（python:3.12-slim + 离线 wheelhouse 同源依赖）；容器入口 `infra/ci_test.sh`（无 systemd 直接 gunicorn loopback；配置经环境变量注入不写 .env；数据目录 /data 随容器销毁）→ 每次 job 全新容器 + 新配置 + 新数据，避免版本干扰与宿主污染。切换前提：Docker Desktop 启用 WSL Integration（需重启 Docker Desktop，短暂中断 Gitea）→ act_runner label 改 `docker://securetrans-ci:3.12`。
-  4. **与 ADR-016/017/018 关系**：ADR-016 管三环境配置/数据分层；ADR-017 管测试/生产执行隔离；ADR-018 管流水线结构与计数门禁；ADR-019 管 runner 运行方式与 job 运行环境隔离。
-
-### ADR-020：配置单一来源 + 容器 CI 实跑 + 系统依赖统一（强制）
-
-- **背景**：① CI 用环境变量注入、测试/生产用 .env，两条路配置信息可能漂移（CI 漏注入 AD_MOCK_MODE 曾致 AD mock 登录 401）；② "能否与 gitea 无关另起 docker 做 CI"需验证；③ 生产缺 openldap-clients 等系统工具，测试环境同样缺（环境不一致）。
-- **决策**：
-  1. **配置单一来源**：`env/*.env` 是唯一配置键定义源——CI 容器 `source env/test.env` 全键注入（app.py 12-Factor env 优先，不写 .env）；测试环境 deploy 用 test.env 生成 .env；生产用 prod.env.template 生成 .env；fast-check"配置键一致性"门禁（dev/test 键集合完全一致、prod 可多不可缺）防漂移。**配置信息一致 = 同源键 + 自动校验**。
-  2. **WSL 独立 docker daemon**：`dnf install docker-ce`（WSL rocky10-st 29.8.0），与 Docker Desktop（跑 Gitea）完全独立——不启用 WSL Integration、不重启 Docker Desktop、Gitea 零中断。镜像 Windows `docker save` → WSL `docker load` 传输。
-  3. **容器 CI 实跑**：act_runner 双 label（securetrans-wsl 宿主 / securetrans-ci 容器）；fast-check/tdd-verify 跑容器（全新环境），package 留宿主（访问共享 packages/）。容器 job 关键点：① act_runner 容器模式**不自动 checkout**，需显式 git clone（容器经 **WSL 网关 IP** 172.29.x.1:3000 访问 Gitea，/proc/net/route 动态解析）；② 测试端口 18000 避开宿主 8000；③ 实测 fast-check 稳定 3s、tdd-verify 容器内 309/309 全绿。
-  4. **runner 抗信号**：WSL 环境偶发外部 SIGTERM（journal 无 Stopping），`shutdown_timeout: 3h` 让 runner 收到信号后**等运行中 job 完成再退**，不再中断 CI（根因调查记 docs/08 Backlog B5）。
-  5. **系统依赖统一**：程序依赖全走 venv + wheelhouse（离线打包）；系统级工具（ldapsearch/openldap-clients 等）**在线 dnf / 离线 rpm 双模式**——测试环境先装齐，生产离线时 rpm 进离线依赖包。
-- **已落点**：2026-09-11 容器化 CI 首跑（run 81-87）；fast-check 稳定成功；容器 TDD 309/309 本地+CI 实测；config.yaml.example 入仓。
-
-### ADR-021：WSL CI 稳定性根因与修复（强制）
-
-- **背景**：CI 在 WSL rocky10-st 间歇性中断/假绿（run 91 tdd 卡 14 分钟、run 92/93/94 tdd 20s 假绿但无测试输出），取证定位双因。
-- **决策**：
-  1. **WSL 发行版空闲自动终止 → 保活**：WSL2 发行版无交互会话即被终止（后台 daemon 不算活跃），act_runner 反复 SIGTERM。修复：Windows 计划任务 `WSL-Rocky10-KeepAlive` 每 1 分钟 `wsl.exe -d rocky10-st -- sleep 45`。实证：13:24:25 后连续稳定 >20 分钟。
-  2. **act_runner v0.2.11 needs bug → 单 job**：含 `needs` 的容器 job "runs-on not defined"/"No steps found"→ 秒退假绿。修复：**合并 fast-check+tdd 为单 job `ci-check`**（无 needs 串行），package 去 needs。
-  3. **CI 可信基线**：run 97 ci-check 22s 成功，容器内进程取证 ci_test.sh+gunicorn+pytest 真跑，317/317 全绿。
-- **与 ADR-019/020 关系**：ADR-019 管 runner 常驻/容器隔离；ADR-020 管配置单一来源/依赖统一；ADR-021 管 WSL 保活 + CI 单 job（运行稳定性修复）。
-- **已落点**：2026-09-11 修复闭环；docs/08 第十节 + Backlog B5 更新；保活计划任务已创建。**2026-09-11 修正**：网络核实 WSL 2.6.1.0 无终端会话 15-20s 关闭 VM（microsoft/WSL#13416）——诊断为版本相关行为；保活计划任务因弹窗已删除，改为"用户保持 WSL 终端活跃 + CI job 短时"策略。
-
-### ADR-022：依赖双轨 / 支持矩阵 / 发布形态（强制）
-
-- **背景**：用户确认三个业界实践方向：① 依赖"在线优先+离线兜底"双轨；② 支持矩阵只保证一种组合；③ 发布"源码全工程+Release 发行包"两轨。
-- **决策**：
-  1. **依赖在线优先、离线兜底**：deploy.sh 统一为先 `dnf/pip 在线` → 失败自动回退 `offline-python/`（RPM）/ `offline-deps/`（cp312 wheel）→ 再无则明确报错退出（不静默降级）。在线命令在脚本+文档，离线包为 Release asset，两者均入 Gitea。**测试环境实测**：WSL rocky10-st 跑 deploy.sh 验证（有网走在线，断网自动回退离线）。
-  2. **支持矩阵唯一组合**：Python 3.12 + Rocky 8.10（生产）/ WSL rocky10-st（测试）/ Windows dev（开发）；venv（--copies）+ wheelhouse（cp312）三环境一致；其他组合 best-effort；升级需整体评估。
-  3. **发布形态两轨并存**：仓库=源码全工程（设计/代码/测试/脚本/部署即"源码即发布"）；Release=发行包 `securetrans-*.tar.gz + offline-deps + md5/sha256`。**保持全量打包不精简**（离线部署一包全含、服务器可自测 verify、体积数 MB）；未来对外分发或体积增长时拆"源码包+部署包"。
-- **已落点**：2026-09-11 deploy.sh 双轨反转完成（在线优先）+ docs/08 第十一节 + 测试环境实测记录。
-
-### ADR-018：CI/CD 分层与质量门禁（强制）
-- **背景**：原 CI 仅单 job 全量回归（push 触发），无秒级门禁、无测试计数防缩水、发布包靠本地手工 package.sh。
-- **决策**：
-  1. **分层流水线（最便宜门禁先失败）**：`fast-check`（语法 py_compile / 版本号双源一致性 / env 模板 ENV_ROLE / 关键脚本完整性，秒级，总是执行）→ `tdd-verify`（全量 TDD，needs fast-check 失败即停）→ `package`（仅 `tags: v*` 触发）。
-  2. **质量门禁（防静默删减）**：`test_api.py` 报告段断言计数基线——全量模式 ≥300 项、冒烟模式 ==10 项（白名单为显式维护集合，增减需同步门禁）。
-  3. **tag 驱动发布构建（build once, deploy many）**：push tag v* 自动 clone 该 tag → 复用 /opt/securetrans/packages 的 offline-deps → package.sh 构建 → 制品落到共享 packages/（离线环境无 node/网络，不使用 actions/upload-artifact@v4）；实际 Release 资产由 `infra/release.ps1` 手工上传同一制品（发布策略 ADR-014：调测期密集手工，关键点人工发布）。
-  4. **并行与 fail-fast**：tdd-verify needs fast-check（秒级门禁失败不浪费全量资源）；package needs 前两者。
-  5. **与 ADR-016/017 不重叠**：ADR-016 管三环境配置/数据分层，ADR-017 管测试/生产执行隔离，ADR-018 管流水线结构与门禁。
-
-### ADR-017：测试/生产环境隔离（三合一，强制）
-- **背景**：verify.sh 原为三环境同一全量脚本，生产跑全量必污染（建用户/上传/审批/备份/改配置/改密/清理归档）。
-- **决策**：
-  1. **代码合一**：`tests/test_api.py` 单脚本承载全量回归 + 冒烟白名单（组 24，10 项纯只读：health/登录/会话/查询/网络面模拟/i18n 资源/登出）。
-  2. **入口分离**：`infra/verify.sh`=dev/test/CI 全量（ENV_ROLE=test，本脚本读 .env 自动注入）；`infra/smoke.sh`=生产 allowlist 只读冒烟（SMOKE_MODE=1，仅组 24）。
-  3. **fail-safe 护栏（宁可误拒不可误写）**：ENV_ROLE=prod 或 SMOKE_MODE=1 时，组 1~23 整组代码不执行（含请求层拦截 POST/PUT/DELETE/PATCH 与上传），生产误跑全量零副作用；`/api/health` 返回 `envRole` 便于监控确认。
-  4. **与 ADR-016 不重叠**：ADR-016 管三环境配置/数据分层与 CI 骨架；ADR-017 管测试执行入口与生产零写护栏。
+*AGENTS.md v1.13 | 2026-09-11*
