@@ -1,4 +1,4 @@
-﻿# SecureTrans CI/CD + GitOps 架构方案
+# SecureTrans CI/CD + GitOps 架构方案
 
 > 版本：v1.0 | 日期：2026-08-27 | 阶段：PSF → PMF 过渡
 > 目标：从手动部署演进到持续交付，打通 Lean Startup → Agile → DevOps → GitOps
@@ -351,3 +351,36 @@ eeds 的容器 job 步骤解析异常（步骤丢失、空转成功），Gitea �
 - **WSL 保活为过渡方案**：CI 权威载体应为数据中心真实服务器（干净 systemd + 无 WSL 自动终止），B3 远期落地。
 - **act_runner 升级**：后续若升级 act_runner（>v0.2.11），可评估恢复多 job + needs 结构（先在新版本复测 needs 行为再改回）。
 - **CI 时间预算**：全量 317 项测试在容器内 ~20s（SQLite 毫秒级），CI 总时长 ~25s（静态门禁 + TDD），远小于 3h 超时。
+
+## 十一、依赖双轨 / 支持矩阵 / 发布形态（ADR-022，2026-09-11）
+
+> 状态：✅ 已决策并落地。背景：用户确认三个业界实践方向，并要求"在线优先、离线兜底"在测试环境实测。
+
+### 11.1 依赖与环境安装：在线优先，离线兜底（双轨制）
+- **决策**：infra/deploy.sh 统一为 **① 在线优先 → ② 失败自动回退离线**：
+  - **Python 3.12**：先 dnf install python3.12 python3.12-pip python3.12-devel（Rocky 8 AppStream 直供，无需源码编译；失败尝试 EPEL）→ 在线失败 → dnf localinstall offline-python/*.rpm（get-offline-python.sh 生成）→ 再无则明确报错退出（不再静默降级）。
+  - **Python 依赖**：先 pip install -r requirements.txt + gunicorn（在线）→ 失败 → pip install --no-index --find-links=offline-deps/（部署包内置 cp312 wheel）→ 再无则明确报错退出。
+- **两者均入 Gitea**：在线命令固化在 deploy.sh + DEPLOY.md；离线包（offline-python RPM + offline-deps whl）作为 **Release asset** 随版本发布。
+- **测试环境验证**：2026-09-11 在 WSL rocky10-st 测试环境实测（见 11.4 记录）。
+
+### 11.2 支持矩阵：只保证一种受支持组合
+- **决策**：声明支持矩阵并**只保证一种组合**——**Python 3.12** + **Rocky 8.10（生产）/ WSL rocky10-st（测试）/ Windows dev（开发）**；venv（--copies 与系统隔离）+ wheelhouse（cp312）三环境一致。
+- **其他组合**（Python 3.10/3.13/3.14 等）：best-effort，不承诺——deploy.sh 有版本匹配提示（非 3.12 + 有离线 3.12 RPM → 切换安装 3.12）。
+- **后续演进**：如有必要再升级支持组合（评估后统一升级，避免多态环境互相污染）。
+
+### 11.3 发布形态：源码全工程入库 + Release 发行包，两轨并存
+- **决策**：**保持现状（Release 资产 = 全量打包）**，不精简。理由：
+  1. **离线数据中心场景**：一个包全包含（src+infra+env+offline-deps+offline-python+tests+docs）→ 上传一个包即可部署，无需多传；
+  2. **服务器自测**：verify.sh 依赖 tests/，全量包让服务器可独立验证（不依赖开发机）；
+  3. **体积可忽略**：无 .git/venv/packages 的包仅数 MB；
+  4. **业界参照**：应用项目的 sdist / Docker 构建上下文均为全量；GitHub/Gitea 上 flask/django 类项目"仓库=源码、Release=发行包"。
+- **未来拆分触发条件**（暂不执行）：对外公开分发（开源用户不需要内部 docs）、或包体积显著增长——届时拆"源码包（sdist 全量）+ 部署包（仅 src/infra/env/offline-deps/offline-python/DEPLOY.md）"。
+- **版本可追溯**：release 的 tag 即版本快照（ADR-014：调测期密集手工发布，关键点人工）。
+
+### 11.4 测试环境验证记录（WSL rocky10-st，2026-09-11）
+- 执行：git pull --ff-only origin main && bash infra/deploy.sh（WSL 测试环境，有网）。
+- **实测结果（在线分支命中）**：
+  - Python 3.12 已存在 → 跳过安装；venv 已存在 → 跳过创建（venv Python 3.12 匹配 cp312 OK）；
+  - **依赖安装输出 [在线] 联网安装依赖（需网络）... 依赖安装完成（含 gunicorn） OK** —— 走**在线优先**分支，未触发离线回退 ✓；
+  - 部署收尾全 OK：存储目录同文件系统（os.rename 0 拷贝可用）/ systemd 服务自启 / 健康检查通过（deployMode=production, envRole=test, stage=beta, version=v2.3.3）/ admin 密码重置 Init@123456。
+- **离线兜底验证方式**（隔离数据中心执行时）：deploy.sh 在线 dnf/pip 失败（无网/镜像不通）→ 自动打印 [在线失败] 回退离线 → dnf localinstall offline-python/*.rpm + pip --no-index --find-links=offline-deps/ → 再无则明确报错退出。该分支与在线分支同脚本、同条件切换，已随 11.1 逻辑落库。

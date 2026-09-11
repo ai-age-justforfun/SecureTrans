@@ -63,17 +63,24 @@ find_python() {
 PY_CMD="$(find_python || true)"
 
 if [ -z "$PY_CMD" ]; then
-    echo -e "${YELLOW}  系统无 Python 3.10+，尝试获取 Python 3.12...${NC}"
-    if ls "$OFFLINE_PYTHON_DIR"/*.rpm &>/dev/null 2>&1; then
-        echo -e "${YELLOW}  [离线] 使用 offline-python/ 本地 RPM 安装 Python 3.12...${NC}"
-        dnf localinstall -y "$OFFLINE_PYTHON_DIR"/*.rpm
+    echo -e "${YELLOW}  系统无 Python 3.10+，尝试获取 Python 3.12（在线优先，离线兜底）...${NC}"
+    # ① 在线优先：dnf 直装（Rocky 8 AppStream 提供 python3.12 包套件，无需源码编译；镜像见下）
+    echo -e "${YELLOW}  [在线] dnf 安装 Python 3.12（需网络；如未放行镜像请先在防火墙临时放行 80/443）...${NC}"
+    echo -e "${YELLOW}        镜像参考: repo.huaweicloud.com / mirrors.aliyun.com / mirrors.rockylinux.org${NC}"
+    if dnf install -y python3.12 python3.12-pip python3.12-devel 2>/dev/null \
+        || { dnf install -y epel-release 2>/dev/null && dnf install -y python3.12 python3.12-pip python3.12-devel 2>/dev/null; }; then
+        echo -e "  [在线] Python 3.12 安装 ${GREEN}OK${NC}"
     else
-        echo -e "${YELLOW}  [在线] dnf 安装 Python 3.12（需网络；如未放行镜像请先在防火墙临时放行 80/443）...${NC}"
-        echo -e "${YELLOW}        镜像参考: repo.huaweicloud.com / mirrors.aliyun.com / mirrors.rockylinux.org${NC}"
-        # Rocky 8: AppStream 直接提供 python3.12 包套件（无需 module enable、无需源码编译）
-        # 若 AppStream 缺失（老版本/精简源），兜底启用 EPEL 8
-        dnf install -y python3.12 python3.12-pip python3.12-devel 2>/dev/null \
-            || { dnf install -y epel-release && dnf install -y python3.12 python3.12-pip python3.12-devel; }
+        # ② 离线兜底：部署包内置 offline-python/ RPM（get-offline-python.sh 生成）
+        echo -e "${YELLOW}  [在线失败] 回退离线 offline-python/ 本地 RPM...${NC}"
+        if ls "$OFFLINE_PYTHON_DIR"/*.rpm &>/dev/null 2>&1; then
+            dnf localinstall -y "$OFFLINE_PYTHON_DIR"/*.rpm || { echo -e "${RED}错误: 离线 RPM 安装失败${NC}"; exit 1; }
+            echo -e "  [离线] Python 3.12 安装 ${GREEN}OK${NC}"
+        else
+            echo -e "${RED}错误: 在线安装失败且部署包无离线 RPM（offline-python/）${NC}"
+            echo -e "${RED}      请联网放行镜像源，或补充离线 RPM 到部署包后重试${NC}"
+            exit 1
+        fi
     fi
     if command -v python3.12 &>/dev/null; then
         alternatives --set python3 /usr/bin/python3.12 2>/dev/null || true
@@ -226,15 +233,23 @@ else
 fi
 
 source venv/bin/activate
-if [ -d "$OFFLINE_DEPS_DIR" ]; then
-    echo -e "  [离线] 使用内置离线 wheel (offline-deps/) 安装..."
-    pip install --no-index --find-links="$OFFLINE_DEPS_DIR" -r requirements.txt -q
-    pip install --no-index --find-links="$OFFLINE_DEPS_DIR" gunicorn==21.2.0 -q
+# 依赖安装：① 在线优先（pip 联网，保证与源一致）→ ② 失败回退内置离线 wheel（offline-deps/）
+echo -e "  [在线优先] pip 联网安装依赖..."
+if pip install --upgrade pip -q 2>/dev/null \
+    && pip install -r requirements.txt -q 2>/dev/null \
+    && pip install gunicorn -q 2>/dev/null; then
+    echo -e "  [在线] 依赖安装 ${GREEN}OK${NC}"
 else
-    echo -e "  [在线] 联网安装依赖（需网络）..."
-    pip install --upgrade pip -q
-    pip install -r requirements.txt -q
-    pip install gunicorn -q
+    if [ -d "$OFFLINE_DEPS_DIR" ]; then
+        echo -e "${YELLOW}  [在线失败] 回退内置离线 wheel (offline-deps/)...${NC}"
+        pip install --no-index --find-links="$OFFLINE_DEPS_DIR" -r requirements.txt -q
+        pip install --no-index --find-links="$OFFLINE_DEPS_DIR" gunicorn==21.2.0 -q
+        echo -e "  [离线] 依赖安装 ${GREEN}OK${NC}"
+    else
+        echo -e "${RED}错误: 在线安装依赖失败且部署包无离线 wheel（offline-deps/）${NC}"
+        echo -e "${RED}      请联网，或补充离线依赖包到部署包后重试${NC}"
+        exit 1
+    fi
 fi
 deactivate
 echo -e "  依赖安装完成（含 gunicorn） ${GREEN}OK${NC}"

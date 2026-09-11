@@ -408,7 +408,16 @@ main ────●────●────●────●────  �
   2. **act_runner v0.2.11 needs bug → 单 job**：含 `needs` 的容器 job "runs-on not defined"/"No steps found"→ 秒退假绿。修复：**合并 fast-check+tdd 为单 job `ci-check`**（无 needs 串行），package 去 needs。
   3. **CI 可信基线**：run 97 ci-check 22s 成功，容器内进程取证 ci_test.sh+gunicorn+pytest 真跑，317/317 全绿。
 - **与 ADR-019/020 关系**：ADR-019 管 runner 常驻/容器隔离；ADR-020 管配置单一来源/依赖统一；ADR-021 管 WSL 保活 + CI 单 job（运行稳定性修复）。
-- **已落点**：2026-09-11 修复闭环；docs/08 第十节 + Backlog B5 更新；保活计划任务已创建。
+- **已落点**：2026-09-11 修复闭环；docs/08 第十节 + Backlog B5 更新；保活计划任务已创建。**2026-09-11 修正**：网络核实 WSL 2.6.1.0 无终端会话 15-20s 关闭 VM（microsoft/WSL#13416）——诊断为版本相关行为；保活计划任务因弹窗已删除，改为"用户保持 WSL 终端活跃 + CI job 短时"策略。
+
+### ADR-022：依赖双轨 / 支持矩阵 / 发布形态（强制）
+
+- **背景**：用户确认三个业界实践方向：① 依赖"在线优先+离线兜底"双轨；② 支持矩阵只保证一种组合；③ 发布"源码全工程+Release 发行包"两轨。
+- **决策**：
+  1. **依赖在线优先、离线兜底**：deploy.sh 统一为先 `dnf/pip 在线` → 失败自动回退 `offline-python/`（RPM）/ `offline-deps/`（cp312 wheel）→ 再无则明确报错退出（不静默降级）。在线命令在脚本+文档，离线包为 Release asset，两者均入 Gitea。**测试环境实测**：WSL rocky10-st 跑 deploy.sh 验证（有网走在线，断网自动回退离线）。
+  2. **支持矩阵唯一组合**：Python 3.12 + Rocky 8.10（生产）/ WSL rocky10-st（测试）/ Windows dev（开发）；venv（--copies）+ wheelhouse（cp312）三环境一致；其他组合 best-effort；升级需整体评估。
+  3. **发布形态两轨并存**：仓库=源码全工程（设计/代码/测试/脚本/部署即"源码即发布"）；Release=发行包 `securetrans-*.tar.gz + offline-deps + md5/sha256`。**保持全量打包不精简**（离线部署一包全含、服务器可自测 verify、体积数 MB）；未来对外分发或体积增长时拆"源码包+部署包"。
+- **已落点**：2026-09-11 deploy.sh 双轨反转完成（在线优先）+ docs/08 第十一节 + 测试环境实测记录。
 
 ### ADR-018：CI/CD 分层与质量门禁（强制）
 - **背景**：原 CI 仅单 job 全量回归（push 触发），无秒级门禁、无测试计数防缩水、发布包靠本地手工 package.sh。
