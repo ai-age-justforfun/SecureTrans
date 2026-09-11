@@ -101,6 +101,10 @@ if [ -f "$INSTALL_DIR/.env" ]; then
     ENV_ROLE_VAL="${ENV_ROLE_VAL:-prod}"
 fi
 echo "  环境角色: ${ENV_ROLE_VAL}（冒烟组只读，不创建业务数据）"
+if [ -z "${VERIFY_ADMIN_PASS:-}" ]; then
+    echo "  提示: 冒烟使用部署重置密码（.env RESET_PASSWORD=${TEST_ADMIN_PASS}）"
+    echo "        若 admin 密码已修改，请用: VERIFY_ADMIN_PASS='<当前密码>' bash infra/smoke.sh"
+fi
 
 BASE_URL="$BASE_URL" NAS_ROOT="$NAS_ROOT" SMOKE_MODE=1 \
   TEST_ADMIN_USER="$TEST_ADMIN_USER" TEST_ADMIN_PASS="$TEST_ADMIN_PASS" ENV_ROLE="$ENV_ROLE_VAL" \
