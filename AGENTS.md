@@ -291,7 +291,8 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
   2. **SSH**：CD 专用 ed25519 密钥；公钥入服务器 authorized_keys，私钥入 repo secret CD_SSH_KEY（不入仓库）。
   3. **生产安全**：不重置 admin 密码、不重建 venv、不覆盖生产数据；生产只跑只读冒烟，全量 TDD 只在测试环境；部署前整体备份（保留 5 份）。
   4. **版本策略**：CD 基础设施变更不 bump 应用版本；应用代码变更才 bump + 发布（ADR-014 不变）。
-- **已落点**：2026-09-11 v2.3.7 链路打通；首轮 CD 试部署验证。
+- **排障要点（已固化）**：① 容器访问 Gitea 用 `CI_GW="${CI_GATEWAY:-172.17.0.1}"`（docker0，任务网络网关随机不可达）；② Release 资产 `browser_download_url` 为 localhost，下载前 sed 替换 host；③ github.token 经 curl 注入异常（exit 7）→ token 优先+匿名回退；④ CD job 先 git clone 仓库（容器默认无仓库文件）。
+- **已落点**：2026-09-11 v2.3.7 全自动部署成功（run #136：MD5→scp→cd-deploy 6/6→冒烟 11/11→服务 active）。
 
 
 ## 研发流程

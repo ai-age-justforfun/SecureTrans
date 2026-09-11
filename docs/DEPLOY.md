@@ -671,6 +671,8 @@ Release 发布后自动部署到生产服务器（或手动 workflow_dispatch �
 2. **触发**：Gitea Release 发布（release: published）→ 自动执行 CD；或 Gitea Actions 页手动 Run workflow（输入版本号，如 v2.3.7）。
 3. **过程**：CD job 下载发布资产 + MD5 校验 → scp 到 /opt/securetrans-release/ → 服务器执行 infra/cd-deploy.sh（备份→代码更新→重启→健康检查→只读冒烟）。
 4. **注意**：CD 为轻量升级——不重置 admin 密码、不重建 venv、不覆盖 .env/data/nas；依赖或结构变更需手工执行完整 deploy.sh（全量安装）。
+5. **已验证**：2026-09-11 v2.3.7 全自动部署成功（MD5 校验 → scp 35MB → cd-deploy 6/6 → 只读冒烟 11/11 → 服务 active + HEALTH-OK）。
+6. **运维要点（已固化到 cd.yml）**：容器访问 Gitea 统一走 `CI_GW="${CI_GATEWAY:-172.17.0.1}"`（docker0，任务网络网关随机不可达）；Release 资产 `browser_download_url` 为 localhost（容器内指向自身）须 sed 替换 host；`github.token` 经 curl 注入异常时回退匿名（public 仓库可读）；CD job 先 git clone 仓库获取 infra/cd-deploy.sh。
 
 ## 5.5、12-Factor 三环境一体化（ADR-016）
 

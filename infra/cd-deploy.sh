@@ -35,7 +35,7 @@ fi
 
 # 2. 版本一致性校验（包内版本 == 部署版本）
 PKG_VER=$(grep -m1 '^APP_VERSION = "v' "${SRC_DIR}/src/app.py" | sed -E 's/.*"v([^"]+)".*/\1/')
-echo "[2/6] 版本校验: 包内 v${PKG_VER} == 部署 v${VER}"
+echo "[2/6] 版本校验: 包内 v${PKG_VER} == 部署 ${VER}"
 [ "${PKG_VER}" = "${VNO}" ] || { echo "[错误] 版本不一致，中止"; exit 1; }
 
 # 3. 备份当前部署（.env + data + nas 结构整体快照，防止误操作）
@@ -106,5 +106,5 @@ else
 fi
 
 echo "============================================================"
-echo "  CD-DEPLOY-COMPLETE v${VER} | 备份: ${BACKUP_DIR}"
+echo "  CD-DEPLOY-COMPLETE ${VER} | 备份: ${BACKUP_DIR}"
 echo "============================================================"

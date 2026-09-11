@@ -471,7 +471,12 @@ main ────●────●────●────●────  �
   2. **SSH 认证**：CD 专用 ed25519 密钥（WSL 生成，公钥入服务器 authorized_keys，私钥经 Gitea repo secret `CD_SSH_KEY` 注入容器，不入仓库）。
   3. **生产安全**：CD 部署不重置 admin 密码、不重建 venv、不覆盖生产数据（与 deploy.sh 全量安装互补，全量安装仅依赖/结构变更时手工执行）；生产只跑只读冒烟 smoke.sh，全量 TDD 只在测试环境（防数据污染）；部署前整体备份（保留最近 5 份）。
   4. **版本策略**：CD 基础设施变更（Dockerfile/cd 脚本/workflow）不 bump 应用版本；应用代码变更才 bump 并发布 Release（ADR-014 调测期密集手工发布不变）。
-- **已落点**：2026-09-11 v2.3.7 链路打通（密钥+secret+镜像+cd.yml+cd-deploy.sh）；首轮 CD 试部署 v2.3.7 验证。
+- **排障要点（已固化为脚本逻辑）**：
+  1. **容器访问 Gitea 网关**：act_runner 每任务创建独立 bridge 网络，默认网关 IP 随机且不可达；CI/CD 统一 `CI_GW="${CI_GATEWAY:-172.17.0.1}"`（docker0，实测任意自定义网络容器内稳定可达），保留环境变量覆盖。
+  2. **Release 资产 URL**：Gitea API 返回的 `browser_download_url` 为 `http://localhost:3000/...`，容器内 localhost 指向容器自身；下载前 sed 替换 host 为 `${GITEA}`。
+  3. **认证回退**：`${{ github.token }}` 经 curl `-H` 注入曾出现 exit 7（值异常）；现为 token 优先 + 失败回退匿名（仓库 public 可读；转 private 后须保证 token 可用）。
+  4. **CD job 需先 clone 仓库**：act_runner 容器工作目录默认无仓库文件，`< infra/cd-deploy.sh` 会 No such file；与 ci.yml 一致先 `git clone`（经 CI_GITEA_URL 网关匿名克隆）。
+- **已落点**：2026-09-11 v2.3.7 链路打通并全自动部署成功（run #136 success：MD5 校验通过 → scp 35MB → cd-deploy.sh 6/6 → 只读冒烟 11/11 PASS → 服务 active + HEALTH-OK）；备份 /opt/securetrans_backup_20260911_174451。
 
 
 
