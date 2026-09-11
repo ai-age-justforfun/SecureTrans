@@ -30,11 +30,16 @@ jobs:
   fast-check:
     runs-on: securetrans-ci
     steps:
-      - name: Python 静态检查（语法/未定义名称/重复定义/未使用 import）
+      - name: Clone 代码（host 网络显式 checkout）+ Python 静态检查
         run: |
           set -euo pipefail
-          cd "${GITHUB_WORKSPACE:-/workspace}"
-          [ -f src/app.py ] || { echo "工作区异常: $(pwd)"; ls -la; exit 1; }
+          WS="${GITHUB_WORKSPACE:-/workspace}"
+          cd "$WS"
+          if [ ! -f src/app.py ]; then
+            rm -rf "$WS" && mkdir -p "$WS"
+            git clone --depth 1 http://localhost:3000/openwrtadmin/SecureTrans.git "$WS"
+            cd "$WS"
+          fi
           python -m py_compile src/app.py tests/test_api.py infra/static_check.py
           python infra/static_check.py src/app.py tests/test_api.py
           echo "静态检查: PASS"

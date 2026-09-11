@@ -1,0 +1,14 @@
+log:
+  level: info
+runner:
+  file: /opt/securetrans/.runner
+  capacity: 1
+  timeout: 3h
+  insecure: true
+container:
+  # host 网络：容器共享 WSL 网络栈，可访问 Gitea(localhost:3000 经 WSL→Windows 转发)
+  # 与 Docker Desktop/Gitea 容器完全独立（WSL 内独立 docker daemon）
+  options: "--network host"
+  privileged: false
+host:
+  workdir_parent: /opt/securetrans/workspace
