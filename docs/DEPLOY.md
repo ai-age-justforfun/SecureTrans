@@ -1,6 +1,6 @@
 # SecureTrans 部署指南
 
-> 版本：v2.3.6 | 日期：2026-09-11（ADR-017 测试/生产隔离 + ADR-018 CI/CD 分层 + ADR-019 CI 容器隔离与静态门禁）
+> 版本：v2.3.7 | 日期：2026-09-11（+ADR-023 文件名安全清理/AD 改密前端拦截）（ADR-017 测试/生产隔离 + ADR-018 CI/CD 分层 + ADR-019 CI 容器隔离与静态门禁）
 > 唯一部署文档：测试环境（本地/WSL）? 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
 > 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
@@ -725,4 +725,4 @@ sudo systemctl restart securetrans
 
 ---
 
-*部署指南 v2.3.6 | 2026-09-11*
+*部署指南 v2.3.7 | 2026-09-11*

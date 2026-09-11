@@ -8,7 +8,7 @@
 
 - **项目名**：SecureTrans — 轻量级跨网文件审批摆渡系统
 - **当前阶段**：PSF（问题-方案匹配验证）— Alpha 内测进行中
-- **当前版本**：v2.3.6（APP_STAGE=beta，显示 v2.3.6-beta）（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步；发布阶段 .env APP_STAGE，显示 vX.Y.Z-stage）
+- **当前版本**：v2.3.7（APP_STAGE=beta，显示 v2.3.7-beta）（版本号单一来源：`src/app.py` 的 `APP_VERSION`，前端 index.html 同步；发布阶段 .env APP_STAGE，显示 vX.Y.Z-stage）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝
 - **代码架构**：后端单文件（`src/app.py`），前端单页应用（`src/static/index.html`）
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main
@@ -118,6 +118,7 @@
 | ADR-020 | 配置单一来源 + 容器 CI 实跑 + 系统依赖统一
 | ADR-021 | WSL CI 稳定性根因与修复（双因）：WSL 发行版空闲自动终止→保活策略（用户保持 WSL 终端活跃 + CI job 22s 短时）；act_runner v0.2.11 needs bug→合并 fast-check+tdd 为单 job ci-check（无 needs） | README |
 | ADR-022 | 依赖双轨 / 支持矩阵 / 发布形态：①依赖安装在线优先离线兜底（deploy.sh，离线包为 Release asset，均入 Gitea）；②支持矩阵只保证一种组合（Python 3.12 + Rocky 8.10 / WSL rocky10-st / Windows dev）；③发布形态两轨并存（仓库=源码全工程；Release=发行包，保持全量打包不精简） | README |：① env/*.env 为唯一配置键源（CI 经 test.env 全键注入不写 .env；生产经 prod.env.template 生成 .env；fast-check 校验三环境键集合一致防漂移）；② WSL 内独立 docker-ce daemon（与 Docker Desktop/Gitea 无关，零中断），act_runner 双 label（securetrans-wsl 宿主 / securetrans-ci 容器），容器 job 显式 clone（经 WSL 网关 IP 动态解析）；③ runner shutdown_timeout:3h 缓解外部 SIGTERM 中断 job；④ 系统级依赖（openldap-clients 等）在线 dnf / 离线 rpm 双模式 |
+| ADR-023 | 文件名安全清理 + AD 改密前端拦截：①上传 filename 统一取 basename（防 webkitdirectory 相对路径 500 + 路径穿越）；②AD 用户改密前端拦截（source=ad 提示到域控制器，后端 400 兜底）；③空文件夹提示 + toast 显示后端清理后文件名 | README |
 ### ADR-005 详述：非硬编码原则（强制）
 
 prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → 测试(WSL) → 生产(Rocky) 环境差异大，
@@ -271,6 +272,16 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
   2. **支持矩阵唯一组合**：Python 3.12 + Rocky 8.10（生产）/ WSL rocky10-st（测试）/ Windows dev（开发）；venv（--copies）+ wheelhouse（cp312）三环境一致；其他组合 best-effort；升级需整体评估。
   3. **发布形态两轨并存**：仓库=源码全工程（设计/代码/测试/脚本/部署即"源码即发布"）；Release=发行包 `securetrans-*.tar.gz + offline-deps + md5/sha256`。**保持全量打包不精简**（离线部署一包全含、服务器可自测 verify、体积数 MB）；未来对外分发或体积增长时拆"源码包+部署包"。
 - **已落点**：2026-09-11 deploy.sh 双轨反转完成（在线优先）+ docs/08 第十一节 + 测试环境实测记录。
+
+### ADR-023：文件名安全清理 + AD 改密前端拦截（强制）
+
+- **背景**：Beta 手工验收两个缺陷——① webkitdirectory 文件夹上传任何数量文件均 500（File.name 携带相对路径 → 后端 open 目录缺失）；② AD 用户改密仍弹表单。
+- **决策**：
+  1. **上传 filename 统一取 basename**（`\`→`/` 后取末段；空名/`.`/`..` 拒 400）：防相对路径 500 + 防路径穿越。
+  2. **AD 用户改密前端拦截**（source=ad → toast 提示到域控制器，不弹表单；后端 400 兜底）。
+  3. **空文件夹前端提示** + 上传 toast 显示后端清理后文件名。
+- **已落点**：v2.3.7；Windows dev 全量 TDD 318/318；复现脚本（路径分隔符 500→200）。
+
 ## 研发流程
 
 ### 阶段划分（Lean Startup）
@@ -442,4 +453,4 @@ main ────●────●────●────●────  �
 
 ---
 
-*AGENTS.md v1.13 | 2026-09-11*
+*AGENTS.md v1.14 | 2026-09-11*

@@ -1,6 +1,6 @@
 ﻿# SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.3.6 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（CI 容器隔离与静态门禁）
+> 版本：v2.3.7 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（CI 容器隔离与静态门禁）
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -56,7 +56,7 @@ python test_api.py
 
 ```bash
 # 1. 上传发布包 securetrans-<版本>.tar.gz 到服务器
-tar xzf securetrans-v2.3.6.tar.gz -C /opt/securetrans --strip-components=1
+tar xzf securetrans-v2.3.7.tar.gz -C /opt/securetrans --strip-components=1
 cd /opt/securetrans
 
 # 2. 一键部署（9步自动化：Python 3.12 获取 → venv → 依赖 → .env → systemd → 启动验证）
@@ -456,6 +456,15 @@ main ────●────●────●────●────  �
   3. **发布形态两轨并存**：仓库=源码全工程（"源码即发布"）；Release=发行包（tar.gz + offline-deps + md5/sha256）。**保持全量打包不精简**——理由：离线部署一包全含（src/infra/env/offline-deps/offline-python/tests/docs）、服务器可自测 verify、体积数 MB 可忽略；未来对外分发或体积显著增长时拆"源码包+部署包"。
 - **已落点**：2026-09-11 deploy.sh 双轨反转完成（在线优先）+ docs/08 第十一节 + WSL 测试环境实测记录。
 
+### ADR-023：文件名安全清理 + AD 改密前端拦截（v2.3.7，强制）
+- **背景**：Beta 手工验收发现两个缺陷——① 文件夹上传（webkitdirectory）任何数量文件均 HTTP 500（根因：File.name 携带相对路径如 sub/a.txt，后端 open() 因子目录缺失抛 FileNotFoundError）；② AD 用户点击"修改密码"仍弹表单（后端 400 兜底但前端无拦截）。
+- **决策**：
+  1. **上传接口文件名安全清理**：对 file.filename 统一取 basename（先替换 `\`→`/` 再取末段），空名/`.`/`..` 拒绝（400"非法文件名"）；既防相对路径导致的目录缺失 500，也防路径穿越。
+  2. **AD 改密前端拦截**：showChangePwdModal 中 `window._cu.source === 'ad'` 直接提示"AD 用户请在域控制器修改"，不再弹表单（后端 api_change_password 400 兜底不变）。
+  3. **空文件夹提示**：handleFiles 空列表直接提示"所选文件夹为空或无文件"；上传成功 toast 显示后端清理后的文件名（data.name）。
+- **已落点**：2026-09-11 v2.3.7；复现脚本验证（路径分隔符 500→200，中文/0字节/多文件全 200）；Windows dev 全量 TDD 318/318 通过。
+
+
 ---
 
 ## 许可证
@@ -466,4 +475,4 @@ main ────●────●────●────●────  �
 
 ---
 
-*SecureTrans v2.3.6 | 2026-09-11*
+*SecureTrans v2.3.7 | 2026-09-11*

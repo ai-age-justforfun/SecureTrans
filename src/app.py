@@ -56,7 +56,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.3.6"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.3.7"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -1288,6 +1288,13 @@ def api_upload_file():
     file = request.files["file"]
     if not file.filename:
         return jsonify({"error": "文件名不能为空"}), 400
+    # v2.3.7 文件名安全清理：webkitdirectory 等场景 File.name 可能携带相对路径（sub/a.txt）
+    # 或含反斜杠/路径穿越；统一取 basename（防目录缺失 500 + 防路径穿越）
+    raw_name = file.filename.replace("\\", "/").strip()
+    safe_name = raw_name.rsplit("/", 1)[-1].strip()
+    if not safe_name or safe_name in (".", ".."):
+        return jsonify({"error": "非法文件名"}), 400
+    file.filename = safe_name
 
     # 检查文件大小：单一来源 system_config max_file_size_mb（与界面一致，运行时生效）
     file.seek(0, 2)

@@ -207,7 +207,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.3.6';
+const APP_VERSION = 'v2.3.7';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -223,7 +223,7 @@ const I18N = {
     'net.internal': '内网', 'net.external': '外网',
     'sidebar.logout': '退出登录', 'sidebar.changePwd': '修改密码', 'sidebar.tz': '时间=服务器系统时区',
     'pwd.title': '修改密码', 'pwd.old': '原密码', 'pwd.oldHint': '初始/重置密码 = 部署时 .env RESET_PASSWORD；如已改密请用当前密码', 'pwd.new': '新密码（至少6位）',
-    'pwd.suggestChange': '当前为默认/重置密码，建议尽快修改（左下角"修改密码"）', 'pwd.externalOnly': '外网面仅提供文件下载服务，修改密码请从内网访问',
+    'pwd.suggestChange': '当前为默认/重置密码，建议尽快修改（左下角"修改密码"）', 'pwd.externalOnly': '外网面仅提供文件下载服务，修改密码请从内网访问', 'pwd.adUser': 'AD用户不能在系统修改密码，请到AD域修改', 'submit.dirEmpty': '所选文件夹为空或无文件',
     'pwd.confirm': '确认新密码', 'pwd.mismatch': '两次输入的新密码不一致', 'pwd.success': '密码修改成功', 'pwd.changeFail': '密码修改失败：',
     'role.admin': '系统管理员', 'role.internalUser': '普通用户',
     'status.pending': '待一级审批', 'status.pending2': '待二级审批', 'status.approved': '已摆渡',
@@ -363,7 +363,7 @@ const I18N = {
     'nav.config': 'System Config', 'nav.ops': 'System Tools', 'nav.approvers': 'Approvers', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
     'net.internal': 'Intranet', 'net.external': 'Extranet',
     'sidebar.logout': 'Logout', 'sidebar.changePwd': 'Change Password', 'sidebar.tz': 'Times = Server System Timezone',
-    'pwd.title': 'Change Password', 'pwd.old': 'Current Password', 'pwd.oldHint': 'Initial/reset password = .env RESET_PASSWORD at deploy; use current if already changed', 'pwd.new': 'New Password (min 6)', 'pwd.suggestChange': 'You are using the default/reset password; change it as soon as possible (Change Password at the bottom-left)', 'pwd.confirm': 'Confirm New Password', 'pwd.mismatch': 'The two new passwords do not match', 'pwd.success': 'Password changed successfully', 'pwd.changeFail': 'Password change failed: ', 'pwd.externalOnly': 'Password change is not allowed on the external network; please access from the intranet',
+    'pwd.title': 'Change Password', 'pwd.old': 'Current Password', 'pwd.oldHint': 'Initial/reset password = .env RESET_PASSWORD at deploy; use current if already changed', 'pwd.new': 'New Password (min 6)', 'pwd.suggestChange': 'You are using the default/reset password; change it as soon as possible (Change Password at the bottom-left)', 'pwd.confirm': 'Confirm New Password', 'pwd.mismatch': 'The two new passwords do not match', 'pwd.success': 'Password changed successfully', 'pwd.changeFail': 'Password change failed: ', 'pwd.externalOnly': 'Password change is not allowed on the external network; please access from the intranet', 'pwd.adUser': 'AD users cannot change password here; please change it on the domain controller', 'submit.dirEmpty': 'The selected folder is empty or contains no files',
     'role.admin': 'System Administrator', 'role.internalUser': 'Regular User',
     'status.pending': 'Pending L1', 'status.pending2': 'Pending L2', 'status.approved': 'Ferried',
     'status.downloaded': 'Downloaded', 'status.rejected': 'Rejected', 'status.archived': 'Archived', 'status.auto': 'Auto',
@@ -687,6 +687,8 @@ async function logout() {
 function showChangePwdModal() {
   // 外网面一律不允许修改密码（后端 403 兜底，前端直接拦截提示）
   if (window._networkZone === 'external') { toast(t('pwd.externalOnly'), 'error'); return; }
+  // v2.3.7 AD 用户密码由域控制器管理，系统不提供改密（后端 400 兜底，前端直接拦截提示）
+  if (window._cu && window._cu.source === 'ad') { toast(t('pwd.adUser'), 'error'); return; }
   document.getElementById('modalTitle').textContent = t('pwd.title');
   document.getElementById('modalBody').innerHTML = `
     <div class="form-group mb-8"><label data-i18n="pwd.old">原密码</label><input type="password" id="pwdOld" autocomplete="current-password"><div class="text-sm text-muted" style="margin-top:4px;" data-i18n="pwd.oldHint">初始/重置密码 = 部署时 .env RESET_PASSWORD；如已改密请用当前密码</div></div>
@@ -889,6 +891,8 @@ function renderSubmit() {
 }
 
 async function handleFiles(files) {
+  // v2.3.7 空选择/空文件夹提示（webkitdirectory 空目录等场景）
+  if (!files || files.length === 0) { toast(t('submit.dirEmpty'), 'error'); return; }
   const MAX_BATCH = parseInt(window._uploadMaxBatch || 18, 10) || 18;
   const room = MAX_BATCH - uploadedFiles.length;
   if (room <= 0) {
@@ -905,7 +909,8 @@ async function handleFiles(files) {
       formData.append('file', file);
       const data = await api('/api/submissions/upload', { method: 'POST', body: formData });
       uploadedFiles.push(data);
-      toast(t('toast.uploadSuccess', file.name), 'success');
+      // v2.3.7 显示后端清理后的 basename（webkitdirectory 的 file.name 可能含相对路径）
+      toast(t('toast.uploadSuccess', data.name || file.name), 'success');
     } catch (e) {
       toast(t('toast.uploadFail', e.message), 'error');
     }
