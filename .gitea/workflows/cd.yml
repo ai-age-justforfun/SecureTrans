@@ -57,13 +57,14 @@ EOF
         run: |
           set -euo pipefail
           VER="${DEPLOY_VERSION}"
+          VNO="${VER#v}"
           hex_ip() { local h=$1; echo "$((16#${h:6:2})).$((16#${h:4:2})).$((16#${h:2:2})).$((16#${h:0:2}))"; }
           CI_GW="${CI_GATEWAY:-$(hex_ip "$(awk '$2=="00000000" {print $3; exit}' /proc/net/route 2>/dev/null)")}"
           GITEA="http://${CI_GW}:3000"
           TOKEN="${{ secrets.GITEA_TOKEN }}"
           echo "Gitea: ${GITEA} | 版本: ${VER}"
           REL=$(curl -sf -H "Authorization: token ${TOKEN}" "${GITEA}/api/v1/repos/openwrtadmin/SecureTrans/releases/tags/${VER}")
-          PKG_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name=="securetrans-'${VER}'.tar.gz") | .browser_download_url')
+          PKG_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name=="securetrans-'${VNO}'.tar.gz") | .browser_download_url')
           MD5_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name|endswith(".tar.gz.md5")) | .browser_download_url')
           [ -n "${PKG_URL}" ] && [ -n "${MD5_URL}" ] || { echo "[错误] Release 资产缺失"; exit 1; }
           curl -sfL -o pkg.tar.gz "${PKG_URL}"
@@ -77,9 +78,10 @@ EOF
       - name: 传输发布包到服务器
         run: |
           set -euo pipefail
+          VNO="${DEPLOY_VERSION#v}"
           ssh -o BatchMode=yes securetrans-prod 'mkdir -p /opt/securetrans-release'
-          scp -q -o BatchMode=yes pkg.tar.gz "securetrans-prod:/opt/securetrans-release/securetrans-${DEPLOY_VERSION}.tar.gz"
-          ssh -o BatchMode=yes securetrans-prod "ls -la /opt/securetrans-release/securetrans-${DEPLOY_VERSION}.tar.gz"
+          scp -q -o BatchMode=yes pkg.tar.gz "securetrans-prod:/opt/securetrans-release/securetrans-${VNO}.tar.gz"
+          ssh -o BatchMode=yes securetrans-prod "ls -la /opt/securetrans-release/securetrans-${VNO}.tar.gz"
 
       - name: 远程执行部署（轻量升级 + 只读冒烟）
         run: |

@@ -10,9 +10,10 @@
 set -euo pipefail
 
 VER="${1:?用法: bash cd-deploy.sh <版本号>}"
+VNO="${VER#v}"
 REL_DIR="/opt/securetrans-release"
-PKG="${REL_DIR}/securetrans-${VER}.tar.gz"
-SRC_DIR="${REL_DIR}/securetrans-${VER}"
+PKG="${REL_DIR}/securetrans-${VNO}.tar.gz"
+SRC_DIR="${REL_DIR}/securetrans-${VNO}"
 INSTALL_DIR="/opt/securetrans"
 SERVICE="securetrans"
 
@@ -35,7 +36,7 @@ fi
 # 2. 版本一致性校验（包内版本 == 部署版本）
 PKG_VER=$(grep -m1 '^APP_VERSION = "v' "${SRC_DIR}/src/app.py" | sed -E 's/.*"v([^"]+)".*/\1/')
 echo "[2/6] 版本校验: 包内 v${PKG_VER} == 部署 v${VER}"
-[ "${PKG_VER}" = "${VER}" ] || { echo "[错误] 版本不一致，中止"; exit 1; }
+[ "${PKG_VER}" = "${VNO}" ] || { echo "[错误] 版本不一致，中止"; exit 1; }
 
 # 3. 备份当前部署（.env + data + nas 结构整体快照，防止误操作）
 BACKUP_DIR="/opt/securetrans_backup_$(date +%Y%m%d_%H%M%S)"
@@ -62,6 +63,14 @@ chown -R securetrans:securetrans "${INSTALL_DIR}" 2>/dev/null || true
 
 # 5. 重启服务并健康检查
 echo "[5/6] 重启服务 ${SERVICE}..."
+# 5.0 结构一致性：确保 systemd WorkingDirectory 指向标准结构 /opt/securetrans
+#    （历史手工部署可能指向 /opt/securetrans/src 残留目录，导致服务静默跑旧代码）
+UNIT="/etc/systemd/system/${SERVICE}.service"
+if [ -f "$UNIT" ] && grep -q "WorkingDirectory=.*/src" "$UNIT"; then
+  echo "  [修正] WorkingDirectory 残留指向 src/，统一为 ${INSTALL_DIR}"
+  sed -i "s|^WorkingDirectory=.*|WorkingDirectory=${INSTALL_DIR}|" "$UNIT"
+  systemctl daemon-reload
+fi
 systemctl restart "${SERVICE}"
 sleep 3
 systemctl is-active --quiet "${SERVICE}" || {
@@ -79,6 +88,14 @@ for i in 1 2 3 4 5; do
   [ "$i" = 5 ] && { echo "[错误] 健康检查失败: ${HEALTH}"; journalctl -u "${SERVICE}" -n 30 --no-pager 2>/dev/null || true; exit 1; }
   sleep 2
 done
+# 5.5 版本生效校验：确认 gunicorn 实际从标准目录加载（防 src/ 残留静默跑旧代码）
+PID=$(pgrep -f "gunicorn.*app:app" 2>/dev/null | head -1)
+CWD=$(readlink "/proc/${PID}/cwd" 2>/dev/null || echo unknown)
+echo "  服务加载目录: ${CWD}"
+[ "${CWD}" = "${INSTALL_DIR}" ] || {
+  echo "[错误] 服务加载目录异常: ${CWD}（应为 ${INSTALL_DIR}），请检查 systemd WorkingDirectory"
+  exit 1
+}
 
 # 6. 只读冒烟（生产环境不跑全量 TDD，避免数据污染；ADR-024）
 echo "[6/6] 只读冒烟..."
