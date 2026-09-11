@@ -4,6 +4,8 @@ runner:
   file: /opt/securetrans/.runner
   capacity: 1
   timeout: 3h
+  # 外部偶发 SIGTERM（WSL 环境）时，等待正在运行的 job 完成后再退出，避免中断 CI
+  shutdown_timeout: 3h
   insecure: true
 container:
   # 注：act_runner 忽略 --network/--net（网络由 runner 统一管理，每个 job 独立 bridge 网络）
