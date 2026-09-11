@@ -158,6 +158,7 @@
     <div class="sidebar-nav" id="sidebarNav">
       <div class="nav-item" data-page="submit"><span class="icon">📤</span><span data-i18n="nav.submit">文件提交</span></div>
       <div class="nav-item" data-page="my-submissions"><span class="icon">📋</span><span data-i18n="nav.mySubmissions">我的提交</span></div>
+<div class="nav-item admin-only" data-page="all-submissions"><span class="icon">📚</span><span data-i18n="nav.allSubmissions">所有提交记录</span></div>
       <div class="nav-item admin-only" data-page="pending"><span class="icon">✅</span><span data-i18n="nav.pending">待我审批</span></div>
       <div class="nav-item" data-page="external"><span class="icon">📥</span><span data-i18n="nav.external">外网下载</span></div>
       <div class="nav-item admin-only" data-page="users"><span class="icon">👥</span><span data-i18n="nav.users">用户管理</span></div>
@@ -216,7 +217,7 @@ const APP_VERSION = 'v2.3.3';
 const I18N = {
   zh: {
     'brand.subtitle': '文件审批摆渡系统',
-    'nav.submit': '文件提交', 'nav.mySubmissions': '我的提交', 'nav.pending': '待我审批',
+    'nav.submit': '文件提交', 'nav.mySubmissions': '我的提交', 'nav.allSubmissions': '所有提交记录', 'nav.pending': '待我审批',
     'nav.external': '外网下载', 'nav.users': '用户管理', 'nav.partners': '合作方管理',
     'nav.config': '系统配置', 'nav.ops': '系统工具', 'nav.approvers': '审批人配置', 'nav.audit': '审计日志', 'nav.dashboard': '仪表盘',
     'net.internal': '内网', 'net.external': '外网',
@@ -227,7 +228,7 @@ const I18N = {
     'role.admin': '系统管理员', 'role.internalUser': '普通用户',
     'status.pending': '待一级审批', 'status.pending2': '待二级审批', 'status.approved': '已摆渡',
     'status.downloaded': '已下载', 'status.rejected': '已驳回', 'status.archived': '已归档', 'status.auto': '免审批',
-    'page.title.dashboard': '仪表盘', 'page.title.submit': '文件提交', 'page.title.mySubmissions': '我的提交',
+    'page.title.dashboard': '仪表盘', 'page.title.submit': '文件提交', 'page.title.mySubmissions': '我的提交', 'page.title.allSubmissions': '所有提交记录',
     'page.title.pending': '待我审批', 'page.title.external': '外网下载', 'page.title.users': '用户管理',
     'page.title.partners': '合作方管理', 'page.title.approvers': '审批人配置', 'page.title.config': '系统配置', 'page.title.ops': '系统工具', 'page.title.audit': '审计日志',
     'ops.backupTitle': '数据备份 / 恢复', 'ops.backupDesc': '备份数据库与业务文件（staging/external/archive）到 data/backups/，恢复将替换当前业务数据（回退=再恢复之前的备份）。',
@@ -282,7 +283,7 @@ const I18N = {
     'list.subNo': '提交单号', 'list.receiver': '接收方', 'list.files': '文件数', 'list.size': '大小',
     'list.submitTime': '提交时间', 'list.submitter': '提交人', 'list.ferryTime': '摆渡时间',
     'file.name': '文件名',
-    'list.empty': '暂无提交记录', 'list.emptyPending': '暂无待审批的提交单', 'list.emptyExternal': '暂无可下载的文件',
+    'list.empty': '暂无提交记录', 'list.emptyAll': '暂无提交记录', 'list.emptyPending': '暂无待审批的提交单', 'list.emptyExternal': '暂无可下载的文件',
     'list.ferriedFiles': '已摆渡文件列表',
     'detail.title': '提交单详情 - ', 'detail.basic': '基本信息', 'detail.files': '文件清单', 'detail.approvals': '审批记录',
     'detail.type': '接收方类型', 'detail.internal': '公司内部', 'detail.partner': '合作方', 'detail.nonPartner': '非合作方',
@@ -357,7 +358,7 @@ const I18N = {
   },
   en: {
     'brand.subtitle': 'Cross-Network File Approval & Ferry System',
-    'nav.submit': 'Submit Files', 'nav.mySubmissions': 'My Submissions', 'nav.pending': 'Pending Approval',
+    'nav.submit': 'Submit Files', 'nav.mySubmissions': 'My Submissions', 'nav.allSubmissions': 'All Submissions', 'nav.pending': 'Pending Approval',
     'nav.external': 'External Download', 'nav.users': 'User Management', 'nav.partners': 'Partner Management',
     'nav.config': 'System Config', 'nav.ops': 'System Tools', 'nav.approvers': 'Approvers', 'nav.audit': 'Audit Logs', 'nav.dashboard': 'Dashboard',
     'net.internal': 'Intranet', 'net.external': 'Extranet',
@@ -366,7 +367,7 @@ const I18N = {
     'role.admin': 'System Administrator', 'role.internalUser': 'Regular User',
     'status.pending': 'Pending L1', 'status.pending2': 'Pending L2', 'status.approved': 'Ferried',
     'status.downloaded': 'Downloaded', 'status.rejected': 'Rejected', 'status.archived': 'Archived', 'status.auto': 'Auto',
-    'page.title.dashboard': 'Dashboard', 'page.title.submit': 'Submit Files', 'page.title.mySubmissions': 'My Submissions',
+    'page.title.dashboard': 'Dashboard', 'page.title.submit': 'Submit Files', 'page.title.mySubmissions': 'My Submissions', 'page.title.allSubmissions': 'All Submissions',
     'page.title.pending': 'Pending Approval', 'page.title.external': 'External Download', 'page.title.users': 'User Management',
     'page.title.partners': 'Partner Management', 'page.title.approvers': 'Approver Config', 'page.title.config': 'System Config', 'page.title.ops': 'System Tools', 'page.title.audit': 'Audit Logs',
     'ops.backupTitle': 'Data Backup / Restore', 'ops.backupDesc': 'Back up database and business files (staging/external/archive) to data/backups/; restore replaces current business data (rollback = restore an earlier backup).',
@@ -421,7 +422,7 @@ const I18N = {
     'list.subNo': 'Submission No.', 'list.receiver': 'Recipient', 'list.files': 'Files', 'list.size': 'Size',
     'list.submitTime': 'Submitted At', 'list.submitter': 'Submitter', 'list.ferryTime': 'Ferried At',
     'file.name': 'File Name',
-    'list.empty': 'No submissions yet', 'list.emptyPending': 'No pending approvals', 'list.emptyExternal': 'No downloadable files',
+    'list.empty': 'No submissions yet', 'list.emptyAll': 'No submission records', 'list.emptyPending': 'No pending approvals', 'list.emptyExternal': 'No downloadable files',
     'list.ferriedFiles': 'Ferried Files',
     'detail.title': 'Submission Detail - ', 'detail.basic': 'Basic Info', 'detail.files': 'File List', 'detail.approvals': 'Approval History',
     'detail.type': 'Recipient Type', 'detail.internal': 'Internal', 'detail.partner': 'Partner', 'detail.nonPartner': 'Non-partner',
@@ -732,7 +733,7 @@ function navigate(page) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   const titles = {
     dashboard: 'page.title.dashboard', submit: 'page.title.submit', 'my-submissions': 'page.title.mySubmissions',
-    pending: 'page.title.pending', external: 'page.title.external', users: 'page.title.users',
+    'all-submissions': 'page.title.allSubmissions', pending: 'page.title.pending', external: 'page.title.external', users: 'page.title.users',
     partners: 'page.title.partners', approvers: 'page.title.approvers', config: 'page.title.config', ops: 'page.title.ops', audit: 'page.title.audit'
   };
   document.getElementById('pageTitle').textContent = page === 'ops'
@@ -749,6 +750,7 @@ function renderPage(page) {
     case 'dashboard': renderDashboard(); break;
     case 'submit': renderSubmit(); break;
     case 'my-submissions': renderMySubmissions(); break;
+    case 'all-submissions': renderAllSubmissions(); break;
     case 'pending': renderPending(); break;
     case 'external': renderExternal(); break;
     case 'users': renderUsers(); break;
@@ -1060,6 +1062,43 @@ async function renderMySubmissions() {
   }
 }
 
+// 所有提交文件记录（仅 admin）：只读历史视图，无删除按钮
+async function renderAllSubmissions() {
+  try {
+    const list = await api('/api/admin/submissions/all');
+    if (list.length === 0) {
+      document.getElementById('content').innerHTML = `<div class="card"><div class="empty" data-i18n="list.emptyAll">暂无提交记录</div></div>`;
+      applyI18n();
+      return;
+    }
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <table>
+          <thead><tr><th data-i18n="list.subNo">提交单号</th><th data-i18n="list.submitter">提交人</th><th data-i18n="list.receiver">接收方</th><th data-i18n="list.files">文件数</th><th data-i18n="list.size">大小</th><th data-i18n="common.status">状态</th><th data-i18n="list.submitTime">提交时间</th><th data-i18n="common.actions">操作</th></tr></thead>
+          <tbody>
+            ${list.map(s => {
+              const st = STATUS_LABELS[s.status] || { key: s.status, cls: '' };
+              return `<tr>
+                <td class="text-sm">${s.id}</td>
+                <td>${s.submitter_name || s.submitter}</td>
+                <td>${s.receiver_name || '-'}${s.receiver_org ? `（${s.receiver_org}）` : ''}</td>
+                <td>${s.file_count}</td>
+                <td>${formatSize(s.total_size || 0)}</td>
+                <td><span class="badge ${st.cls}">${t(st.key)}</span>${s.auto_approved ? ` <span class="badge badge-auto" data-i18n="status.auto">免审批</span>` : ''}</td>
+                <td class="text-sm text-muted">${s.submit_time || '-'}</td>
+                <td><button class="btn btn-sm btn-secondary" onclick="showSubmissionDetail('${s.id}')" data-i18n="common.detail">详情</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+    applyI18n();
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
+  }
+}
+
 async function showSubmissionDetail(id) {
   try {
     const sub = await api(`/api/submissions/${id}`);
@@ -1108,7 +1147,6 @@ async function showSubmissionDetail(id) {
       </div>
     `;
     document.getElementById('modalFooter').innerHTML = `
-      ${(window._cu && window._cu.role === 'admin') ? `<button class="btn btn-danger" onclick="askDeleteSubmission('${sub.id}')" data-i18n="detail.deleteSubmission">删除提交单</button>` : ''}
       <button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.close">关闭</button>`;
     applyI18n();
     openModal();
@@ -1246,7 +1284,6 @@ async function showDownloadFiles(id) {
       </table>
     `;
     document.getElementById('modalFooter').innerHTML = `
-      ${(window._cu && window._cu.role === 'admin') ? `<button class="btn btn-danger" onclick="askDeleteSubmission('${sub.id}')" data-i18n="detail.deleteSubmission">删除提交单</button>` : ''}
       <button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.close">关闭</button>`;
     applyI18n();
     openModal();

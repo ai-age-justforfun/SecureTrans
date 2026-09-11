@@ -382,6 +382,48 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     test("用户自行修改密码", code == 200, f"code={code}, data={data}")
     code, data = request('POST', '/api/auth/login', json_data={"username": "testuser01", "password": "NewPwd@123456"})
     test("修改后新密码登录成功", code == 200, f"code={code}")
+
+    # 提交可见性权限（用户可见性治理）：普通用户只看自己的提交；admin 的"我的提交"同样只看自己；全量提交走只读历史视图（仅 admin）
+    print("\n--- 提交可见性权限 ---")
+    _set_group("提交可见性权限")
+    code, data = request('GET', '/api/submissions')
+    test("普通用户提交列表不含 admin 的提交", code == 200 and isinstance(data, list) and not any(s.get('id') == auto_sub_id for s in data),
+         f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
+    code, data = request('GET', f'/api/submissions/{auto_sub_id}')
+    test("普通用户访问他人提交详情被拒(403)", code == 403, f"code={code}")
+    code, data = request('GET', '/api/admin/submissions/all')
+    test("普通用户访问全量提交记录被拒(403)", code == 403, f"code={code}")
+
+    # testuser01 创建自己的提交（验证"能看自己的"）
+    tu_test_file = os.path.join(test_dir, "testuser01_doc.pdf")
+    with open(tu_test_file, 'wb') as f:
+        f.write(b"%PDF-1.4\n" + b"User01 Doc " * 500)
+    code, data = upload_file(tu_test_file, "testuser01_doc.pdf")
+    tu_temp_id = data.get('tempId')
+    code, data = request('POST', '/api/submissions', json_data={
+        "tempIds": [tu_temp_id],
+        "receiverName": "部门内同事",
+        "receiverOrg": "公司内部",
+        "receiverType": "internal",
+        "securityLevel": "internal",
+        "reason": "权限可见性测试"
+    })
+    tu_sub_id = data.get('id')
+    test("普通用户创建自己的提交", code == 200 and tu_sub_id, f"code={code}, id={tu_sub_id}")
+    code, data = request('GET', '/api/submissions')
+    test("普通用户提交列表含自己的提交", code == 200 and any(s.get('id') == tu_sub_id for s in data), f"code={code}")
+    test("普通用户提交列表仍不含 admin 的提交", code == 200 and not any(s.get('id') == auto_sub_id for s in data), f"code={code}")
+
+    # 切回 admin：我的提交收敛 + 全量只读视图
+    request('POST', '/api/auth/logout')
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    code, data = request('GET', '/api/submissions')
+    test("admin 的我的提交不含 testuser01 的提交", code == 200 and not any(s.get('id') == tu_sub_id for s in data),
+         f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
+    code, data = request('GET', '/api/admin/submissions/all')
+    test("admin 全量提交记录含所有用户提交", code == 200 and any(s.get('id') == tu_sub_id for s in data) and any(s.get('id') == auto_sub_id for s in data),
+         f"code={code}, count={len(data) if isinstance(data,list) else 'N/A'}")
+
     request('POST', '/api/auth/logout')
     request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
 

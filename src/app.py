@@ -1491,14 +1491,12 @@ def api_create_submission():
 @app.route("/api/submissions")
 @login_required
 def api_list_submissions():
-    """提交单列表"""
+    """提交单列表（"我的提交"：任何用户——含 admin——只返回自己的提交单）
+    admin 查看全局提交记录走 /api/admin/submissions/all（只读历史视图）"""
     status = request.args.get("status", "")
     db = get_db()
-    query = "SELECT * FROM submissions WHERE 1=1"
-    params = []
-    if current_user.role == "internal-user":
-        query += " AND submitter=?"
-        params.append(current_user.username)
+    query = "SELECT * FROM submissions WHERE submitter=?"
+    params = [current_user.username]
     if status:
         query += " AND status=?"
         params.append(status)
@@ -1506,14 +1504,36 @@ def api_list_submissions():
     rows = db.execute(query, params).fetchall()
     return jsonify(rows_to_list(rows))
 
+@app.route("/api/admin/submissions/all")
+@login_required
+def api_admin_all_submissions():
+    """所有提交文件记录（仅 admin，只读历史视图，不提供删除）"""
+    if current_user.role != "admin":
+        return jsonify({"error": "权限不足"}), 403
+    status = request.args.get("status", "")
+    db = get_db()
+    query = "SELECT * FROM submissions WHERE 1=1"
+    params = []
+    if status:
+        query += " AND status=?"
+        params.append(status)
+    query += " ORDER BY submit_time DESC LIMIT 500"
+    rows = db.execute(query, params).fetchall()
+    return jsonify(rows_to_list(rows))
+
 @app.route("/api/submissions/<sub_id>")
 @login_required
 def api_get_submission(sub_id):
-    """提交单详情"""
+    """提交单详情
+    可见性：提交者本人、审批人（可查看待审/已审提交以完成审批）、admin 可查看；
+    无审批权限的普通用户只能查看自己的提交单"""
     db = get_db()
     sub = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
     if not sub:
         return jsonify({"error": "提交单不存在"}), 404
+    if current_user.role != "admin" and sub["submitter"] != current_user.username:
+        if not (can_approve_level(1) or can_approve_level(2)):
+            return jsonify({"error": "权限不足"}), 403
     files = db.execute("SELECT * FROM submission_files WHERE submission_id=?", (sub_id,)).fetchall()
     approvals = db.execute("SELECT * FROM approvals WHERE submission_id=? ORDER BY level,time", (sub_id,)).fetchall()
     return jsonify({**row_to_dict(sub), "files": rows_to_list(files), "approvals": rows_to_list(approvals)})
