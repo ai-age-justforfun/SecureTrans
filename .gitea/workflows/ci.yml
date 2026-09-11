@@ -102,13 +102,6 @@ jobs:
           print(f"配置键一致性: PASS (dev={len(dev)} test={len(test)} prod={len(prod)})")
           EOF
 
-  # ============================================================
-  # 2. 全量 TDD 回归（容器，每次全新环境；依赖 fast-check 通过）
-  # ============================================================
-  tdd-verify:
-    runs-on: securetrans-ci
-    needs: fast-check
-    steps:
       - name: Clone + 容器内全量 TDD（ci_test.sh：新配置 + 新数据 + 零宿主污染）
         run: |
           set -euo pipefail
