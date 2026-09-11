@@ -37,6 +37,18 @@ jobs:
           echo "DEPLOY_VERSION=${VER}" >> "$GITHUB_ENV"
           echo "解析版本: ${VER}"
 
+      - name: Clone 代码（经 WSL 网关访问 Gitea，获取 infra/cd-deploy.sh）
+        run: |
+          set -euo pipefail
+          CI_GW="${CI_GATEWAY:-172.17.0.1}"
+          CI_GITEA_URL="${CI_GITEA_URL:-http://${CI_GW}:3000}"
+          WS="${GITHUB_WORKSPACE:-/workspace}"
+          rm -rf "$WS" && mkdir -p "$WS"
+          git clone --depth 1 "${CI_GITEA_URL}/openwrtadmin/SecureTrans.git" "$WS"
+          cd "$WS"
+          [ -f infra/cd-deploy.sh ] || { echo "[错误] infra/cd-deploy.sh 缺失"; exit 1; }
+          echo "clone 完成: $(ls infra/cd-deploy.sh)"
+
       - name: 配置 SSH 部署密钥（来自 repo secret CD_SSH_KEY，base64 单行存储）
         run: |
           set -euo pipefail
