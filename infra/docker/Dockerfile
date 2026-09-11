@@ -16,6 +16,10 @@ WORKDIR /workspace
 # ADR-020 归一化：wheelhouse 保留在镜像内作为 CI 构建工具链——
 #   package job 直接从 /wheelhouse 生成 offline-deps 发布包（无需宿主共享目录），
 #   实现"镜像自包含 + 每次 CI 干净环境"（旧镜像 fallback：从 Gitea Release 下载 offline-deps）
+# 构建上下文准备（wheelhouse 被 gitignore，由 packages/securetrans-offline-deps.tar.gz 解压生成）：
+#   mkdir -p infra/docker/wheelhouse && tar xzf packages/securetrans-offline-deps.tar.gz -C infra/docker/
+# requirements.txt 由仓库跟踪（依赖清单单一来源，与 src/requirements.txt 一致）
+COPY requirements.txt /wheelhouse/requirements.txt
 COPY wheelhouse/ /wheelhouse/
 RUN python -m venv /venv \
     && /venv/bin/pip install --no-index --find-links /wheelhouse -r /wheelhouse/requirements.txt \
