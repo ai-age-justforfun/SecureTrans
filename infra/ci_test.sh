@@ -12,13 +12,16 @@
 set -euo pipefail
 
 # act_runner 容器 job 通过 GITHUB_WORKSPACE 指向工作区（本地 docker run 验证用 /workspace）
-# host 网络模式下需显式 clone（act_runner 容器模式不做自动 checkout）
+# 容器（bridge 网络）访问 Gitea：经 WSL 网关 IP（172.29.x.1:3000 → Windows Gitea）
+hex_ip() { local h=$1; echo "$((16#${h:6:2})).$((16#${h:4:2})).$((16#${h:2:2})).$((16#${h:0:2}))"; }
+CI_GW="${CI_GATEWAY:-$(hex_ip "$(awk '$2=="00000000" {print $3; exit}' /proc/net/route 2>/dev/null)")}"
+CI_GITEA_URL="${CI_GITEA_URL:-http://${CI_GW}:3000}"
 WS="${GITHUB_WORKSPACE:-/workspace}"
 cd "$WS"
 if [ ! -f src/app.py ]; then
-    echo "工作区无代码，显式 clone（host 网络 → localhost:3000 = Gitea）..."
+    echo "工作区无代码，显式 clone（${CI_GITEA_URL}）..."
     rm -rf "$WS" && mkdir -p "$WS"
-    git clone --depth 1 http://localhost:3000/openwrtadmin/SecureTrans.git "$WS"
+    git clone --depth 1 "${CI_GITEA_URL}/openwrtadmin/SecureTrans.git" "$WS"
     cd "$WS"
 fi
 [ -f src/app.py ] || { echo "工作区缺少 src/app.py，当前目录: $(pwd)"; ls -la; exit 1; }

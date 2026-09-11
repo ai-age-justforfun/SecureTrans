@@ -6,9 +6,8 @@ runner:
   timeout: 3h
   insecure: true
 container:
-  # host 网络：容器共享 WSL 网络栈，可访问 Gitea(localhost:3000 经 WSL→Windows 转发)
-  # 与 Docker Desktop/Gitea 容器完全独立（WSL 内独立 docker daemon）
-  options: "--network host"
+  # 注：act_runner 忽略 --network/--net（网络由 runner 统一管理，每个 job 独立 bridge 网络）
+  # 容器访问 Gitea 经 WSL 网关 IP（见 infra/ci_test.sh：/proc/net/route 解析默认网关）
   privileged: false
 host:
   workdir_parent: /opt/securetrans/workspace
