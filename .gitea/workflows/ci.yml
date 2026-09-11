@@ -39,9 +39,7 @@ jobs:
       - name: Clone 代码（经 WSL 网关访问 Gitea）+ Python 静态检查
         run: |
           set -euo pipefail
-          hex_ip() { local h=$1; echo "$((16#${h:6:2})).$((16#${h:4:2})).$((16#${h:2:2})).$((16#${h:0:2}))"; }
-          CI_GW="${CI_GATEWAY:-$(hex_ip "$(awk '$2=="00000000" {print $3; exit}' /proc/net/route 2>/dev/null)")}"
-          curl -sf -m 2 "http://${CI_GW}:3000/api/v1/version" >/dev/null 2>&1 || CI_GW="172.17.0.1"
+          CI_GW="${CI_GATEWAY:-172.17.0.1}"
           CI_GITEA_URL="${CI_GITEA_URL:-http://${CI_GW}:3000}"
           WS="${GITHUB_WORKSPACE:-/workspace}"
           cd "$WS"
@@ -106,9 +104,7 @@ jobs:
       - name: Clone + 容器内全量 TDD（ci_test.sh：新配置 + 新数据 + 零宿主污染）
         run: |
           set -euo pipefail
-          hex_ip() { local h=$1; echo "$((16#${h:6:2})).$((16#${h:4:2})).$((16#${h:2:2})).$((16#${h:0:2}))"; }
-          CI_GW="${CI_GATEWAY:-$(hex_ip "$(awk '$2=="00000000" {print $3; exit}' /proc/net/route 2>/dev/null)")}"
-          curl -sf -m 2 "http://${CI_GW}:3000/api/v1/version" >/dev/null 2>&1 || CI_GW="172.17.0.1"
+          CI_GW="${CI_GATEWAY:-172.17.0.1}"
           CI_GITEA_URL="${CI_GITEA_URL:-http://${CI_GW}:3000}"
           WS="${GITHUB_WORKSPACE:-/workspace}"
           cd "$WS"
@@ -130,9 +126,7 @@ jobs:
       - name: Clone（经 WSL 网关访问 Gitea）
         run: |
           set -euo pipefail
-          hex_ip() { local h=$1; echo "$((16#${h:6:2})).$((16#${h:4:2})).$((16#${h:2:2})).$((16#${h:0:2}))"; }
-          CI_GW="${CI_GATEWAY:-$(hex_ip "$(awk '$2=="00000000" {print $3; exit}' /proc/net/route 2>/dev/null)")}"
-          curl -sf -m 2 "http://${CI_GW}:3000/api/v1/version" >/dev/null 2>&1 || CI_GW="172.17.0.1"
+          CI_GW="${CI_GATEWAY:-172.17.0.1}"
           CI_GITEA_URL="${CI_GITEA_URL:-http://${CI_GW}:3000}"
           echo "CI_GITEA_URL=${CI_GITEA_URL}" >> "$GITHUB_ENV"
           WS="${GITHUB_WORKSPACE:-/workspace}"
