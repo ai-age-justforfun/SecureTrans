@@ -13,10 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /workspace
 
 # 离线 wheelhouse（与生产离线包同一来源，保证依赖一致性）
+# ADR-020 归一化：wheelhouse 保留在镜像内作为 CI 构建工具链——
+#   package job 直接从 /wheelhouse 生成 offline-deps 发布包（无需宿主共享目录），
+#   实现"镜像自包含 + 每次 CI 干净环境"（旧镜像 fallback：从 Gitea Release 下载 offline-deps）
 COPY wheelhouse/ /wheelhouse/
 RUN python -m venv /venv \
     && /venv/bin/pip install --no-index --find-links /wheelhouse -r /wheelhouse/requirements.txt \
-    && rm -rf /wheelhouse /root/.cache/pip
+    && rm -rf /root/.cache/pip
 
 ENV PATH="/venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1

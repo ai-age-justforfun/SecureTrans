@@ -120,8 +120,9 @@ SHA256=$(sha256sum "${PACKAGE_NAME}.tar.gz" | cut -d' ' -f1)
 # 复制到项目根目录 packages/
 mkdir -p "$PROJECT_ROOT/packages"
 cp "${PACKAGE_NAME}.tar.gz" "$PROJECT_ROOT/packages/"
-echo "${MD5}" > "$PROJECT_ROOT/packages/${PACKAGE_NAME}.tar.gz.md5"
-echo "${SHA256}" > "$PROJECT_ROOT/packages/${PACKAGE_NAME}.tar.gz.sha256"
+# ADR-020：校验文件用标准格式（"<hash>  <filename>"），支持 md5sum -c / sha256sum -c 自动校验
+echo "${MD5}  ${PACKAGE_NAME}.tar.gz" > "$PROJECT_ROOT/packages/${PACKAGE_NAME}.tar.gz.md5"
+echo "${SHA256}  ${PACKAGE_NAME}.tar.gz" > "$PROJECT_ROOT/packages/${PACKAGE_NAME}.tar.gz.sha256"
 
 echo ""
 echo "============================================================"
