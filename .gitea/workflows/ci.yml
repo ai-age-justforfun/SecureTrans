@@ -4,15 +4,15 @@ name: CI-TDD
 # 触发：push 到 main 或 push tag v*，在 WSL rocky10-st 的 act_runner 执行
 # 运行模式（ADR-019/020，与 Docker Desktop/Gitea 完全独立）：
 #   - securetrans-ci = 唯一容器 label（docker://securetrans-ci:3.12，WSL 内独立 docker daemon）
-#     → fast-check / tdd-verify / package 全部容器 job：每次全新容器 + 新配置 + 新数据，零宿主污染
+#     → ci-check / package 全部容器 job：每次全新容器 + 新配置 + 新数据，零宿主污染
 # 归一化原则（ADR-020，双 label 收敛为单 label）：
 #   - 需要发布/传递的制品 → 放 Gitea Release（容器内构建 + Gitea API 上传，token 可选）
 #   - 构建工具链（wheelhouse）保留在镜像内 → package job 容器内自包含，不再依赖宿主共享目录
 #   - 一次性验证 → 测试完成后保留 CI 脚本/配置/数据/报告归档（docs/06 测试报告）
-# 分层（最便宜门禁先失败）：
-#   1. fast-check  —— 秒级静态门禁（语法/静态检查/版本一致性/配置模板/脚本完整性/配置键一致），总跑
-#   2. tdd-verify  —— 全量 TDD 回归（容器内 ci_test.sh，317 项基线；ADR-017 测试/生产隔离）
-#   3. package     —— 仅 tag v* 触发：容器内生成 offline-deps（镜像 wheelhouse）→ package.sh 构建发布包
+# 分层（最便宜门禁先失败；单 job 串行，规避 act_runner v0.2.11 needs bug，ADR-021）：
+#   1. ci-check —— 静态门禁（语法/静态检查/版本一致性/配置模板/脚本完整性/配置键一致，秒级先失败）
+#                  + 全量 TDD（容器内 ci_test.sh，317 项基线；ADR-017 测试/生产隔离）
+#   2. package     —— 仅 tag v* 触发：容器内生成 offline-deps（镜像 wheelhouse）→ package.sh 构建发布包
 #                     → 产物完整性校验（md5/sha256/解压结构）→ Gitea Release 上传（RELEASETOKEN secret，无则跳过）
 # 前置：
 #   1. Gitea 启用 Actions（站点配置 → Actions → 启用）
@@ -29,9 +29,11 @@ on:
 
 jobs:
   # ============================================================
-  # 1. 秒级静态门禁（容器，总是执行，最便宜先失败）
+  # 1. 秒级静态门禁 + 全量 TDD（单 job 串行，ADR-021）
+  #    act_runner v0.2.11 对 needs 依赖解析有 bug（"runs-on not defined"/"No steps found"→假绿），
+  #    故合并 fast-check + tdd-verify 为单 job：先静态门禁（秒级先失败），再全量 TDD（ci_test.sh）。
   # ============================================================
-  fast-check:
+  ci-check:
     runs-on: securetrans-ci
     steps:
       - name: Clone 代码（经 WSL 网关访问 Gitea）+ Python 静态检查
@@ -123,12 +125,11 @@ jobs:
           bash infra/ci_test.sh
 
   # ============================================================
-  # 3. 发布构建（容器，仅 tag v* 触发，ADR-020 单容器归一化）：
+  # 2. 发布构建（容器，仅 tag v* 触发，ADR-020 单容器归一化；无 needs，规避 act_runner v0.2.11 needs bug）：
   #    镜像 wheelhouse 生成 offline-deps → package.sh → 产物校验 → Gitea Release 上传（token 可选）
   # ============================================================
   package:
     runs-on: securetrans-ci
-    needs: [ fast-check, tdd-verify ]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Clone（经 WSL 网关访问 Gitea）
