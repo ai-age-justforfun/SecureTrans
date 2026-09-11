@@ -110,5 +110,5 @@ jobs:
           echo "============================================================"
           echo "  CD 部署完成 | 版本: ${DEPLOY_VERSION} | 目标: 10.10.30.8"
           echo "  服务状态:"
-          ssh -o BatchMode=yes securetrans-prod 'systemctl is-active securetrans; curl -sf http://127.0.0.1:8000/healthz -o /dev/null && echo "HEALTH-OK" || echo "HEALTH-CHECK-FAIL"'
+          ssh -o BatchMode=yes securetrans-prod 'systemctl is-active securetrans; curl -sf http://127.0.0.1:8000/api/health -o /dev/null && echo "HEALTH-OK" || echo "HEALTH-CHECK-FAIL"'
           echo "============================================================"

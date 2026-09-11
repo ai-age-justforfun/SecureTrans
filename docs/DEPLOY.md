@@ -673,6 +673,14 @@ Release 发布后自动部署到生产服务器（或手动 workflow_dispatch �
 4. **注意**：CD 为轻量升级——不重置 admin 密码、不重建 venv、不覆盖 .env/data/nas；依赖或结构变更需手工执行完整 deploy.sh（全量安装）。
 5. **已验证**：2026-09-11 v2.3.7 全自动部署成功（MD5 校验 → scp 35MB → cd-deploy 6/6 → 只读冒烟 11/11 → 服务 active + HEALTH-OK）。
 6. **运维要点（已固化到 cd.yml）**：容器访问 Gitea 统一走 `CI_GW="${CI_GATEWAY:-172.17.0.1}"`（docker0，任务网络网关随机不可达）；Release 资产 `browser_download_url` 为 localhost（容器内指向自身）须 sed 替换 host；`github.token` 经 curl 注入异常时回退匿名（public 仓库可读）；CD job 先 git clone 仓库获取 infra/cd-deploy.sh。
+7. **手动触发 CD**：
+   - 页面：Gitea → 仓库 SecureTrans → Actions → 左侧 Workflows → CD-Deploy → Run workflow → 输入版本号（留空=自动取最新 tag）→ Run
+   - API：`curl -X POST -H "Content-Type: application/json" -d '{"ref":"main","inputs":{"version":"v2.3.7"}}' http://localhost:3000/api/v1/repos/openwrtadmin/SecureTrans/actions/workflows/cd.yml/dispatches`
+8. **停止自动触发**：
+   - 临时停：Gitea Actions 页 Workflows 列表 → CD-Deploy 行 → 禁用（Disable）该 workflow，随时可恢复
+   - 永久停：删除 cd.yml 中 `release: types: [published]` 触发块（仅保留 workflow_dispatch），提交即生效
+   - 说明：当前为双触发（Release 发布自动 + 手动 dispatch）；禁用后发布 Release 不再自动部署
+9. **act_runner**：已升级 v3.4.2（`/usr/local/bin/act_runner`，systemd 常驻 Restart=always）；修复旧版 package job 清理阶段误报失败问题，持续运行验证通过（run #127/#136 success）。
 
 ## 5.5、12-Factor 三环境一体化（ADR-016）
 
