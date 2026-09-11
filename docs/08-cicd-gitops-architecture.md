@@ -361,6 +361,8 @@ eeds 的容器 job 步骤解析异常（步骤丢失、空转成功），Gitea �
   - **Python 3.12**：先 dnf install python3.12 python3.12-pip python3.12-devel（Rocky 8 AppStream 直供，无需源码编译；失败尝试 EPEL）→ 在线失败 → dnf localinstall offline-python/*.rpm（get-offline-python.sh 生成）→ 再无则明确报错退出（不再静默降级）。
   - **Python 依赖**：先 pip install -r requirements.txt + gunicorn（在线）→ 失败 → pip install --no-index --find-links=offline-deps/（部署包内置 cp312 wheel）→ 再无则明确报错退出。
 - **两者均入 Gitea**：在线命令固化在 deploy.sh + DEPLOY.md；离线包（offline-python RPM + offline-deps whl）作为 **Release asset** 随版本发布。
+- **幂等优化（2026-09-11 v2.3.4）**：deploy.sh 增加 **stamp 机制**（env/.deps_stamp 记录 requirements.txt md5）——**已安装且 requirements.txt 未变化则跳过重装**（[跳过] stamp 匹配）；只有首次部署 / 依赖变化 / 程序升级才重新安装。**CI 每次全新容器必装**（验证需要）；开发/测试/生产环境复用 venv 不重复安装。
+- **offline-python 打包（2026-09-11 v2.3.4）**：offline-python/ 现含 **199 个 Rocky 8.10 RPM（137MB，python3.12-3.12.14-el8_10 + devel + pip + 全依赖）**，由 infra/get-offline-python.sh（Rocky 8 联网环境 dnf download --resolve --alldeps）生成，随部署包携带——**离线服务器无需源码编译 Python**（此前手工编译浪费半天），deploy.sh 在线失败后 dnf localinstall offline-python/*.rpm 一键装齐。
 - **测试环境验证**：2026-09-11 在 WSL rocky10-st 测试环境实测（见 11.4 记录）。
 
 ### 11.2 支持矩阵：只保证一种受支持组合

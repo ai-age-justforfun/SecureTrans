@@ -233,23 +233,33 @@ else
 fi
 
 source venv/bin/activate
-# 依赖安装：① 在线优先（pip 联网，保证与源一致）→ ② 失败回退内置离线 wheel（offline-deps/）
-echo -e "  [在线优先] pip 联网安装依赖..."
-if pip install --upgrade pip -q 2>/dev/null \
-    && pip install -r requirements.txt -q 2>/dev/null \
-    && pip install gunicorn -q 2>/dev/null; then
-    echo -e "  [在线] 依赖安装 ${GREEN}OK${NC}"
+# 依赖安装：幂等优先 —— 已安装且 requirements.txt 未变化（stamp 匹配）则跳过，
+# 只有首次部署 / 依赖变化 / 程序升级才重新安装；未满足时 ① 在线优先 → ② 失败回退离线
+DEPS_STAMP="venv/.deps_stamp"
+REQ_MD5="$(md5sum requirements.txt 2>/dev/null | cut -d' ' -f1 || true)"
+if [ -f "$DEPS_STAMP" ] && [ "$(cat "$DEPS_STAMP" 2>/dev/null)" = "$REQ_MD5" ] \
+    && venv/bin/python -c "import flask, flask_login, bcrypt, apscheduler, ldap3, waitress, gunicorn" 2>/dev/null; then
+    echo -e "  [跳过] 依赖已安装且 requirements.txt 未变化（stamp 匹配），无需重装 ${GREEN}OK${NC}"
 else
-    if [ -d "$OFFLINE_DEPS_DIR" ]; then
-        echo -e "${YELLOW}  [在线失败] 回退内置离线 wheel (offline-deps/)...${NC}"
-        pip install --no-index --find-links="$OFFLINE_DEPS_DIR" -r requirements.txt -q
-        pip install --no-index --find-links="$OFFLINE_DEPS_DIR" gunicorn==21.2.0 -q
-        echo -e "  [离线] 依赖安装 ${GREEN}OK${NC}"
+    echo -e "  [安装] 依赖未满足（首次/依赖变化/升级），在线优先 → 失败回退离线..."
+    if pip install --upgrade pip -q 2>/dev/null \
+        && pip install -r requirements.txt -q 2>/dev/null \
+        && pip install gunicorn -q 2>/dev/null; then
+        echo -e "  [在线] 依赖安装 ${GREEN}OK${NC}"
     else
-        echo -e "${RED}错误: 在线安装依赖失败且部署包无离线 wheel（offline-deps/）${NC}"
-        echo -e "${RED}      请联网，或补充离线依赖包到部署包后重试${NC}"
-        exit 1
+        if [ -d "$OFFLINE_DEPS_DIR" ]; then
+            echo -e "${YELLOW}  [在线失败] 回退内置离线 wheel (offline-deps/)...${NC}"
+            pip install --no-index --find-links="$OFFLINE_DEPS_DIR" -r requirements.txt -q
+            pip install --no-index --find-links="$OFFLINE_DEPS_DIR" gunicorn==21.2.0 -q
+            echo -e "  [离线] 依赖安装 ${GREEN}OK${NC}"
+        else
+            echo -e "${RED}错误: 在线安装依赖失败且部署包无离线 wheel（offline-deps/）${NC}"
+            echo -e "${RED}      请联网，或补充离线依赖包到部署包后重试${NC}"
+            exit 1
+        fi
     fi
+    echo "$REQ_MD5" > "$DEPS_STAMP"
+    echo -e "  stamp 已更新（requirements.txt md5） ${GREEN}OK${NC}"
 fi
 deactivate
 echo -e "  依赖安装完成（含 gunicorn） ${GREEN}OK${NC}"
