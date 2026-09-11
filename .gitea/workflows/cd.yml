@@ -62,6 +62,11 @@ jobs:
           GITEA="http://${CI_GW}:3000"
           TOKEN="${{ github.token }}"
           echo "Gitea: ${GITEA} | 版本: ${VER}"
+          echo "=== DIAG: 容器网络状态 ==="
+          cat /proc/net/route
+          echo "---"
+          curl -v -m 5 "${GITEA}/api/v1/version" 2>&1 | tail -15
+          echo "=== DIAG END ==="
           REL=$(curl -sf -H "Authorization: token ${TOKEN}" "${GITEA}/api/v1/repos/openwrtadmin/SecureTrans/releases/tags/${VER}")
           PKG_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name=="securetrans-'${VNO}'.tar.gz") | .browser_download_url')
           MD5_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name|endswith(".tar.gz.md5")) | .browser_download_url')
