@@ -1,18 +1,22 @@
 name: CI-TDD
 
-# SecureTrans 持续集成（ADR-016 12-Factor 三环境一体化 · ADR-018 CI 分层与质量门禁）
-# 触发：push 到 main 或 push tag v*，在本地测试环境 runner（securetrans-wsl，WSL rocky10-st）
+# SecureTrans 持续集成（ADR-016 12-Factor 三环境一体化 · ADR-018 CI 分层与质量门禁 · ADR-019 容器隔离）
+# 触发：push 到 main 或 push tag v*，在 WSL rocky10-st 的 act_runner 执行
+# 运行模式（ADR-019，与 Docker Desktop/Gitea 完全独立）：
+#   - securetrans-ci   = 容器 label（docker://securetrans-ci:3.12，WSL 内独立 docker daemon）
+#     → fast-check / tdd-verify：每次 job 全新容器 + 新配置 + 新数据，零宿主污染
+#   - securetrans-wsl  = 宿主 label（保留）→ package：需访问共享制品目录 /opt/securetrans/packages
 # 分层（最便宜门禁先失败）：
-#   1. fast-check  —— 秒级静态门禁（语法/版本一致性/配置模板/脚本完整性），总跑
-#   2. tdd-verify  —— 全量 TDD 回归（verify.sh，307 项基线；含 ADR-017 测试/生产隔离）
-#   3. package     —— 仅 tag v* 触发：复用 offline-deps 构建发布包并上传 CI 制品（artifact）
-#                     实际 Release 资产仍由 infra/release.ps1 手工发布（发布策略 ADR-014）
+#   1. fast-check  —— 秒级静态门禁（语法/静态检查/版本一致性/配置模板/脚本完整性），总跑
+#   2. tdd-verify  —— 全量 TDD 回归（容器内 ci_test.sh，309 项基线；ADR-017 测试/生产隔离）
+#   3. package     —— 仅 tag v* 触发：复用 offline-deps 构建发布包并落到共享 packages/
+#                     实际 Release 资产由 infra/release.ps1 手工发布（发布策略 ADR-014）
 # 前置：
 #   1. Gitea 启用 Actions（站点配置 → Actions → 启用）
-#   2. 注册本地 runner：见 infra/ci-runner.md（labels=securetrans-wsl）
-#   3. 仓库为 public 时 clone 无需凭据；private 化后在 Settings → Actions Secrets 配置
-# 说明：测试环境 = 生产配置镜像（systemd + gunicorn），数据为 mock（AD_MOCK_MODE=true，不触网）；
-#       生产环境不做写数据自动化测试，仅冒烟 + 人工验收（ADR-017，docs/07-requirements-traceability.md）。
+#   2. act_runner systemd 常驻（infra/act_runner.service.example），双 label：securetrans-wsl:host + securetrans-ci:docker://securetrans-ci:3.12
+#   3. WSL 内独立 docker daemon（dnf install docker-ce，与 Docker Desktop 无关）
+#   4. 镜像构建：docker build -f infra/docker/Dockerfile -t securetrans-ci:3.12 infra/docker（wheelhouse 由 offline-deps 解压）
+# 说明：CI 容器=开发/测试环境一致（Python 3.12 + 离线 wheelhouse + 系统工具）；生产不做写数据自动化（ADR-017 冒烟 + 人工验收）。
 
 on:
   push:
@@ -21,30 +25,21 @@ on:
 
 jobs:
   # ============================================================
-  # 1. 秒级静态门禁（总是执行，最便宜先失败）
+  # 1. 秒级静态门禁（容器，总是执行，最便宜先失败）
   # ============================================================
   fast-check:
-    runs-on: securetrans-wsl
+    runs-on: securetrans-ci
     steps:
-      - name: Clone latest code
-        run: |
-          set -euo pipefail
-          sudo rm -rf /opt/securetrans-ci-fast
-          sudo git clone "http://localhost:3000/openwrtadmin/SecureTrans.git" /opt/securetrans-ci-fast
-          sudo chmod -R a+rX /opt/securetrans-ci-fast
-
       - name: Python 静态检查（语法/未定义名称/重复定义/未使用 import）
         run: |
           set -euo pipefail
-          cd /opt/securetrans-ci-fast
-          /opt/securetrans/venv/bin/python -m py_compile src/app.py tests/test_api.py infra/static_check.py
-          /opt/securetrans/venv/bin/python infra/static_check.py src/app.py tests/test_api.py
+          python -m py_compile src/app.py tests/test_api.py infra/static_check.py
+          python infra/static_check.py src/app.py tests/test_api.py
           echo "静态检查: PASS"
 
       - name: 版本号双源一致性（app.py ↔ index.html）
         run: |
           set -euo pipefail
-          cd /opt/securetrans-ci-fast
           V_BE=$(grep -m1 '^APP_VERSION = "v' src/app.py | sed -E 's/.*"v([^"]+)".*/\1/')
           V_FE=$(grep -m1 "const APP_VERSION = 'v" src/static/index.html | sed -E "s/.*'v([^']+)'.*/\1/")
           echo "  backend: ${V_BE} | frontend: ${V_FE}"
@@ -54,57 +49,33 @@ jobs:
       - name: env 模板 ENV_ROLE 正确性
         run: |
           set -euo pipefail
-          cd /opt/securetrans-ci-fast
           grep -q '^ENV_ROLE=test' env/dev.env || { echo "env/dev.env 缺少 ENV_ROLE=test"; exit 1; }
           grep -q '^ENV_ROLE=test' env/test.env || { echo "env/test.env 缺少 ENV_ROLE=test"; exit 1; }
           grep -q '^ENV_ROLE=prod' env/prod.env.template || { echo "env/prod.env.template 缺少 ENV_ROLE=prod"; exit 1; }
           echo "env 模板 ENV_ROLE: PASS"
 
-      - name: 关键脚本完整性（deploy/verify/smoke/package/release）
+      - name: 关键脚本完整性（deploy/verify/smoke/package/release/ci_test）
         run: |
           set -euo pipefail
-          cd /opt/securetrans-ci-fast
-          for f in infra/deploy.sh infra/verify.sh infra/smoke.sh infra/package.sh infra/release.ps1; do
+          for f in infra/deploy.sh infra/verify.sh infra/smoke.sh infra/package.sh infra/release.ps1 infra/ci_test.sh; do
             [ -f "$f" ] || { echo "缺少 $f"; exit 1; }
           done
           echo "脚本完整性: PASS"
 
   # ============================================================
-  # 2. 全量 TDD 回归（依赖 fast-check 通过；测试/生产隔离见 ADR-017）
+  # 2. 全量 TDD 回归（容器，每次全新环境；依赖 fast-check 通过）
   # ============================================================
   tdd-verify:
-    runs-on: securetrans-wsl
+    runs-on: securetrans-ci
     needs: fast-check
     steps:
-      - name: Clone latest code
+      - name: 容器内全量 TDD（ci_test.sh：新配置 + 新数据 + 零宿主污染）
         run: |
           set -euo pipefail
-          sudo rm -rf /opt/securetrans-ci
-          sudo git clone "http://localhost:3000/openwrtadmin/SecureTrans.git" /opt/securetrans-ci
-          sudo chmod -R a+rX /opt/securetrans-ci
-
-      - name: Sync to running instance (preserve .env/data/nas/venv)
-        run: |
-          set -euo pipefail
-          sudo rsync -a --delete \
-            --exclude '.env' --exclude '.env.*' --exclude 'data' --exclude 'nas' --exclude 'venv' \
-            /opt/securetrans-ci/src/ /opt/securetrans/src/
-          sudo rsync -a --delete /opt/securetrans-ci/tests/ /opt/securetrans/tests/
-          sudo rsync -a --delete /opt/securetrans-ci/infra/ /opt/securetrans/infra/
-          sudo cp -a /opt/securetrans-ci/env /opt/securetrans/env 2>/dev/null || true
-
-      - name: Restart service
-        run: |
-          sudo systemctl restart securetrans
-          sleep 3
-          curl -sf http://127.0.0.1:8000/api/health || curl -sf "http://$(grep -E '^HOST=' /opt/securetrans/.env | cut -d= -f2 | tr -d '\r'):8000/api/health"
-
-      - name: Full TDD regression (verify.sh, ADR-017 fail-safe)
-        run: |
-          cd /opt/securetrans && sudo -E bash infra/verify.sh
+          bash infra/ci_test.sh
 
   # ============================================================
-  # 3. 发布构建（仅 tag v* 触发）：复用 offline-deps → 构建发布包 → 上传 CI 制品
+  # 3. 发布构建（宿主，仅 tag v* 触发）：复用 offline-deps → 构建发布包 → 共享制品目录
   #    实际 Release 资产由 infra/release.ps1 手工上传（同一制品，可追溯）
   # ============================================================
   package:
