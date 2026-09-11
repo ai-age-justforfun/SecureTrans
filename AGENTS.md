@@ -119,6 +119,7 @@
 | ADR-021 | WSL CI 稳定性根因与修复（双因）：WSL 发行版空闲自动终止→保活策略（用户保持 WSL 终端活跃 + CI job 22s 短时）；act_runner v0.2.11 needs bug→合并 fast-check+tdd 为单 job ci-check（无 needs） | README |
 | ADR-022 | 依赖双轨 / 支持矩阵 / 发布形态：①依赖安装在线优先离线兜底（deploy.sh，离线包为 Release asset，均入 Gitea）；②支持矩阵只保证一种组合（Python 3.12 + Rocky 8.10 / WSL rocky10-st / Windows dev）；③发布形态两轨并存（仓库=源码全工程；Release=发行包，保持全量打包不精简） | README |：① env/*.env 为唯一配置键源（CI 经 test.env 全键注入不写 .env；生产经 prod.env.template 生成 .env；fast-check 校验三环境键集合一致防漂移）；② WSL 内独立 docker-ce daemon（与 Docker Desktop/Gitea 无关，零中断），act_runner 双 label（securetrans-wsl 宿主 / securetrans-ci 容器），容器 job 显式 clone（经 WSL 网关 IP 动态解析）；③ runner shutdown_timeout:3h 缓解外部 SIGTERM 中断 job；④ 系统级依赖（openldap-clients 等）在线 dnf / 离线 rpm 双模式 |
 | ADR-023 | 文件名安全清理 + AD 改密前端拦截：①上传 filename 统一取 basename（防 webkitdirectory 相对路径 500 + 路径穿越）；②AD 用户改密前端拦截（source=ad 提示到域控制器，后端 400 兜底）；③空文件夹提示 + toast 显示后端清理后文件名 | README |
+| ADR-024 | CD 自动部署打通：Gitea Release→CD job（容器）→MD5 校验→scp→服务器 cd-deploy.sh 轻量升级（保留 .env/data/nas/venv）→重启→只读冒烟；CD 密钥入 repo secret CD_SSH_KEY；生产不重置 admin 密码/不污染数据 | README |
 ### ADR-005 详述：非硬编码原则（强制）
 
 prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → 测试(WSL) → 生产(Rocky) 环境差异大，
@@ -281,6 +282,17 @@ prototype/MVP 阶段代码内默认值可快速验证；但本地(Windows) → �
   2. **AD 用户改密前端拦截**（source=ad → toast 提示到域控制器，不弹表单；后端 400 兜底）。
   3. **空文件夹前端提示** + 上传 toast 显示后端清理后文件名。
 - **已落点**：v2.3.7；Windows dev 全量 TDD 318/318；复现脚本（路径分隔符 500→200）。
+
+### ADR-024：CD 自动部署打通（强制）
+
+- **背景**：从手工开发/测试/部署升级为 AI 辅助全自动开发/测试/部署；用户放开生产服务器 SSH（10.10.30.8），要求 Release 发布后自动部署。
+- **决策**：
+  1. **CD 链路**：release published 或 workflow_dispatch → CD job（securetrans-ci 容器，含 openssh-client/rsync/jq）→ Gitea API 下载资产 + MD5 校验 → scp → 服务器 cd-deploy.sh（备份→代码更新保留 .env/data/nas/venv→重启→健康检查→只读冒烟）。
+  2. **SSH**：CD 专用 ed25519 密钥；公钥入服务器 authorized_keys，私钥入 repo secret CD_SSH_KEY（不入仓库）。
+  3. **生产安全**：不重置 admin 密码、不重建 venv、不覆盖生产数据；生产只跑只读冒烟，全量 TDD 只在测试环境；部署前整体备份（保留 5 份）。
+  4. **版本策略**：CD 基础设施变更不 bump 应用版本；应用代码变更才 bump + 发布（ADR-014 不变）。
+- **已落点**：2026-09-11 v2.3.7 链路打通；首轮 CD 试部署验证。
+
 
 ## 研发流程
 

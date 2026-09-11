@@ -6,8 +6,9 @@
 # 依赖：infra/docker/wheelhouse/（由 packages/securetrans-offline-deps.tar.gz 解压而来）
 FROM python:3.12-slim
 
+# openssh-client/rsync/jq：CD 部署（ADR-024，经 SSH 推送生产服务器，容器直连内网 22 端口）
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl git ca-certificates procps \
+        curl git ca-certificates procps openssh-client rsync jq \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace

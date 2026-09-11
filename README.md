@@ -464,6 +464,16 @@ main ────●────●────●────●────  �
   3. **空文件夹提示**：handleFiles 空列表直接提示"所选文件夹为空或无文件"；上传成功 toast 显示后端清理后的文件名（data.name）。
 - **已落点**：2026-09-11 v2.3.7；复现脚本验证（路径分隔符 500→200，中文/0字节/多文件全 200）；Windows dev 全量 TDD 318/318 通过。
 
+### ADR-024：CD 自动部署打通（Gitea Release → 生产服务器，强制）
+- **背景**：从"手工开发/测试/部署"升级为"AI 辅助全自动开发/测试/部署"：CI（静态门禁+TDD）已自动化，部署仍手工。用户放开生产服务器 SSH（10.10.30.8），要求 Release 发布后自动推送部署。
+- **决策**：
+  1. **CD 链路**：Gitea Release 发布（release: published）或手动 workflow_dispatch → CD job（WSL act_runner 容器 securetrans-ci:3.12，已含 openssh-client/rsync/jq）→ 经 WSL 网关访问 Gitea API 下载发布资产 + MD5 校验 → scp 到服务器 /opt/securetrans-release/ → ssh 执行 infra/cd-deploy.sh（轻量升级：备份→代码更新保留 .env/data/nas/venv→重启→健康检查→只读冒烟）→ 结果回报。
+  2. **SSH 认证**：CD 专用 ed25519 密钥（WSL 生成，公钥入服务器 authorized_keys，私钥经 Gitea repo secret `CD_SSH_KEY` 注入容器，不入仓库）。
+  3. **生产安全**：CD 部署不重置 admin 密码、不重建 venv、不覆盖生产数据（与 deploy.sh 全量安装互补，全量安装仅依赖/结构变更时手工执行）；生产只跑只读冒烟 smoke.sh，全量 TDD 只在测试环境（防数据污染）；部署前整体备份（保留最近 5 份）。
+  4. **版本策略**：CD 基础设施变更（Dockerfile/cd 脚本/workflow）不 bump 应用版本；应用代码变更才 bump 并发布 Release（ADR-014 调测期密集手工发布不变）。
+- **已落点**：2026-09-11 v2.3.7 链路打通（密钥+secret+镜像+cd.yml+cd-deploy.sh）；首轮 CD 试部署 v2.3.7 验证。
+
+
 
 ---
 

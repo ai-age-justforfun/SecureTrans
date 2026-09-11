@@ -663,6 +663,15 @@ sudo systemctl restart securetrans
 
 ---
 
+### 5.6 CD 自动部署（ADR-024）
+
+Release 发布后自动部署到生产服务器（或手动 workflow_dispatch 触发）：
+
+1. **前置**（一次性，已完成）：CD 专用 SSH 密钥公钥已装到服务器 authorized_keys；私钥存 Gitea repo secret `CD_SSH_KEY`；CI 镜像含 openssh-client/rsync/jq。
+2. **触发**：Gitea Release 发布（release: published）→ 自动执行 CD；或 Gitea Actions 页手动 Run workflow（输入版本号，如 v2.3.7）。
+3. **过程**：CD job 下载发布资产 + MD5 校验 → scp 到 /opt/securetrans-release/ → 服务器执行 infra/cd-deploy.sh（备份→代码更新→重启→健康检查→只读冒烟）。
+4. **注意**：CD 为轻量升级——不重置 admin 密码、不重建 venv、不覆盖 .env/data/nas；依赖或结构变更需手工执行完整 deploy.sh（全量安装）。
+
 ## 5.5、12-Factor 三环境一体化（ADR-016）
 
 ### 环境矩阵

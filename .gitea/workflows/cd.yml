@@ -1,0 +1,95 @@
+# ============================================================
+# SecureTrans CD 部署（ADR-024）
+# 触发：Gitea Release 发布（release: published）或手动 workflow_dispatch
+# 执行：WSL rocky10-st act_runner 容器 job（securetrans-ci:3.12，含 openssh-client/rsync/jq）
+# 链路：解析版本 → 注入 SSH 密钥(secret CD_SSH_KEY) → 下载发布资产+MD5校验
+#       → scp 到生产服务器 → 远程执行 infra/cd-deploy.sh（轻量升级+只读冒烟）
+# 安全：密钥经 Gitea repo secret 注入，不入仓库；生产只跑只读冒烟，不污染数据
+# 质量门禁：MD5 校验 + 包内版本==部署版本 + 服务健康检查 + 冒烟
+# ============================================================
+name: CD-Deploy
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '部署版本号（如 v2.3.7，留空=最新 tag）'
+        required: false
+        default: ''
+
+jobs:
+  deploy:
+    runs-on: securetrans-ci
+    steps:
+      - name: 解析部署版本
+        id: ver
+        run: |
+          set -euo pipefail
+          VER="${{ github.event.release.tag_name }}"
+          [ -z "${VER}" ] && VER="${{ inputs.version }}"
+          if [ -z "${VER}" ]; then
+            VER=$(git ls-remote --tags "http://$(hostname):3000/openwrtadmin/SecureTrans.git" 2>/dev/null \
+              | awk -F/ '{print $NF}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          fi
+          [ -z "${VER}" ] && { echo "[错误] 无法解析版本号"; exit 1; }
+          echo "DEPLOY_VERSION=${VER}" >> "$GITHUB_ENV"
+          echo "解析版本: ${VER}"
+
+      - name: 配置 SSH 部署密钥（来自 repo secret CD_SSH_KEY）
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "${{ secrets.CD_SSH_KEY }}" > ~/.ssh/id_ed25519_securetrans_cd
+          chmod 600 ~/.ssh/id_ed25519_securetrans_cd
+          cat >> ~/.ssh/config <<'EOF'
+Host securetrans-prod
+    HostName 10.10.30.8
+    User root
+    IdentityFile ~/.ssh/id_ed25519_securetrans_cd
+    StrictHostKeyChecking accept-new
+    ConnectTimeout 10
+EOF
+          ssh -o BatchMode=yes -o ConnectTimeout=10 securetrans-prod 'hostname; echo SSH-CONN-OK'
+
+      - name: 下载发布资产并校验（经 WSL 网关访问 Gitea）
+        run: |
+          set -euo pipefail
+          VER="${DEPLOY_VERSION}"
+          hex_ip() { local h=$1; echo "$((16#${h:6:2})).$((16#${h:4:2})).$((16#${h:2:2})).$((16#${h:0:2}))"; }
+          CI_GW="${CI_GATEWAY:-$(hex_ip "$(awk '$2=="00000000" {print $3; exit}' /proc/net/route 2>/dev/null)")}"
+          GITEA="http://${CI_GW}:3000"
+          TOKEN="${{ secrets.GITEA_TOKEN }}"
+          echo "Gitea: ${GITEA} | 版本: ${VER}"
+          REL=$(curl -sf -H "Authorization: token ${TOKEN}" "${GITEA}/api/v1/repos/openwrtadmin/SecureTrans/releases/tags/${VER}")
+          PKG_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name=="securetrans-'${VER}'.tar.gz") | .browser_download_url')
+          MD5_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name|endswith(".tar.gz.md5")) | .browser_download_url')
+          [ -n "${PKG_URL}" ] && [ -n "${MD5_URL}" ] || { echo "[错误] Release 资产缺失"; exit 1; }
+          curl -sfL -o pkg.tar.gz "${PKG_URL}"
+          curl -sfL -o pkg.tar.gz.md5 "${MD5_URL}"
+          EXPECT=$(awk '{print $1}' pkg.tar.gz.md5)
+          ACTUAL=$(md5sum pkg.tar.gz | awk '{print $1}')
+          echo "MD5: expect=${EXPECT} actual=${ACTUAL}"
+          [ "${EXPECT}" = "${ACTUAL}" ] || { echo "[错误] MD5 校验失败"; exit 1; }
+          echo "MD5 校验通过，资产就绪"
+
+      - name: 传输发布包到服务器
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes securetrans-prod 'mkdir -p /opt/securetrans-release'
+          scp -q -o BatchMode=yes pkg.tar.gz "securetrans-prod:/opt/securetrans-release/securetrans-${DEPLOY_VERSION}.tar.gz"
+          ssh -o BatchMode=yes securetrans-prod "ls -la /opt/securetrans-release/securetrans-${DEPLOY_VERSION}.tar.gz"
+
+      - name: 远程执行部署（轻量升级 + 只读冒烟）
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes securetrans-prod "bash -s ${DEPLOY_VERSION}" < infra/cd-deploy.sh
+
+      - name: 部署结果汇总
+        run: |
+          echo "============================================================"
+          echo "  CD 部署完成 | 版本: ${DEPLOY_VERSION} | 目标: 10.10.30.8"
+          echo "  服务状态:"
+          ssh -o BatchMode=yes securetrans-prod 'systemctl is-active securetrans; curl -sf http://127.0.0.1:8000/healthz -o /dev/null && echo "HEALTH-OK" || echo "HEALTH-CHECK-FAIL"'
+          echo "============================================================"
