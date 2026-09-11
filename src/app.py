@@ -535,6 +535,21 @@ def init_db():
         conn.commit()
         logger.info("ad_config 已从 .env 播种（source=env），管理页可查看/导入/保存")
 
+    # 容量索引（3-5 年容量保障，幂等 CREATE INDEX IF NOT EXISTS）：
+    # 高频查询键建索引，避免数据增长后全表扫描。容量测算：10 条业务/天 × 365 × 5 年
+    # ≈ 提交单 1.8 万 + 文件 5 万 + 审批 3.6 万 + 审计日志 ~11 万 + 下载记录 4 万 ≈ 25-30 万行，
+    # SQLite 百万级内 + 索引 = 毫秒级查询；WAL 已开保证读写并发。超过 100 万行再评估迁移 PostgreSQL。
+    for _idx in (
+        "CREATE INDEX IF NOT EXISTS idx_submissions_submitter ON submissions(submitter)",
+        "CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions(status)",
+        "CREATE INDEX IF NOT EXISTS idx_submissions_submit_time ON submissions(submit_time)",
+        "CREATE INDEX IF NOT EXISTS idx_submission_files_sub ON submission_files(submission_id)",
+        "CREATE INDEX IF NOT EXISTS idx_approvals_sub ON approvals(submission_id)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(time)",
+        "CREATE INDEX IF NOT EXISTS idx_download_sub ON download_records(submission_id)",
+    ):
+        conn.execute(_idx)
+
     conn.commit()
     conn.close()
     logger.info("数据库初始化完成: %s", DB_PATH)
