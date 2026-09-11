@@ -60,6 +60,7 @@ jobs:
           VNO="${VER#v}"
           hex_ip() { local h=$1; echo "$((16#${h:6:2})).$((16#${h:4:2})).$((16#${h:2:2})).$((16#${h:0:2}))"; }
           CI_GW="${CI_GATEWAY:-$(hex_ip "$(awk '$2=="00000000" {print $3; exit}' /proc/net/route 2>/dev/null)")}"
+          curl -sf -m 2 "http://${CI_GW}:3000/api/v1/version" >/dev/null 2>&1 || CI_GW="172.17.0.1"
           GITEA="http://${CI_GW}:3000"
           TOKEN="${{ github.token }}"
           echo "Gitea: ${GITEA} | 版本: ${VER}"
