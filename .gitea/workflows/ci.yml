@@ -82,10 +82,19 @@ jobs:
     runs-on: securetrans-ci
     needs: fast-check
     steps:
-      - name: 容器内全量 TDD（ci_test.sh：新配置 + 新数据 + 零宿主污染）
+      - name: Clone + 容器内全量 TDD（ci_test.sh：新配置 + 新数据 + 零宿主污染）
         run: |
           set -euo pipefail
-          cd "${GITHUB_WORKSPACE:-/workspace}"
+          hex_ip() { local h=$1; echo "$((16#${h:6:2})).$((16#${h:4:2})).$((16#${h:2:2})).$((16#${h:0:2}))"; }
+          CI_GW="${CI_GATEWAY:-$(hex_ip "$(awk '$2=="00000000" {print $3; exit}' /proc/net/route 2>/dev/null)")}"
+          CI_GITEA_URL="${CI_GITEA_URL:-http://${CI_GW}:3000}"
+          WS="${GITHUB_WORKSPACE:-/workspace}"
+          cd "$WS"
+          if [ ! -f src/app.py ]; then
+            rm -rf "$WS" && mkdir -p "$WS"
+            git clone --depth 1 "${CI_GITEA_URL}/openwrtadmin/SecureTrans.git" "$WS"
+            cd "$WS"
+          fi
           bash infra/ci_test.sh
 
   # ============================================================
