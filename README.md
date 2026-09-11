@@ -1,8 +1,8 @@
 ﻿# SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.3.7 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（CI 容器隔离与静态门禁）
+> 版本：v2.3.7 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（运行收集问题中）
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
-> 开发模式：主干开发（Trunk-Based Development）+ 单分支 main
+> 开发模式：主干开发（Trunk-Based Development）+ 单分支 main + AI 辅助人机协同（AGENTS v2.0）
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
 
 ---
@@ -78,7 +78,7 @@ sudo firewall-cmd --permanent --add-port=8000/tcp && sudo firewall-cmd --reload
 ```
 SecureTrans/
 ├── README.md                 # 本文件（项目入口，人 + AI 同步查阅）
-├── AGENTS.md                 # AI协作指南（AI 默认扫根目录）
+├── AGENTS.md                 # AI协作指南 v2.0（Part A=AI辅助软件工程方法+Prompt模板，Part B=项目规范）
 ├── .gitignore                # Git忽略规则
 ├── LICENSE                   # MIT许可证
 ├── src/                      # 源代码（按功能模块组织）
@@ -106,6 +106,7 @@ SecureTrans/
 │   ├── 09-preprod-verification.md     # 生产预验收清单
 │   ├── 10-prod-sim-verification.md    # 生产模拟验证（+ 测试报告txt）
 │   ├── 11-architecture-evolution.md   # 架构演进（Flask→FastAPI→Nginx 等决策）
+│   ├── 12-project-retrospective.md   # 项目复盘总结（PSF 阶段全链路）
 │   └── DEPLOY.md                      # 部署指南（唯一，含测试/生产/双OS/网络隔离/防火墙）
 └── infra/                    # 基础设施配置
     ├── deploy.sh             # 一键部署脚本（9步自动化, Linux）
@@ -218,7 +219,10 @@ main ────●────●────●────●────  �
 - **Commit 规范**：`<type>(<scope>): <描述>`，不强制带 Sprint 编号，可关联 Story 编号
 
 ### 当前阶段
-**PSF（问题-方案匹配验证）— Alpha 内测进行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，deploy.sh/verify.sh 全部通过，318项自动化测试 100%（WSL production 318 项）+ 800MB 性能压力测试通过（MD5 端到端一致），内部人工测试启动中（内网全功能 + 办公外网下载）。
+**PSF（问题-方案匹配验证）— Beta 内部测试运行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，
+deploy.sh/verify.sh 全部通过，318项自动化测试 100%（Windows dev + WSL test）+ 800MB 性能压力测试通过
+（MD5 端到端一致）+ CD 全自动部署打通（Release 发布 → 生产自动升级，run #136）；**清库后启动内部
+同事 beta 测试，运行收集问题，持续迭代**。全项目复盘见 [项目复盘总结](docs/12-project-retrospective.md)。
 
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
@@ -228,6 +232,7 @@ main ────●────●────●────●────  �
 - [测试用例](docs/05-test-cases.md)
 - [测试报告（318项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
+- [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
 - [部署指南（唯一部署文档）](docs/DEPLOY.md)
 
@@ -479,6 +484,18 @@ main ────●────●────●────●────  �
 - **已落点**：2026-09-11 v2.3.7 链路打通并全自动部署成功（run #136 success：MD5 校验通过 → scp 35MB → cd-deploy.sh 6/6 → 只读冒烟 11/11 PASS → 服务 active + HEALTH-OK）；备份 /opt/securetrans_backup_20260911_174451。
 
 
+
+### ADR-025：AI 辅助人机协同开发流程规范（方法论，强制）
+- **背景**：SecureTrans 是首个 AI 辅助人机协同完成的项目（PSF→Beta，166 提交/24 ADR/318 测试/CD 全自动）。
+  为后续项目"站在巨人肩膀上"，将 AI 辅助软件工程方法沉淀为规范化、模版化指南。
+- **决策**：
+  1. **AGENTS.md v2.0（Part A）为 AI 辅助软件工程方法唯一来源**：人机协同分工模型（人=决策/验收，AI=执行/建议）、
+     AI 工作流六步（探查→约束→证据→执行→验证→交付）、**Prompt 任务卡模板**（类型/目标/上下文/约束/验收标准/交付形态——
+     验收标准必须可执行断言）、敏捷（Scrum/Story）AI 参与点、TDD 底线、CICD 可信原则、发布前 8 项质量门禁。
+  2. **复用规则**：新项目复制 AGENTS.md Part A + 任务卡模板；Part B（项目规范）按项目替换。
+  3. **与 ADR-024 不重叠**：ADR-024 管 CD 链路实现（Release→生产自动部署），ADR-025 管 AI 辅助开发流程规范（方法论）；
+     二者构成"AI 辅助全自动开发/测试/部署"的完整闭环（流程规范 + 工具链路）。
+- **已落点**：2026-09-11 AGENTS.md v2.0 + docs/12-project-retrospective.md（首个项目复盘沉淀）。
 
 ---
 
