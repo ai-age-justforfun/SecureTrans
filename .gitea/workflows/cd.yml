@@ -43,14 +43,14 @@ jobs:
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           echo "${{ secrets.CD_SSH_KEY }}" > ~/.ssh/id_ed25519_securetrans_cd
           chmod 600 ~/.ssh/id_ed25519_securetrans_cd
-          cat >> ~/.ssh/config <<'EOF'
-Host securetrans-prod
-    HostName 10.10.30.8
-    User root
-    IdentityFile ~/.ssh/id_ed25519_securetrans_cd
-    StrictHostKeyChecking accept-new
-    ConnectTimeout 10
-EOF
+          printf '%s\n' \
+            'Host securetrans-prod' \
+            '    HostName 10.10.30.8' \
+            '    User root' \
+            '    IdentityFile ~/.ssh/id_ed25519_securetrans_cd' \
+            '    StrictHostKeyChecking accept-new' \
+            '    ConnectTimeout 10' \
+            >> ~/.ssh/config
           ssh -o BatchMode=yes -o ConnectTimeout=10 securetrans-prod 'hostname; echo SSH-CONN-OK'
 
       - name: 下载发布资产并校验（经 WSL 网关访问 Gitea）
