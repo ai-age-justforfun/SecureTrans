@@ -323,6 +323,31 @@ AI Agent 生成代码 → 自动运行测试 → 提交到 Git → CI 自动验�
 | B2 | 容器 job 的 workspace 策略 | ✅ 已明确 | act_runner 容器 job **不自动 checkout**：需显式 git clone（经 WSL 网关 IP 动态解析访问 Gitea）；工作区=GITHUB_WORKSPACE，数据落容器内 /data 随容器销毁，宿主零污染 |
 | B3 | 数据中心离线 CI 独立化 | 📌 远期 | 生产服务器（隔离互联网）若建 CI：离线 RPM 装 docker-ce + 镜像 docker save/load 导入；系统依赖（openldap-clients 等）进离线依赖包（在线 dnf / 离线 rpm 双模式，见 ADR-020） |
 | B4 | 镜像版本管理 | 📌 远期 | 依赖变更时重建镜像并打标签（如 securetrans-ci:3.12-2），Dockerfile 与 wheelhouse 已入仓（infra/docker/）可追溯 |
-| B5 | act_runner 周期性 SIGTERM 调查 | 🔍 观察中 | WSL 环境偶发外部 SIGTERM（journal 无 Stopping 记录 = 非 systemd stop）。已用 `shutdown_timeout: 3h` 缓解（信号到达后等 job 完成再退，不再中断运行中 job）；根因待查（怀疑 Windows 侧环境信号），数据中心真实服务器干净环境预计无此问题；若 WSL 内持续中断，CI job 手动重跑兜底 |
+| B5 | act_runner 周期性 SIGTERM 调查 | ✅ 已解决 | **根因双因**（2026-09-11 实证）：① **WSL 发行版空闲自动终止**（wslhost 反复新建、systemd boot 时间变化而内核 uptime 连续；发行版无交互会话时被 WSL 终止，后台 daemon 不算活跃）→ 修复：Windows 计划任务 `WSL-Rocky10-KeepAlive` 每 1 分钟执行 `wsl.exe -d rocky10-st -- sleep 45`（保持连接，发行版不空闲，13:24 后 act_runner 连续稳定 >20 分钟）；② **act_runner v0.2.11 的 `needs` 依赖解析 bug**（"runs-on key not defined in CI-TDD/xxx"+"No steps found"→ 容器 job 秒退假绿，fast-check 无 needs 正常、tdd/package 有 needs 全假绿）→ 修复：**合并 fast-check+tdd 为单 job `ci-check`**（无 needs，串行：静态门禁秒级先失败 → 全量 TDD），package 去掉 needs。修复后实证：run 97 ci-check 22s 成功，容器内进程可见 ci_test.sh + gunicorn + pytest 真跑（317/317）。详见第十节 |
 | B6 | 静态检查标准化（ruff）| 📌 待决策 | 现用 static_check.py（零依赖 AST：语法/未定义名/重复定义/未用 import）。业界标准建议引入 **ruff**（lint+format+isort 一体，Rust 实现，离线 wheel 可打包）；决策点：保持零依赖 vs 引入 ruff（两者可并存：ruff 在线环境加速，static_check.py 作为离线兜底） |
+| B7 | 备忘：beta 测试通过后开放 SSH/持续发布权限 | 📌 待触发 | 用户承诺：下午 beta 手工验收通过后，开放生产服务器 SSH，由 AI 执行 CD/持续发布（配合 ADR-014 发布节奏：正式版本人工发布） |
 
+
+## 十、WSL CI 稳定性根因与修复（ADR-021，2026-09-11）
+
+> 状态：✅ 已修复并实证。背景：CI 在 WSL rocky10-st 上间歇性中断/假绿（run 91 卡 14 分钟、run 92/93/94 tdd 20s 假绿），经逐层取证定位为双因叠加。
+
+### 10.1 根因一：WSL 发行版空闲自动终止
+- **现象**：act_runner 日志高频 shutdown initiated；wslhost 进程反复新建（Windows 侧 wslmon 监控实拍）；systemd boot 时间反复变化但内核 uptime 连续（发行版级重启，非内核/VM 重启）；vmmem 内存持续（VM 存活）。
+- **机制**：WSL2 发行版在**没有交互会话**时会被 WSL 服务终止（后台 systemd 服务不算"活跃交互"）；每次我执行命令激活发行版 → 命令结束 → 60 秒级空闲 → 发行版终止 → 下次访问重启 → act_runner 收到 SIGTERM。**这是 WSL 已知设计**（microsoft/WSL 相关 issue），非 systemd 自身崩溃。
+- **修复**：Windows 计划任务 **WSL-Rocky10-KeepAlive**，每 1 分钟执行 wsl.exe -d rocky10-st -- sleep 45（保持 45 秒连接，发行版永不空闲）。13:24:25 后 act_runner 连续稳定 >20 分钟（此前每 1-3 分钟必崩），实证有效。
+- **创建命令**（管理员 PowerShell）：
+  schtasks /Create /TN "WSL-Rocky10-KeepAlive" /TR "wsl.exe -d rocky10-st -- sleep 45" /SC MINUTE /MO 1 /F
+
+### 10.2 根因二：act_runner v0.2.11 的 needs 依赖解析 bug（假绿）
+- **现象**：tdd-verify/package（有 
+eeds）job 日志出现 'runs-on' key not defined in CI-TDD/fast-check + No steps found → 容器启动后立即 cleaning up → Gitea 误标"成功"（秒级假绿）；而 fast-check（无 needs）3s 正常执行。
+- **机制**：act_runner v0.2.11 对含 
+eeds 的容器 job 步骤解析异常（步骤丢失、空转成功），Gitea 端无法发现（job 状态被 runner 上报为成功）。
+- **修复**：**合并 fast-check + tdd-verify 为单 job ci-check**（无 needs；静态门禁步骤在前秒级先失败，全量 TDD 步骤在后），package 去掉 needs（仅 tag 触发独立跑）。规避 bug 而非对抗版本。
+- **实证**：run 97（修复后）ci-check 22s 成功；容器内进程取证：infra/ci_test.sh + gunicorn app:app + 	ests/test_api.py 全部在容器内真实执行（非假绿）；全量 TDD 317/317 通过（容器模拟同流程 20s 完成 317 项，SQLite 快）。
+
+### 10.3 遗留与建议
+- **WSL 保活为过渡方案**：CI 权威载体应为数据中心真实服务器（干净 systemd + 无 WSL 自动终止），B3 远期落地。
+- **act_runner 升级**：后续若升级 act_runner（>v0.2.11），可评估恢复多 job + needs 结构（先在新版本复测 needs 行为再改回）。
+- **CI 时间预算**：全量 317 项测试在容器内 ~20s（SQLite 毫秒级），CI 总时长 ~25s（静态门禁 + TDD），远小于 3h 超时。

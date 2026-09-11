@@ -400,6 +400,16 @@ main ────●────●────●────●────  �
   5. **系统依赖统一**：程序依赖全走 venv + wheelhouse（离线打包）；系统级工具（ldapsearch/openldap-clients 等）**在线 dnf / 离线 rpm 双模式**——测试环境先装齐，生产离线时 rpm 进离线依赖包。
 - **已落点**：2026-09-11 容器化 CI 首跑（run 81-87）；fast-check 稳定成功；容器 TDD 309/309 本地+CI 实测；config.yaml.example 入仓。
 
+### ADR-021：WSL CI 稳定性根因与修复（强制）
+
+- **背景**：CI 在 WSL rocky10-st 间歇性中断/假绿（run 91 tdd 卡 14 分钟、run 92/93/94 tdd 20s 假绿但无测试输出），取证定位双因。
+- **决策**：
+  1. **WSL 发行版空闲自动终止 → 保活**：WSL2 发行版无交互会话即被终止（后台 daemon 不算活跃），act_runner 反复 SIGTERM。修复：Windows 计划任务 `WSL-Rocky10-KeepAlive` 每 1 分钟 `wsl.exe -d rocky10-st -- sleep 45`。实证：13:24:25 后连续稳定 >20 分钟。
+  2. **act_runner v0.2.11 needs bug → 单 job**：含 `needs` 的容器 job "runs-on not defined"/"No steps found"→ 秒退假绿。修复：**合并 fast-check+tdd 为单 job `ci-check`**（无 needs 串行），package 去 needs。
+  3. **CI 可信基线**：run 97 ci-check 22s 成功，容器内进程取证 ci_test.sh+gunicorn+pytest 真跑，317/317 全绿。
+- **与 ADR-019/020 关系**：ADR-019 管 runner 常驻/容器隔离；ADR-020 管配置单一来源/依赖统一；ADR-021 管 WSL 保活 + CI 单 job（运行稳定性修复）。
+- **已落点**：2026-09-11 修复闭环；docs/08 第十节 + Backlog B5 更新；保活计划任务已创建。
+
 ### ADR-018：CI/CD 分层与质量门禁（强制）
 - **背景**：原 CI 仅单 job 全量回归（push 触发），无秒级门禁、无测试计数防缩水、发布包靠本地手工 package.sh。
 - **决策**：

@@ -395,6 +395,7 @@ main ────●────●────●────●────  �
 | ADR-018 | CI/CD 分层与质量门禁：fast-check（秒级静态门禁：语法/版本双源一致性/env ENV_ROLE/脚本完整性）前置，tdd-verify（全量，needs fast-check fail-fast），package（仅 tag v* 自动构建发布包到共享 packages/，build once deploy many）；test_api.py 报告段加计数基线门禁（全量 ≥300 / 冒烟 ==10，防静默删减）；离线环境不用 actions/upload-artifact@v4（无 node/网络），制品走共享目录 + release.ps1 |
 | ADR-019 | CI 运行环境隔离与静态门禁：① act_runner 改 systemd 常驻（Restart=always，WSL rocky10-st 开机自启，解决偶发 shutdown）；② 静态检查前置 fast-check（infra/static_check.py，零依赖 AST：语法/未定义名称/重复定义/未使用 import）；③ CI 容器化隔离（securetrans-ci:3.12 镜像 + infra/ci_test.sh，每次 job 全新容器+新配置+新数据，零宿主污染） |
 | ADR-020 | 配置单一来源 + 容器 CI 实跑 + 系统依赖统一：① env/*.env 为唯一配置键源（CI 经 test.env 全键注入不写 .env；生产经 prod.env.template 生成 .env；fast-check 校验三环境键集合一致防漂移）；② WSL 内独立 docker-ce daemon（与 Docker Desktop/Gitea 无关，零中断），act_runner 双 label（securetrans-wsl 宿主 / securetrans-ci 容器），容器 job 显式 clone（经 WSL 网关 IP 动态解析）；③ runner `shutdown_timeout:3h` 缓解外部 SIGTERM 中断 job；④ 系统级依赖（openldap-clients 等）在线 dnf / 离线 rpm 双模式，测试环境先装齐，生产离线打包 |
+| ADR-021 | WSL CI 稳定性根因与修复（双因）：① **WSL 发行版空闲自动终止**（无交互会话即终止，后台 daemon 不算活跃）→ Windows 计划任务 `WSL-Rocky10-KeepAlive` 每 1 分钟 `wsl.exe -d rocky10-st -- sleep 45` 保活（13:24 后 act_runner 连续稳定 >20 分钟实证）；② **act_runner v0.2.11 `needs` 解析 bug**（"runs-on not defined"/"No steps found"→ 容器 job 秒退假绿）→ **合并 fast-check+tdd 为单 job `ci-check`**（无 needs 串行，静态门禁秒级先失败 + 全量 TDD），package 去 needs。实证 run 97：ci-check 22s 成功，容器内进程可见 ci_test.sh+gunicorn+pytest 真跑，317/317 全绿 |
 - **决策**：
   1. **备份健壮化**：copytree 加 `dirs_exist_ok=True + symlinks=True + ignore 临时/锁文件(.nfs*/.DS_Store/*.tmp/*.lock)`，异常清理半成品并返回可读错误（不再裸 500）。
   2. **备份界面彻底分离**：移除"全部备份"按钮与列表 all 混合过滤；系统区块只列 backup-system-*（创建/列表/恢复/删除），业务区块只列 backup-business-*（创建/列表/恢复/删除）；恢复按钮统一"恢复"；旧版混合备份 backup-all-* 不显示，给出提示建议删除。API 层保留 all 兼容（旧脚本），界面不暴露。
@@ -433,6 +434,15 @@ main ────●────●────●────●────  �
   4. **runner 抗信号**：WSL 环境偶发外部 SIGTERM（journal 无 Stopping），`shutdown_timeout: 3h` 让 runner 收到信号后**等运行中 job 完成再退**，不再中断 CI（根因调查记 docs/08 Backlog B5）。
   5. **系统依赖统一**：程序运行依赖全走 venv + wheelhouse（离线打包）；系统级工具（ldapsearch/openldap-clients 等）**在线 dnf / 离线 rpm 双模式**——测试环境先装齐（已装），生产离线时 rpm 进离线依赖包。
 - **已落点**：2026-09-11 容器化 CI 首跑（run 81-87）；fast-check 稳定成功；容器 TDD 309/309 本地+CI 实测；config.yaml.example 入仓；文档四件套同步。
+
+### ADR-021：WSL CI 稳定性根因与修复（强制）
+- **背景**：CI 在 WSL rocky10-st 间歇性中断/假绿（run 91 tdd 卡 14 分钟、run 92/93/94 tdd 20s 假绿"成功"但无测试输出），逐层取证（wslmon 进程监控 / act_runner 日志 / docker ps / workspace 残留 / 容器内进程抓取）定位双因。
+- **决策**：
+  1. **WSL 发行版空闲自动终止 → 保活**：WSL2 发行版无交互会话即被终止（后台 daemon 不算活跃），act_runner 因此反复 SIGTERM。修复：Windows 计划任务 `WSL-Rocky10-KeepAlive` 每 1 分钟执行 `wsl.exe -d rocky10-st -- sleep 45`（保持连接）。实证：13:24:25 后 act_runner 连续稳定 >20 分钟（此前每 1-3 分钟必崩）。
+  2. **act_runner v0.2.11 needs bug → 单 job**：含 `needs` 的容器 job 解析异常（"runs-on not defined"/"No steps found"→ 容器秒退、Gitea 误标成功）。修复：**合并 fast-check+tdd-verify 为单 job `ci-check`**（无 needs，静态门禁步骤在前秒级先失败、全量 TDD 在后），package 去 needs（仅 tag 独立跑）。
+  3. **CI 可信基线**：run 97 实证 ci-check 22s 成功；容器内进程取证 ci_test.sh + gunicorn + pytest 真跑；317/317 全绿（模拟同流程 20s 完成 317 项，SQLite 毫秒级）。
+- **与 ADR-019/020 关系**：ADR-019 管 runner 常驻/容器隔离；ADR-020 管配置单一来源/双 label/依赖统一；ADR-021 管"WSL 发行版保活 + CI 单 job 规避 needs bug"（运行稳定性修复）。
+- **已落点**：2026-09-11 修复闭环；docs/08 第十节 + Backlog B5 更新为已解决；保活计划任务已创建（Windows 管理员可见）。
 
 ### ADR-018：CI/CD 分层与质量门禁（强制）
 - **背景**：原 CI 仅单 job 全量回归（push 触发），无秒级门禁、无测试计数防缩水、发布包靠本地手工 package.sh。
