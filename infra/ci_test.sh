@@ -11,7 +11,9 @@
 # ============================================================
 set -euo pipefail
 
-cd /workspace
+# act_runner 容器 job 通过 GITHUB_WORKSPACE 指向工作区（本地 docker run 验证用 /workspace）
+cd "${GITHUB_WORKSPACE:-/workspace}"
+[ -f src/app.py ] || { echo "工作区缺少 src/app.py，当前目录: $(pwd)"; ls -la; exit 1; }
 DATA_ROOT="${CI_DATA_ROOT:-/data}"
 mkdir -p "$DATA_ROOT"
 
