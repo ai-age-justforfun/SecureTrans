@@ -207,7 +207,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.3.4';
+const APP_VERSION = 'v2.3.5';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -265,7 +265,7 @@ const I18N = {
     'dash.step3': '人工审批', 'dash.step3d': '：不匹配特征码 → 部门主管一级审批 → 非合作方需高管二级审批',
     'dash.step4': '下载', 'dash.step4d': '：摆渡完成的文件可从 external 目录流式下载',
     'dash.step5': '归档', 'dash.step5d': '：超过有效期的文件每天凌晨 2 点自动 os.rename 到 archive',
-    'submit.uploadTitle': '上传文件', 'submit.uploadHint': '点击或拖拽文件到此处上传', 'submit.uploadLimit': '支持单文件最大 1GB，可多次上传',
+    'submit.uploadTitle': '上传文件', 'submit.uploadHint': '点击或拖拽文件到此处上传', 'submit.uploadLimit': '支持单文件最大 1GB，一次最多提交 18 个文件', 'submit.uploadDir': '选择文件夹（批量上传目录内文件，最多 18 个）', 'submit.batchOver': '一次最多提交 {0} 个文件（当前已选 {1} 个），请分批提交',
     'submit.infoTitle': '提交信息',
     'submit.receiverName': '接收方姓名 *', 'submit.receiverNamePh': '如：张三',
     'submit.receiverOrg': '接收方单位 *', 'submit.receiverOrgPh': '如：XX科技有限公司',
@@ -404,7 +404,7 @@ const I18N = {
     'dash.step3': 'Manual approval', 'dash.step3d': ': Non-matching files: L1 dept-head approval, then L2 executive approval for non-partners',
     'dash.step4': 'Download', 'dash.step4d': ': Ferried files can be streamed from external directory',
     'dash.step5': 'Archive', 'dash.step5d': ': Expired files are auto os.rename to archive at 2:00 AM daily',
-    'submit.uploadTitle': 'Upload Files', 'submit.uploadHint': 'Click or drag files here to upload', 'submit.uploadLimit': 'Max 1GB per file, multiple uploads allowed',
+    'submit.uploadTitle': 'Upload Files', 'submit.uploadHint': 'Click or drag files here to upload', 'submit.uploadLimit': 'Max 1GB per file, up to 18 files per batch', 'submit.uploadDir': 'Choose folder (batch upload files inside, max 18)', 'submit.batchOver': 'Max {0} files per batch ({1} already selected), please submit in batches',
     'submit.infoTitle': 'Submission Info',
     'submit.receiverName': 'Recipient Name *', 'submit.receiverNamePh': 'e.g. Zhang San',
     'submit.receiverOrg': 'Recipient Org *', 'submit.receiverOrgPh': 'e.g. XX Technology Co., Ltd.',
@@ -557,7 +557,7 @@ function applyI18n() {
   if (_uh && window._uploadMaxMb) {
     const _zh = currentLang === 'zh';
     _uh.textContent = _zh
-      ? '支持单文件最大 ' + window._uploadMaxMb + 'MB，可多次上传'
+      ? '支持单文件最大 ' + window._uploadMaxMb + 'MB，一次最多提交 18 个文件'
       : 'Max ' + window._uploadMaxMb + 'MB per file, multiple uploads allowed';
   }
 }
@@ -810,6 +810,10 @@ function renderSubmit() {
         <div class="hint" id="uploadLimitHint" data-i18n="submit.uploadLimit">支持单文件最大 1GB，可多次上传</div>
       </div>
       <input type="file" id="fileInput" multiple style="display:none">
+      <div style="margin-top:10px;text-align:center;">
+        <button type="button" class="btn btn-secondary" id="dirBtn" data-i18n="submit.uploadDir" onclick="document.getElementById('dirInput').click()">选择文件夹（批量上传目录内文件，最多 18 个）</button>
+      </div>
+      <input type="file" id="dirInput" webkitdirectory style="display:none">
       <div class="file-list" id="fileList"></div>
     </div>
     <div class="card" id="submitFormCard" style="display:none;">
@@ -860,7 +864,9 @@ function renderSubmit() {
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
   zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
-  input.addEventListener('change', e => handleFiles(e.target.files));
+  input.addEventListener('change', e => { handleFiles(e.target.files); e.target.value = ''; });
+  const dirInput = document.getElementById('dirInput');
+  if (dirInput) dirInput.addEventListener('change', e => { handleFiles(e.target.files); e.target.value = ''; });
   // 上传限制随系统配置动态显示（配置单一来源，不硬编码）
   (async () => {
     try {
@@ -870,7 +876,7 @@ function renderSubmit() {
         window._uploadMaxMb = cfg.max_file_size_mb;
         const zh = (localStorage.getItem('lang') || 'zh') === 'zh';
         hint.textContent = zh
-          ? '支持单文件最大 ' + cfg.max_file_size_mb + 'MB，可多次上传'
+          ? '支持单文件最大 ' + cfg.max_file_size_mb + 'MB，一次最多提交 18 个文件'
           : 'Max ' + cfg.max_file_size_mb + 'MB per file, multiple uploads allowed';
       }
     } catch (e) {}
@@ -878,7 +884,17 @@ function renderSubmit() {
 }
 
 async function handleFiles(files) {
-  for (const file of files) {
+  const MAX_BATCH = 18;
+  const room = MAX_BATCH - uploadedFiles.length;
+  if (room <= 0) {
+    toast(t('submit.batchOver', String(MAX_BATCH), String(uploadedFiles.length)), 'error');
+    return;
+  }
+  const batch = Array.from(files).slice(0, room);
+  if (files.length > room) {
+    toast(t('submit.batchOver', String(MAX_BATCH), String(uploadedFiles.length)), 'error');
+  }
+  for (const file of batch) {
     try {
       const formData = new FormData();
       formData.append('file', file);
