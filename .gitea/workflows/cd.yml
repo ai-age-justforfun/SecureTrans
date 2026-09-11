@@ -37,11 +37,11 @@ jobs:
           echo "DEPLOY_VERSION=${VER}" >> "$GITHUB_ENV"
           echo "解析版本: ${VER}"
 
-      - name: 配置 SSH 部署密钥（来自 repo secret CD_SSH_KEY）
+      - name: 配置 SSH 部署密钥（来自 repo secret CD_SSH_KEY，base64 单行存储）
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          echo "${{ secrets.CD_SSH_KEY }}" > ~/.ssh/id_ed25519_securetrans_cd
+          echo "${{ secrets.CD_SSH_KEY }}" | base64 -d > ~/.ssh/id_ed25519_securetrans_cd
           chmod 600 ~/.ssh/id_ed25519_securetrans_cd
           printf '%s\n' \
             'Host securetrans-prod' \
@@ -61,7 +61,7 @@ jobs:
           hex_ip() { local h=$1; echo "$((16#${h:6:2})).$((16#${h:4:2})).$((16#${h:2:2})).$((16#${h:0:2}))"; }
           CI_GW="${CI_GATEWAY:-$(hex_ip "$(awk '$2=="00000000" {print $3; exit}' /proc/net/route 2>/dev/null)")}"
           GITEA="http://${CI_GW}:3000"
-          TOKEN="${{ secrets.GITEA_TOKEN }}"
+          TOKEN="${{ github.token }}"
           echo "Gitea: ${GITEA} | 版本: ${VER}"
           REL=$(curl -sf -H "Authorization: token ${TOKEN}" "${GITEA}/api/v1/repos/openwrtadmin/SecureTrans/releases/tags/${VER}")
           PKG_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name=="securetrans-'${VNO}'.tar.gz") | .browser_download_url')
