@@ -497,6 +497,16 @@ deploy.sh/verify.sh 全部通过，318项自动化测试 100%（Windows dev + WS
      二者构成"AI 辅助全自动开发/测试/部署"的完整闭环（流程规范 + 工具链路）。
 - **已落点**：2026-09-11 AGENTS.md v2.0 + docs/12-project-retrospective.md（首个项目复盘沉淀）。
 
+### ADR-026：以 git 为中心的三环境独立 + WSL 原生路径（强制）
+- **背景**：WSL 经 `/mnt/c`（9p 挂载）访问 Windows 文件系统极慢——rsync 逐个 stat 上万文件导致全量回归从"几十秒"退化到"十几分钟"；`package.sh` 在 `/mnt/c` 上 `cp -r` 曾卡死（D+ 状态）。且 9p 的权限/锁语义与 Linux 原生不一致，易产生环境差异误判。
+- **决策**：
+  1. **以 git 为中心**：Windows dev / WSL test / 生产 三环境各持**独立 git 工作副本**，唯一同步通道 = Gitea（push / pull / clone）。**禁止 rsync/scp 直拷代码目录**（慢 + 版本漂移）。
+  2. **WSL 必须使用原生 Linux 路径**（如 `/opt/securetrans`）；**禁止在 WSL 中使用 `/mnt/c`、`/mnt/d` 等 Windows 挂载路径**做开发、测试、打包、运行。
+  3. **变更以 commit 为唯一载体**：Windows 侧编辑 → `commit + push main` → WSL `pull`（或 CI/CD 容器 clone）→ 测试/部署。CI/CD 容器每次从 Gitea clone，不接触任何宿主目录。
+  4. **环境态不入库**：`.env` / `data/` / `venv/` / `offline-python/` 等由 .gitignore 排除，`git fetch/checkout` 不影响（untracked 保留，已实证）；生产 .env 由部署流程管理。
+  5. **WSL runner 运行配置保护**：`/opt/securetrans/.runner` + `config.yaml`（act_runner 注册与配置，label 含 `securetrans-ci:docker://securetrans-ci:3.12`）**不入库**；备份/重置/清理操作**禁止移动或删除二者**——2026-09-12 曾因备份操作丢失（进程内存持有配置才未断 CI），已从 `/opt/securetrans_backup_20260911_142320/` 恢复；缺失时重启 runner 将丢失容器 label。
+- **已落点**：2026-09-12 WSL `/opt/securetrans` 初始化为 git 仓库并 pull（HEAD=548a21c，.env/data 保留）；全量回归耗时 十几分钟 → **58.6s**；三环境结果 Windows 350/350 + WSL 100% + CI run 149 success。
+
 ---
 
 ## 许可证

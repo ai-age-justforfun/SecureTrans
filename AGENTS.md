@@ -150,7 +150,7 @@
 **文档原则**：聚焦关键内容；文件名不含版本号（版本写文档内，关键变更用 git tag）；
 ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
 
-## B4 技术决策（ADR-001~024 摘要）
+## B4 技术决策（ADR-001~026 摘要）
 
 完整全文在 README。关键强制项：
 - **ADR-005 非硬编码**：新增代码/脚本禁止写死地址/端口/网段/路径，必须从 .env 或运行环境读取
@@ -164,6 +164,9 @@ ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
 - **ADR-017 测试隔离**：verify.sh=全量（dev/test/CI）；smoke.sh=生产只读白名单 11 项；ENV_ROLE fail-safe
 - **ADR-018 CI 门禁**：fast-check 秒级前置；计数基线 全量≥300 / 冒烟==10
 - **ADR-024 CD**：Release → 容器 job → MD5 → scp → cd-deploy.sh → 冒烟；CD_SSH_KEY 走 repo secret
+- **ADR-025 流程规范**：AGENTS.md Part A=AI 辅助软件工程方法唯一来源；任务卡模板 + 六步工作流 + 发布前门禁
+- **ADR-026 git 为中心**：三环境各自独立 git 副本，唯一同步通道=Gitea；WSL 禁用 /mnt/c、/mnt/d 用原生路径；
+  /opt/securetrans/.runner + config.yaml 保护（备份/清理禁止移动删除）
 
 ## B5 研发流程
 
@@ -179,6 +182,8 @@ ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
 - **生产冒烟**：`infra/smoke.sh`（只读白名单 11 项，不写业务数据；凭据同 verify）
 - **性能**：`tests/perf_test.py`（800MB 阈值断言 + MD5 四方一致）
 - **新增功能必加测试**：test_api.py 对应组 + 文档 + i18n 字典
+- **环境路径（ADR-026）**：WSL 测试/运行一律原生路径（/opt/securetrans），禁止 /mnt/c、/mnt/d；
+  同步走 git（push/pull），禁止 rsync/scp 直拷代码目录
 
 ## B7 部署规范
 
