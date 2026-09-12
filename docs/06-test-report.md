@@ -539,3 +539,12 @@
   - Windows dev（testing）326/326；WSL test（production 模拟）325/325——差异项为环境自适应：Windows 多"模拟数据生成成功/含测试用户"2 项，WSL 多"模拟数据生成被拒(生产)"1 项，公共 324 项完全一致；双环境 100%，v2.4.0 已发布。
 
 *文档结束 | SecureTrans 测试报告 v2.4.0 | 2026-09-11*
+
+### 12.17 v2.4.1 内置特征码规则逐条 TDD 覆盖（2026-09-12）
+- **需求来源**：用户要求"每条内置特征码规则都有对应 TDD 测试用例并保证能正确匹配，缺失则补全，作为 TDD 用例集和 CI 的一部分"。
+- **盘点结论**：内置模板 22 条（extension 12 条 + binary 10 条），原 10b 组仅抽样覆盖（ZIP/TAR.GZ/.bit/XYZ/计数≥20），未做到逐规则一一对应。
+- **变更（tests/test_api.py）**：新增 10b1 组 24 项：
+  - 存在性断言：22 条内置规则名全部存在于 GET /api/config/feature-rules（缺一即 FAIL）；
+  - 逐条正向命中：22 条规则各构造最小样本（extension 用对应后缀、binary 用特征码字节、组合用特征码+后缀），断言规则名 ∈ matchedRules；
+  - 组合负向：.xyz 含 AA995566 → Vivado 组合不命中（后缀不符）、仅 Vivado Bit同步字命中。
+- **验证**：Windows dev（testing）350/350；WSL test（production 模拟）待补（同步本报告）；双环境 100%。未改动 app.py 业务逻辑，纯测试+文档增强。

@@ -1003,6 +1003,69 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     test("特征码规则列表（20条规则完整）", code == 200 and rule_count >= 20,
          f"code={code}, count={rule_count}")
 
+    # v2.4.1 10b1. 内置特征码规则逐条覆盖（22 条内置模板全量，作为 TDD 用例集+CI 门禁）
+    print("\n--- 10b1. 内置特征码规则逐条覆盖（22条） ---")
+    _set_group("10b1. 内置特征码规则逐条覆盖（22条）")
+
+    # 存在性：内置 22 条规则名必须全部存在于规则列表（以服务端实际返回为准）
+    _builtin_names = [
+        "PDF文档", "Word文档", "Excel表格", "PPT演示", "图片文件", "文本文件",
+        "ZIP压缩包", "TAR归档", "GZIP压缩", "BZIP2压缩", "XZ压缩", "ZSTD压缩",
+        "ZIP特征码", "GZIP特征码", "BZIP2特征码", "XZ特征码", "ZSTD特征码", "TAR特征码(ustar)",
+        "TAR.GZ组合(特征码+后缀)", "Vivado Bitstream(.bit)",
+        "Vivado Bitstream组合(特征码+后缀)", "Vivado Bit同步字",
+    ]
+    code, data = request('GET', '/api/config/feature-rules')
+    _rule_names = [r.get('name', '') for r in data] if isinstance(data, list) else []
+    _missing = [n for n in _builtin_names if not any(n in rn for rn in _rule_names)]
+    test("内置22条特征码规则全部存在", code == 200 and not _missing,
+         f"code={code}, missing={_missing}")
+
+    # 逐条正向命中：每条内置规则构造最小样本，断言规则名 ∈ matchedRules
+    _cover = [
+        ("PDF文档", "cover.pdf", b"%PDF-1.4\npdf"),
+        ("Word文档", "cover.docx", b"PK\x03\x04word"),
+        ("Excel表格", "cover.xlsx", b"PK\x03\x04excel"),
+        ("PPT演示", "cover.pptx", b"PK\x03\x04ppt"),
+        ("图片文件", "cover.png", b"\x89PNG\r\n\x1a\npng"),
+        ("文本文件", "cover.txt", b"hello plain text"),
+        ("ZIP压缩包", "cover.zip", b"PK\x03\x04zip"),
+        ("TAR归档", "cover.tar", b"\x00" * 257 + b"ustar"),
+        ("GZIP压缩", "cover.gz", b"\x1f\x8b\x08\x00gzip"),
+        ("BZIP2压缩", "cover.bz2", b"BZh91AY&SYbzip"),
+        ("XZ压缩", "cover.xz", b"\xfd7zXZ\x00xz"),
+        ("ZSTD压缩", "cover.zst", b"\x28\xb5\x2f\xfdzstd"),
+        ("ZIP特征码", "cover_sig_zip.bin", b"PK\x03\x04sig"),
+        ("GZIP特征码", "cover_sig_gz.bin", b"\x1f\x8b\x08\x00sig"),
+        ("BZIP2特征码", "cover_sig_bz2.bin", b"BZh91AY&SYsig"),
+        ("XZ特征码", "cover_sig_xz.bin", b"\xfd7zXZ\x00sig"),
+        ("ZSTD特征码", "cover_sig_zstd.bin", b"\x28\xb5\x2f\xfdsig"),
+        ("TAR特征码(ustar)", "cover_sig_tar.bin", b"\x00" * 257 + b"ustarsig"),
+        ("TAR.GZ组合(特征码+后缀)", "cover_combo.tar.gz", b"\x1f\x8b\x08\x00combo"),
+        ("Vivado Bitstream(.bit)", "cover_viv.bit", b"\x00\x09" + b"\xaa\x99\x55\x66"),
+        ("Vivado Bitstream组合(特征码+后缀)", "cover_viv.bin", b"\x00" * 64 + b"\xaa\x99\x55\x66" + b"\x00" * 64),
+        ("Vivado Bit同步字", "cover_sync.bin", b"\x00" * 64 + b"\xaa\x99\x55\x66" + b"\x00" * 64),
+    ]
+    for _name, _fname, _content in _cover:
+        _p = os.path.join(test_dir, _fname)
+        with open(_p, 'wb') as _f:
+            _f.write(_content)
+        _code, _data = upload_file(_p, _fname)
+        _matched = _data.get('matchedRules', []) if isinstance(_data, dict) else []
+        test(f"内置规则命中[{_name}]", _code == 200 and any(_name in str(r) for r in _matched),
+             f"code={_code}, matchedRules={_matched}")
+
+    # 组合规则负向：.xyz 含同步字 → Vivado 组合不命中（后缀不符），仅同步字命中
+    _neg = os.path.join(test_dir, "cover_sync.xyz")
+    with open(_neg, 'wb') as _f:
+        _f.write(b"\x00" * 64 + b"\xaa\x99\x55\x66")
+    _code, _data = upload_file(_neg, "cover_sync.xyz")
+    _matched = _data.get('matchedRules', []) if isinstance(_data, dict) else []
+    _combo_hit = any("Vivado Bitstream组合" in str(r) for r in _matched)
+    _sync_hit = any("Vivado Bit同步字" in str(r) for r in _matched)
+    test("组合规则负向[.xyz后缀不符组合不命中]", _code == 200 and not _combo_hit and _sync_hit,
+         f"code={_code}, combo_hit={_combo_hit}, sync_hit={_sync_hit}, matchedRules={_matched}")
+
     # 20c. 审批驳回流程
     print("\n--- 10c. 审批驳回流程 ---")
     _set_group("10c. 审批驳回流程")
