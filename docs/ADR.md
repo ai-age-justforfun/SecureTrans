@@ -465,4 +465,16 @@
 - **已落点**：v2.6.4（Windows dev 全量 TDD 384/384 通过；新增 4 项断言：超时归档留痕+detail 含"超时归档"、手动清理留痕、临时清理不写审计反向断言；定时 2:00 归档 + 2:10 临时清理 + 手动 API 行为一致）。
 
 ---
+
+### ADR-034：有效期口径统一——文件有效期为唯一超时源（v2.6.5，强制）
+- **背景**：用户对账有效期时发现三个时间点口径不一——① 上传未提交的临时文件清理（TEMP_FILE_HOURS=24h）；② 提交未审批（pending）的超时处理**此前未定义**（cleanup_expired_files 只处理 approved/downloaded，pending 永不清，存在"提交后一直挂起占空间/无终态"缺口）；③ 审批未下载已有定义（approved_time + 系统配置有效期）。用户要求统一：除"上传未提交"外，其余超时都用系统管理的"文件有效期"（default_expiry_days）。
+- **决策**：
+  1. **有效期唯一源**：系统管理"文件有效期"（default_expiry_days，.env EXTERNAL_EXPIRY_DAYS 初始，界面可配，提交时固化到提交单 expiry_days）统一作用于两类业务超时——**提交未审批**（pending，从 submit_time 起算）与**审批未下载**（approved/downloaded，从 approved_time 起算）；超期即 os.rename 到 archive（0拷贝，终态），逐单审计。
+  2. **上传未提交保持独立**：TEMP_FILE_HOURS=24h（.env 可配）只管从未入库的上传残留清理（无业务动作、不审计，ADR-033），与文件有效期不混用。
+  3. **审计区分超时原因**：system_archive_expired 的 detail 按场景明示——"提交后 N 天未审批" / "审批通过后 N 天未下载/处理"。
+  4. **TDD 幂等性**：审批人测试组创建前幂等清理历史 approvers 残留（中断重跑不再因重复配置 400）。
+- **与 ADR-033 不重叠**：ADR-033 管审计边界（哪些系统动作进审计）；ADR-034 管超时口径（哪些状态、从何时起算、统一到哪个配置）。
+- **已落点**：v2.6.5（Windows dev 全量 TDD 392/392 通过；pending 超时归档 +5 项断言（状态 archived/文件入 archive/审计留痕/detail 区分/恢复默认）；定时 2:00 统一处理 pending+approved+downloaded）。
+
+---
 *文档结束 | SecureTrans ADR 全录 | 2026-09-14*

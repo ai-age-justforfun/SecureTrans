@@ -58,7 +58,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.6.4"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.6.5"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -1188,38 +1188,57 @@ def role_required(*roles):
 # 定时任务：过期文件清理
 # ============================================================
 def cleanup_expired_files():
-    """清理 external 中过期的文件，os.rename 到 archive（0拷贝）"""
+    """清理超时的提交单，os.rename 到 archive（0拷贝）。
+
+    统一有效期口径（ADR-034）：提交未审批（pending）与审批未下载（approved/downloaded）
+    都用提交单自身的有效期（提交时取自系统配置 default_expiry_days）：
+    - pending：从 submit_time 起算，超期未审批 → 自动归档
+    - approved/downloaded：从 approved_time 起算，超期未下载/未处理 → 自动归档
+    归档为终态，逐单写审计（system_archive_expired，说明超时原因）。
+    （上传未提交的临时文件清理走 cleanup_abandoned_temp，TEMP_FILE_HOURS=24h，不属本函数）
+    """
     db = get_db()
     now = datetime.datetime.now()
-    rows = db.execute("SELECT id, approved_time, expiry_days FROM submissions WHERE status IN ('approved','downloaded')").fetchall()
+    rows = db.execute("SELECT id, status, submit_time, approved_time, expiry_days FROM submissions "
+                      "WHERE status IN ('pending','approved','downloaded')").fetchall()
     cleaned = 0
     for row in rows:
-        if not row["approved_time"]:
-            continue
         try:
-            approved_dt = datetime.datetime.strptime(row["approved_time"], TS_FMT)
+            if row["status"] == "pending":
+                if not row["submit_time"]:
+                    continue
+                base_dt = datetime.datetime.strptime(row["submit_time"], TS_FMT)
+                phase = "提交后"
+                from_dir = "staging"
+            else:
+                if not row["approved_time"]:
+                    continue
+                base_dt = datetime.datetime.strptime(row["approved_time"], TS_FMT)
+                phase = "审批通过后"
+                from_dir = "external"
             try:
                 _cfg_expiry = int(float(get_config_value("default_expiry_days", str(EXTERNAL_EXPIRY_DAYS)) or 0))
             except (ValueError, TypeError):
                 _cfg_expiry = EXTERNAL_EXPIRY_DAYS
             expiry_days = row["expiry_days"] if row["expiry_days"] is not None else _cfg_expiry
-            if (now - approved_dt).days >= expiry_days:
+            if (now - base_dt).days >= expiry_days:
                 sub_id = row["id"]
-                elapsed_days = (now - approved_dt).days
-                move_to_archive(sub_id, from_dir="external")
+                elapsed_days = (now - base_dt).days
+                move_to_archive(sub_id, from_dir=from_dir)
                 db.execute("UPDATE submissions SET status='archived', archived_time=? WHERE id=?", (now_str(), sub_id))
                 db.commit()
                 cleaned += 1
-                logger.info("过期清理: %s 已归档", sub_id)
-                # 审计留痕（定时系统动作也必须可审计）：说明为超时归档
+                logger.info("超时清理: %s 已归档（%s %d 天）", sub_id, phase, elapsed_days)
+                # 审计留痕（定时系统动作也必须可审计）：说明超时原因（审批未下载 / 提交未审批）
                 add_audit_log(
                     "system", "system_archive_expired", target=sub_id,
-                    detail=f"超时归档：审批通过后 {elapsed_days} 天未下载/未处理，达到有效期 {expiry_days} 天，文件自动移至 archive（定时系统动作）"
+                    detail=f"超时归档：{phase} {elapsed_days} 天未{'审批' if row['status']=='pending' else '下载/处理'}，"
+                           f"达到有效期 {expiry_days} 天，文件自动移至 archive（定时系统动作）"
                 )
         except Exception as e:
-            logger.error("过期清理失败 %s: %s", row["id"], e)
+            logger.error("超时清理失败 %s: %s", row["id"], e)
     if cleaned:
-        logger.info("过期清理完成，共处理 %d 个文件", cleaned)
+        logger.info("超时清理完成，共处理 %d 个提交单", cleaned)
     return cleaned
 
 # 未提交临时文件保留时长（小时）：上传后未提交（无 submissions 记录）的 staging 临时目录超时直接删除。

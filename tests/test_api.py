@@ -674,7 +674,11 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
          "INSERT OR IGNORE INTO system_config (key,value) VALUES ('approvers_initialized','1')" in _appr_src,
          f"标记存在={('approvers_initialized' in _appr_src)}")
 
-    # 配置审批人
+    # 配置审批人（幂等：先清理上次残留的 approvers，避免中断后重跑重复配置 400）
+    _code0, _data0 = request('GET', '/api/admin/approvers')
+    for _a0 in (_data0 if isinstance(_data0, list) else []):
+        if _a0.get('username') in ('deptmgr1', 'execmgr1', 'notapprover'):
+            request('DELETE', f"/api/admin/approvers/{_a0.get('id')}")
     code, data = request('POST', '/api/admin/approvers', json_data={
         "level": 1, "username": "deptmgr1", "displayName": "部门主管1", "scope": "all"
     })
@@ -778,7 +782,12 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     _set_group("10g2. 语义B 自动跳过二级")
 
     # 创建用户 dual1 并配置为一级+二级审批人（语义B场景：二级审批人被配置为一级审批人）
-    request('DELETE', '/api/admin/local-users/dual1')  # 幂等：清理上次残留
+    # 幂等：先清理上次残留的用户与审批人配置（approvers 与用户解耦，仅删用户会残留 approvers → 重复配置 400）
+    _code0, _data0 = request('GET', '/api/admin/approvers')
+    for _a0 in (_data0 if isinstance(_data0, list) else []):
+        if _a0.get('username') == 'dual1':
+            request('DELETE', f"/api/admin/approvers/{_a0.get('id')}")
+    request('DELETE', '/api/admin/local-users/dual1')
     code, data = request('POST', '/api/admin/local-users', json_data={
         "username": "dual1", "password": "Test@123456", "displayName": "双级审批人",
         "role": "internal-user"
@@ -1511,6 +1520,48 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     _manual_audit = [a for a in _audit_list if a.get('action') == 'admin_cleanup_manual']
     test("审计: 管理员手动清理留痕(admin_cleanup_manual)", len(_manual_audit) >= 1,
          f"found={len(_manual_audit)}")
+
+    # v2.6.5 有效期统一（ADR-034）：提交未审批（pending）超时同样归档（统一用文件有效期）
+    # 配置有效期=0：提交 pending 单（不审批），立即触发超时归档
+    code, data = request('PUT', '/api/config/system', json_data={"default_expiry_days": "0"})
+    test("有效期统一: 系统配置有效期=0", code == 200, f"code={code}")
+    _pend_up = os.path.join(test_dir, "pending_expire.bin")
+    with open(_pend_up, 'wb') as f:
+        f.write(b"PENDING-EXPIRE" + b"\x00" * 400)
+    _pend_code, _pend_data = upload_file(_pend_up, "pending_expire.bin")
+    _pend_tid = _pend_data.get('tempId')
+    _pend_code2, _pend_data2 = request('POST', '/api/submissions', json_data={
+        "tempIds": [_pend_tid],
+        "receiverName": "待审批超时测试",
+        "receiverOrg": "待审批单位",
+        "receiverType": "internal",
+        "securityLevel": "internal",
+        "reason": "提交未审批超时归档测试",
+        "expiryDays": 0
+    })
+    _pend_sub_id = _pend_data2.get('id')
+    test("有效期统一: 创建pending单(有效期=0)", _pend_code2 == 200 and _pend_data2.get('status') == 'pending',
+         f"code={_pend_code2}, status={_pend_data2.get('status')}")
+    # 触发清理（不审批，pending 超期自动归档）
+    code, data = request('POST', '/api/admin/cleanup-expired')
+    test("有效期统一: 手动触发清理(处理pending)", code == 200 and data.get('cleaned', 0) >= 1,
+         f"code={code}, cleaned={data.get('cleaned')}")
+    code, data = request('GET', f'/api/submissions/{_pend_sub_id}')
+    test("有效期统一: pending超时后状态=archived", code == 200 and data.get('status') == 'archived',
+         f"code={code}, status={data.get('status')}")
+    _pend_archived = (archive_dir / _pend_sub_id).exists()
+    test("有效期统一: pending文件已归档到archive", _pend_archived,
+         f"path={archive_dir / _pend_sub_id}, exists={_pend_archived}")
+    # 审计：pending 超时归档 detail 明示"提交后...未审批"
+    code, data = request('GET', '/api/audit-logs')
+    _pend_audit = [a for a in data if a.get('action') == 'system_archive_expired' and a.get('target') == _pend_sub_id]
+    test("有效期统一: pending超时归档审计留痕", len(_pend_audit) >= 1, f"found={len(_pend_audit)}")
+    test("有效期统一: pending审计说明含'提交后...未审批'",
+         len(_pend_audit) >= 1 and '提交后' in (_pend_audit[0].get('detail') or '') and '未审批' in (_pend_audit[0].get('detail') or ''),
+         f"detail={_pend_audit[0].get('detail') if _pend_audit else 'N/A'}")
+    # 恢复系统配置默认有效期为7天
+    code, data = request('PUT', '/api/config/system', json_data={"default_expiry_days": "7"})
+    test("有效期统一: 恢复系统配置默认有效期7天", code == 200, f"code={code}")
 
     # 20e. 修改密码（专用测试用户 testpwuser，不碰生产 admin 密码）
     print("\n--- 10e. 修改密码 ---")
