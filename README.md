@@ -1,6 +1,6 @@
 # SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.5.1 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（运行收集问题中）
+> 版本：v2.6.0 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（运行收集问题中）
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main + AI 辅助人机协同（AGENTS v2.0）
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -56,7 +56,7 @@ python test_api.py
 
 ```bash
 # 1. 上传发布包 securetrans-<版本>.tar.gz 到服务器
-tar xzf securetrans-v2.5.1.tar.gz -C /opt/securetrans --strip-components=1
+tar xzf securetrans-v2.6.0.tar.gz -C /opt/securetrans --strip-components=1
 cd /opt/securetrans
 
 # 2. 一键部署（9步自动化：Python 3.12 获取 → venv → 依赖 → .env → systemd → 启动验证）
@@ -529,6 +529,17 @@ deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WS
 - **与 ADR-024/025 不重叠**：本 ADR 管单版本功能/审计/性能落点；ADR-024 管 CD 链路；ADR-025 管 AI 辅助流程方法论。
 - **已落点**：v2.5.1（Windows dev 全量 TDD 361/361 通过；10g3 审计详情修复 / 10g4 取消按钮 / 10b1 21 条规则覆盖均有断言）。
 
+### ADR-029：特征码规则合并 / 配置持久化 / 免审批判定修复（v2.6.0，强制）
+- **背景**：beta 手工验收发现五类问题——① 压缩包类（zip/tar/gz/bz2/xz/zstd）同时存在"后缀名规则 + 二进制特征码规则"两条，需合并为唯一组合规则（同 bitstream 严格度）；② .ltx（Vivado ILA 探针，标准 JSON 文本）仅扩展名规则，需加二进制特征码；③ 特征码"启用/禁用"不持久化——升级/重启后管理员已启用的配置被重置为禁用；④ 免审批开关全开且特征码命中仍走人工审批（生产复现）；⑤ v2.5.0 已 tag 但 Release 记录缺失（发布链路间隙，已补建）。
+- **决策**：
+  1. **压缩包双规则合并**（内置 21→15 条）：删除 6 条纯后缀 + 6 条纯特征码 + 旧 .ltx 扩展名规则（共 13 条），新增组合规则 `特征码 AND 后缀`：ZIP(hex:504B0304 AND .zip)、TAR(ustar AND .tar)、GZIP(hex:1F8B AND .gz)、TAR.GZ(hex:1F8B AND .tar.gz,.tgz 保留)、BZIP2(hex:425A68 AND .bz2,.tbz2)、XZ(hex:FD377A585A00 AND .xz,.txz)、ZSTD(hex:28B52FFD AND .zst)。迁移 `_merge_pairs` 按 name+type+pattern+ext_pattern 精确删除内置旧模板（用户自定义规则不受影响），新组合规则补充播种默认禁用。
+  2. **.ltx 组合规则**：`Vivado ILA探针组合(特征码+后缀)` = JSON 根键 `{"ltx_root`（hex:7B226C74785F726F6F74，头部 4KB 内）AND .ltx。
+  3. **特征码配置持久化**：删除 init_db 中"旧库已有规则强制重置 enabled=0"逻辑（升级后管理员配置被重置的根因）；内置模板默认禁用仅对首次播种/新规则补充播种生效，已存在规则尊重管理员配置。
+  4. **免审批判定修复**：`check_auto_approval` 原只传文件名不传路径 → `file_header=None` → binary/组合规则永远不命中 → 免审批必然走人工审批（上传页显示 matched=True 而提交仍待审批即此因）。修复：files_info 携带 `path`，匹配时构造 Path 读取真实文件头；兼容旧格式无 path 回退。
+  5. **TDD 教训（用例命名）**：`is_partner` 为子串匹配（`pname in name`），测试用例"自动加入合作方测试公司"包含已创建合作方"测试公司"子串 → 误判已配置跳过自动加入。改用例名为独立名称"新合作方自动加入测试"（业务逻辑不变；真实业务中子串误判可另行评审）。
+- **与 ADR-028 不重叠**：028 管 Vivado 精简/审批审计/性能 UX；029 管压缩包组合规则统一、配置持久化、免审批路径修复。
+- **已落点**：v2.6.0（Windows dev 全量 TDD 361/361 通过；10b1 改 15 条断言+组合负向×2，新增 10b2 免审批回归组：.gz 含 1F8B 提交自动通过、.bin 含 AA995566 提交自动通过——直击生产复现场景）。
+
 ---
 
 ## 许可证
@@ -539,4 +550,4 @@ deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WS
 
 ---
 
-*SecureTrans v2.5.1 | 2026-09-14*
+*SecureTrans v2.6.0 | 2026-09-14*

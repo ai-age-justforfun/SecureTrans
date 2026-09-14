@@ -1,4 +1,4 @@
-"""
+﻿"""
 SecureTrans 本地全量 API 测试脚本
 使用 Python 标准库 urllib，无需额外依赖
 """
@@ -1144,25 +1144,26 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     # 特征码规则列表验证（21条内置规则）
     code, data = request('GET', '/api/config/feature-rules')
     rule_count = len(data) if isinstance(data, list) else 0
-    test("特征码规则列表（21条规则完整）", code == 200 and rule_count >= 20,
+    test("特征码规则列表（15条规则完整）", code == 200 and rule_count >= 15,
          f"code={code}, count={rule_count}")
 
-    # v2.4.1 10b1. 内置特征码规则逐条覆盖（21 条内置模板全量，作为 TDD 用例集+CI 门禁）
+    # v2.4.1 10b1. 内置特征码规则逐条覆盖（15 条内置模板全量，作为 TDD 用例集+CI 门禁）
     # v2.5.1: Vivado 精简为组合规则 + .ltx 探针扩展名规则（删除 .bit 独立规则与仅同步字规则）
-    print("\n--- 10b1. 内置特征码规则逐条覆盖（21条） ---")
-    _set_group("10b1. 内置特征码规则逐条覆盖（21条）")
+    # v2.6.0: 压缩包"后缀名规则+二进制特征码规则"合并为唯一组合规则（12→7 条）；.ltx 升级为组合规则
+    print("\n--- 10b1. 内置特征码规则逐条覆盖（15条） ---")
+    _set_group("10b1. 内置特征码规则逐条覆盖（15条）")
 
-    # 存在性：内置 21 条规则名必须全部存在于规则列表（以服务端实际返回为准）
+    # 存在性：内置 15 条规则名必须全部存在于规则列表（以服务端实际返回为准）
     _builtin_names = [
         "PDF文档", "Word文档", "Excel表格", "PPT演示", "图片文件", "文本文件",
-        "ZIP压缩包", "TAR归档", "GZIP压缩", "BZIP2压缩", "XZ压缩", "ZSTD压缩",
-        "ZIP特征码", "GZIP特征码", "BZIP2特征码", "XZ特征码", "ZSTD特征码", "TAR特征码(ustar)",
-        "TAR.GZ组合(特征码+后缀)", "Vivado Bitstream组合(特征码+后缀)", "Vivado ILA探针(.ltx)",
+        "ZIP压缩包(特征码+后缀)", "TAR归档(特征码+后缀)", "GZIP压缩(特征码+后缀)",
+        "TAR.GZ组合(特征码+后缀)", "BZIP2压缩(特征码+后缀)", "XZ压缩(特征码+后缀)", "ZSTD压缩(特征码+后缀)",
+        "Vivado Bitstream组合(特征码+后缀)", "Vivado ILA探针组合(特征码+后缀)",
     ]
     code, data = request('GET', '/api/config/feature-rules')
     _rule_names = [r.get('name', '') for r in data] if isinstance(data, list) else []
     _missing = [n for n in _builtin_names if not any(n in rn for rn in _rule_names)]
-    test("内置21条特征码规则全部存在", code == 200 and not _missing,
+    test("内置15条特征码规则全部存在", code == 200 and not _missing,
          f"code={code}, missing={_missing}")
 
     # 逐条正向命中：每条内置规则构造最小样本，断言规则名 ∈ matchedRules
@@ -1173,21 +1174,15 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
         ("PPT演示", "cover.pptx", b"PK\x03\x04ppt"),
         ("图片文件", "cover.png", b"\x89PNG\r\n\x1a\npng"),
         ("文本文件", "cover.txt", b"hello plain text"),
-        ("ZIP压缩包", "cover.zip", b"PK\x03\x04zip"),
-        ("TAR归档", "cover.tar", b"\x00" * 257 + b"ustar"),
-        ("GZIP压缩", "cover.gz", b"\x1f\x8b\x08\x00gzip"),
-        ("BZIP2压缩", "cover.bz2", b"BZh91AY&SYbzip"),
-        ("XZ压缩", "cover.xz", b"\xfd7zXZ\x00xz"),
-        ("ZSTD压缩", "cover.zst", b"\x28\xb5\x2f\xfdzstd"),
-        ("ZIP特征码", "cover_sig_zip.bin", b"PK\x03\x04sig"),
-        ("GZIP特征码", "cover_sig_gz.bin", b"\x1f\x8b\x08\x00sig"),
-        ("BZIP2特征码", "cover_sig_bz2.bin", b"BZh91AY&SYsig"),
-        ("XZ特征码", "cover_sig_xz.bin", b"\xfd7zXZ\x00sig"),
-        ("ZSTD特征码", "cover_sig_zstd.bin", b"\x28\xb5\x2f\xfdsig"),
-        ("TAR特征码(ustar)", "cover_sig_tar.bin", b"\x00" * 257 + b"ustarsig"),
+        ("ZIP压缩包(特征码+后缀)", "cover.zip", b"PK\x03\x04zip"),
+        ("TAR归档(特征码+后缀)", "cover.tar", b"\x00" * 257 + b"ustar"),
+        ("GZIP压缩(特征码+后缀)", "cover.gz", b"\x1f\x8b\x08\x00gzip"),
         ("TAR.GZ组合(特征码+后缀)", "cover_combo.tar.gz", b"\x1f\x8b\x08\x00combo"),
+        ("BZIP2压缩(特征码+后缀)", "cover.bz2", b"BZh91AY&SYbzip"),
+        ("XZ压缩(特征码+后缀)", "cover.xz", b"\xfd7zXZ\x00xz"),
+        ("ZSTD压缩(特征码+后缀)", "cover.zst", b"\x28\xb5\x2f\xfdzstd"),
         ("Vivado Bitstream组合(特征码+后缀)", "cover_viv.bin", b"\x00" * 64 + b"\xaa\x99\x55\x66" + b"\x00" * 64),
-        ("Vivado ILA探针(.ltx)", "cover_viv.ltx", b'{"ltx_root":{"version":4}'),
+        ("Vivado ILA探针组合(特征码+后缀)", "cover_viv.ltx", b'{"ltx_root":{"version":4}'),
     ]
     for _name, _fname, _content in _cover:
         _p = os.path.join(test_dir, _fname)
@@ -1209,6 +1204,56 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     _sync_hit = any("Vivado Bit同步字" in str(r) for r in _matched)
     test("组合规则负向[.xyz后缀不符组合不命中、同步字规则已删除]", _code == 200 and not _combo_hit and not _sync_hit,
          f"code={_code}, combo_hit={_combo_hit}, sync_hit={_sync_hit}, matchedRules={_matched}")
+
+    # 压缩包合并负向（v2.6.0）：仅后缀命中（内容无特征码）→ 组合不命中；仅特征命中（后缀不符）→ 组合不命中
+    _neg2 = os.path.join(test_dir, "cover_zip_fake.zip")
+    with open(_neg2, 'wb') as _f:
+        _f.write(b"not-a-real-zip-content")
+    _code, _data = upload_file(_neg2, "cover_zip_fake.zip")
+    _matched = _data.get('matchedRules', []) if isinstance(_data, dict) else []
+    _zip_hit = any("ZIP压缩包" in str(r) for r in _matched)
+    test("压缩包合并负向[.zip无PK头→ZIP组合不命中、旧后缀独立规则已删除]", _code == 200 and not _zip_hit,
+         f"code={_code}, zip_hit={_zip_hit}, matchedRules={_matched}")
+    _neg3 = os.path.join(test_dir, "cover_pk.bin")
+    with open(_neg3, 'wb') as _f:
+        _f.write(b"PK\x03\x04but-not-zip-ext")
+    _code, _data = upload_file(_neg3, "cover_pk.bin")
+    _matched = _data.get('matchedRules', []) if isinstance(_data, dict) else []
+    _zip_hit2 = any("ZIP压缩包" in str(r) for r in _matched)
+    test("压缩包合并负向[.bin含PK头无.zip后缀→ZIP组合不命中、旧特征码独立规则已删除]", _code == 200 and not _zip_hit2,
+         f"code={_code}, zip_hit={_zip_hit2}, matchedRules={_matched}")
+
+    # v2.6.0 10b2. 免审批回归：binary/组合规则在提交免审批判定中必须命中（修复 check_auto_approval 未传文件路径）
+    # 复现生产场景：上传显示已匹配特征码，但提交后仍要求人工审批（binary 规则 file_header=None 永不命中）
+    print("\n--- 10b2. 二进制组合规则免审批回归（修复提交判定不命中） ---")
+    _set_group("10b2. 二进制组合规则免审批回归（修复提交判定不命中）")
+    _gz_p = os.path.join(test_dir, "auto_gz.gz")
+    with open(_gz_p, 'wb') as _f:
+        _f.write(b"\x1f\x8b\x08\x00" + b"gzip-auto-approval-content" * 50)
+    _code, _data = upload_file(_gz_p, "auto_gz.gz")
+    _gz_tmp = _data.get('tempId') if isinstance(_data, dict) else None
+    test("10b2 上传.gz(含1F8B)匹配GZIP组合规则", _code == 200 and _data.get('matched') == True and _gz_tmp,
+         f"code={_code}, matched={_data.get('matched') if isinstance(_data,dict) else 'N/A'}")
+    _code, _data = request('POST', '/api/submissions', json_data={
+        "tempIds": [_gz_tmp], "receiverName": "组合免审批", "receiverEmail": "auto@test.com",
+        "receiverOrg": "测试公司", "receiverType": "partner", "securityLevel": "internal",
+        "reason": "10b2 二进制组合规则免审批回归", "expiryDays": 7})
+    test("10b2 提交.gz免审批自动通过(autoApproved=true)", _code == 200 and _data.get('autoApproved') == True and _data.get('status') == 'approved',
+         f"code={_code}, autoApproved={_data.get('autoApproved') if isinstance(_data,dict) else 'N/A'}, status={_data.get('status') if isinstance(_data,dict) else 'N/A'}")
+    # Vivado 组合规则（用户生产场景：BOOT.BIN 免审批）
+    _viv_p = os.path.join(test_dir, "auto_viv.bin")
+    with open(_viv_p, 'wb') as _f:
+        _f.write(b"\x00" * 32 + b"\xaa\x99\x55\x66" + b"\x00" * 64)
+    _code, _data = upload_file(_viv_p, "auto_viv.bin")
+    _viv_tmp = _data.get('tempId') if isinstance(_data, dict) else None
+    test("10b2 上传.bin(含同步字)匹配Vivado组合规则", _code == 200 and _data.get('matched') == True and _viv_tmp,
+         f"code={_code}, matched={_data.get('matched') if isinstance(_data,dict) else 'N/A'}")
+    _code, _data = request('POST', '/api/submissions', json_data={
+        "tempIds": [_viv_tmp], "receiverName": "组合免审批2", "receiverEmail": "auto2@test.com",
+        "receiverOrg": "测试公司", "receiverType": "partner", "securityLevel": "internal",
+        "reason": "10b2 Vivado组合规则免审批回归", "expiryDays": 7})
+    test("10b2 提交.bin免审批自动通过(autoApproved=true)", _code == 200 and _data.get('autoApproved') == True and _data.get('status') == 'approved',
+         f"code={_code}, autoApproved={_data.get('autoApproved') if isinstance(_data,dict) else 'N/A'}, status={_data.get('status') if isinstance(_data,dict) else 'N/A'}")
 
     # 20c. 审批驳回流程
     print("\n--- 10c. 审批驳回流程 ---")
@@ -1500,7 +1545,7 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
         "tempIds": [auto_org_temp],
         "receiverName": "自动加入合作方测试",
         "receiverEmail": "auto@partner.com",
-        "receiverOrg": "自动加入合作方测试公司",
+        "receiverOrg": "新合作方自动加入测试",
         "receiverType": "partner",
         "securityLevel": "internal",
         "reason": "测试合作方自动加入"
@@ -1508,7 +1553,7 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     test("选择合作方且名称不在清单→提交成功并判定partner", code == 200 and data.get('receiver_type') == 'partner',
          f"code={code}, receiver_type={data.get('receiver_type')}")
     code, data = request('GET', '/api/admin/partners')
-    auto_added = any(p.get('name') == '自动加入合作方测试公司' for p in data) if isinstance(data, list) else False
+    auto_added = any(p.get('name') == '新合作方自动加入测试' for p in data) if isinstance(data, list) else False
     test("提交后自动加入合作方清单", auto_added, f"count={len(data) if isinstance(data,list) else 'N/A'}")
 
     # 合作方去重：再次提交同名合作方 → 不重复加入清单
@@ -1517,13 +1562,13 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     code, data = request('POST', '/api/submissions', json_data={
         "tempIds": [dup_temp_id],
         "receiverName": "自动加入合作方测试",  # 与已配置一致
-        "receiverOrg": "自动加入合作方测试公司",
+        "receiverOrg": "新合作方自动加入测试",
         "receiverType": "partner",
         "securityLevel": "internal"
     })
     test("同名合作方再次提交成功", code == 200, f"code={code}")
     code, data = request('GET', '/api/admin/partners')
-    dup_count = sum(1 for p in data if p.get('name') == '自动加入合作方测试公司') if isinstance(data, list) else 0
+    dup_count = sum(1 for p in data if p.get('name') == '新合作方自动加入测试') if isinstance(data, list) else 0
     test("合作方去重：同名不重复加入清单(count=1)", dup_count == 1, f"count={dup_count}")
 
     # --- 合作方使能开关 ---
@@ -1543,7 +1588,7 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
 
     # 清理：删除自动加入 + 使能测试合作方
     code, data = request('GET', '/api/admin/partners')
-    auto_pid = next((p.get('id') for p in data if p.get('name') == '自动加入合作方测试公司'), None) if isinstance(data, list) else None
+    auto_pid = next((p.get('id') for p in data if p.get('name') == '新合作方自动加入测试'), None) if isinstance(data, list) else None
     if auto_pid:
         request('DELETE', f'/api/admin/partners/{auto_pid}')
     request('DELETE', f'/api/admin/partners/{tog_partner_id}')
@@ -1755,18 +1800,19 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
          and 'adConfig.title' in _html and 'overview.title' in _html and 'function escapeHtml' in _html)
 
     # ============================================================
-    # v2.2.22 回归组：特征码默认禁用迁移 / 前端 loadConfig 修复 / AD 用户管理 / AD 登录分支
+    # v2.2.22 回归组：特征码默认禁用 / 前端 loadConfig 修复 / AD 用户管理 / AD 登录分支
     # ============================================================
     # 前置：前序测试（免审批场景）可能启用了内置规则，此处幂等恢复为禁用后再断言
-    # （模拟生产旧库升级迁移效果；断言代表规则覆盖 extension/binary/EDA 三类）
-    _BUILTIN_WANT = {("PDF文档", "extension", ".pdf"), ("ZIP特征码", "binary", "hex:504B0304"),
+    # （v2.6.0 ADR-029 配置持久化：升级不再强制重置；"默认禁用"仅对首次播种/新规则补充播种生效。
+    #   本断言模拟测试库当前状态：内置模板默认 enabled=0，代表规则覆盖 extension/binary/EDA 三类）
+    _BUILTIN_WANT = {("PDF文档", "extension", ".pdf"), ("ZIP压缩包(特征码+后缀)", "binary", "hex:504B0304"),
                      ("Vivado Bitstream组合(特征码+后缀)", "binary", "hex:AA995566;665599AA")}
     code, data = request('GET', '/api/config/feature-rules')
     if code == 200 and isinstance(data, list):
         for _r in data:
             if _r.get("enabled") and (_r.get("name"), _r.get("rule_type"), _r.get("pattern")) in _BUILTIN_WANT:
                 request('POST', f"/api/admin/feature-rules/{_r['id']}/toggle")
-    # 特征码：内置模板规则必须默认禁用（新库播种 enabled=0 + 旧库升级迁移重置为禁用）
+    # 特征码：内置模板规则默认禁用（首次播种/补充播种 enabled=0；升级保留管理员配置，不强制重置）
     code, data = request('GET', '/api/config/feature-rules')
     _builtin_disabled = True
     if code == 200 and isinstance(data, list):
@@ -1776,9 +1822,9 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
                 break
     else:
         _builtin_disabled = False
-    test("特征码: 内置模板规则默认禁用（播种/升级迁移 enabled=0）", _builtin_disabled, f"code={code}")
-    test("特征码: app.py 含内置模板常量+升级迁移逻辑",
-         'BUILTIN_FEATURE_RULES' in _app_src and '内置模板规则已重置为禁用' in _app_src)
+    test("特征码: 内置模板规则默认禁用（播种 enabled=0 安全基线）", _builtin_disabled, f"code={code}")
+    test("特征码: app.py 含内置模板常量+配置持久化+压缩包合并迁移",
+         'BUILTIN_FEATURE_RULES' in _app_src and '配置持久化' in _app_src and 'feature_rules 迁移：删除压缩包双规则' in _app_src)
 
     # AD 用户管理：搜索 API（admin）+ 前端入口（审批人弹窗 AD 来源 + 用户管理页 AD 搜索）
     # 环境自适应：ad_enabled=false → mock 分支须返回非空；ad_enabled=true → 真实查询分支（TODO）200+list 即可

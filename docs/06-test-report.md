@@ -1,3 +1,16 @@
+## ◎ v2.6.0-beta 回归（2026-09-14）
+**总计 361 项测试（Windows dev，出厂重置干净库）全部通过，通过率 100%。**
+
+**本轮变更（ADR-029 · 特征码规则合并/配置持久化/免审批判定修复）：**
+1. **压缩包双规则合并（内置 21→15 条）**：ZIP/TAR/GZIP/BZIP2/XZ/ZSTD 各自"后缀规则 + 特征码规则"合并为唯一组合规则（特征码 AND 后缀），TAR.GZ 组合保留；迁移 `_merge_pairs` 精确删除 13 条旧内置模板（用户自定义规则不受影响）；10b1 断言 15 条 + 组合负向×2（.zip 无 PK 头不命中 / .bin 含 PK 头无 .zip 后缀不命中）。
+2. **.ltx 组合规则**：升级为 binary 组合（JSON 根键 `{"ltx_root` hex:7B226C74785F726F6F74 AND .ltx）。
+3. **特征码配置持久化**：删除升级强制 enabled=0 重置逻辑（根因：旧库已有规则时 UPDATE enabled=0），管理员已启用配置跨版本保留；"内置模板默认禁用"仅首次播种/补充播种生效。
+4. **免审批判定修复（10b2 新增回归组）**：check_auto_approval 必须传文件真实路径，binary/组合规则才可命中（原只传文件名 → file_header=None 永远不命中 → 免审批必然走人工审批）；实测上传 .gz 含 1F8B → 提交 partner 断言 autoApproved=true；上传 .bin 含 AA995566 → 提交断言 autoApproved=true（直击生产复现场景）。
+5. **TDD 用例命名修正**：合作方自动加入用例改用独立名称"新合作方自动加入测试"（避开 is_partner 子串匹配与既有"测试公司"冲突）；验证在出厂重置干净库上 361/361 全绿。
+**双环境基线**：Windows dev 全量 361/361（干净库）；CI 容器（securetrans-ci:3.12）TDD 全量 + package 校验；生产 CD 部署后 `/api/health` = v2.6.0 / stage=beta / status=ok。
+
+---
+
 ## ◎ v2.5.1-beta 回归（2026-09-14）
 **总计 361 项测试（Windows dev）全部通过，通过率 100%。**
 

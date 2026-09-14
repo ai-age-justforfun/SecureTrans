@@ -58,7 +58,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.5.1"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.6.0"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -277,6 +277,9 @@ def close_db(exception):
 # 内置特征码规则模板（v2.2.23 起为模块级常量）：播种 + 升级迁移共用
 # 安全策略：内置=模板，默认全部禁用（enabled=0）；管理员按需启用；即使免审批总开关开启，
 # 无启用的规则则无匹配 → 全部走人工审批（默认保守）
+# v2.6.0（ADR-029）：压缩包类"后缀名规则 + 二进制特征码规则"合并为唯一组合规则（特征码 AND 后缀），
+#   更严格更合理（单规则即完整判定，不再"后缀命中即匹配"或"仅特征命中即匹配"）；内置规则 21 -> 15 条。
+#   配置持久化：内置模板仅首次播种/补充播种时默认禁用，已存在规则尊重管理员配置（升级不重置 enabled）。
 BUILTIN_FEATURE_RULES = [
     # === 文档类（extension）===
     ("PDF文档", "extension", ".pdf", 0, None),
@@ -285,29 +288,22 @@ BUILTIN_FEATURE_RULES = [
     ("PPT演示", "extension", ".ppt,.pptx", 0, None),
     ("图片文件", "extension", ".png,.jpg,.jpeg,.gif,.bmp,.svg", 0, None),
     ("文本文件", "extension", ".txt,.csv,.md,.log,.json,.xml,.yaml,.yml", 0, None),
-    # === 压缩包类（extension）- Linux 默认支持 ===
-    ("ZIP压缩包", "extension", ".zip", 0, None),
-    ("TAR归档", "extension", ".tar", 0, None),
-    ("GZIP压缩", "extension", ".gz,.tgz", 0, None),
-    ("BZIP2压缩", "extension", ".bz2,.tbz2", 0, None),
-    ("XZ压缩", "extension", ".xz,.txz", 0, None),
-    ("ZSTD压缩", "extension", ".zst", 0, None),
-    # === 压缩包类（binary 特征码 / Magic Number）===
-    ("ZIP特征码", "binary", "hex:504B0304", 0, None),
-    ("GZIP特征码", "binary", "hex:1F8B", 0, None),
-    ("BZIP2特征码", "binary", "hex:425A68", 0, None),
-    ("XZ特征码", "binary", "hex:FD377A585A00", 0, None),
-    ("ZSTD特征码", "binary", "hex:28B52FFD", 0, None),
-    ("TAR特征码(ustar)", "binary", "ustar", 0, None),
-    # === 组合规则（binary 特征码 AND 后缀，v2.4.0 新增）===
+    # === 压缩包类（组合规则：二进制特征码 AND 后缀，v2.6.0 合并）===
+    ("ZIP压缩包(特征码+后缀)", "binary", "hex:504B0304", 0, ".zip"),
+    ("TAR归档(特征码+后缀)", "binary", "ustar", 0, ".tar"),
+    ("GZIP压缩(特征码+后缀)", "binary", "hex:1F8B", 0, ".gz"),
     ("TAR.GZ组合(特征码+后缀)", "binary", "hex:1F8B", 0, ".tar.gz,.tgz"),
+    ("BZIP2压缩(特征码+后缀)", "binary", "hex:425A68", 0, ".bz2,.tbz2"),
+    ("XZ压缩(特征码+后缀)", "binary", "hex:FD377A585A00", 0, ".xz,.txz"),
+    ("ZSTD压缩(特征码+后缀)", "binary", "hex:28B52FFD", 0, ".zst"),
     # === FPGA / EDA ===
     # v2.5.0: 同步字支持双字节序——BE 0xAA995566（.bit 原始流）/ LE 0x665599AA（Zynq BOOT.BIN 封装）
     # v2.5.1: Vivado 精简为唯一组合规则（特征码 AND .bin/.bit）。删除旧"扩展名 .bit 独立规则"与
     # "仅同步字无后缀规则"（过宽易误报、组合规则已全覆盖，迁移中自动清理）。
-    # .ltx（Vivado ILA 调试探针，JSON 文本）无 bitstream 同步字，用独立扩展名规则覆盖。
+    # v2.6.0: .ltx（Vivado ILA 调试探针，JSON 文本）从"纯扩展名规则"升级为组合规则——
+    #   特征码 hex:7B226C74785F726F6F74 = `{"ltx_root`（标准 JSON 根键，4KB 头内）AND 后缀 .ltx
     ("Vivado Bitstream组合(特征码+后缀)", "binary", "hex:AA995566;665599AA", 0, ".bin,.bit"),
-    ("Vivado ILA探针(.ltx)", "extension", ".ltx", 0, None),
+    ("Vivado ILA探针组合(特征码+后缀)", "binary", "hex:7B226C74785F726F6F74", 0, ".ltx"),
 ]
 
 def init_db():
@@ -544,6 +540,30 @@ def init_db():
     if _clean.rowcount:
         logger.info(f"审计修复：删除 internal 提交的幻影二级审批记录 {_clean.rowcount} 条（v2.5.1）")
 
+    # v2.6.0（ADR-029）压缩包双规则合并迁移：删除旧"后缀名独立规则"与"二进制特征码独立规则"（12 条），
+    # 以及旧"Vivado ILA探针(.ltx)"纯扩展名规则；仅精确匹配 name+type+pattern+ext_pattern 的内置模板，
+    # 用户自定义规则不受影响。新组合规则由下方补充播种插入（默认禁用模板）。
+    _merge_pairs = [
+        ("ZIP压缩包", "extension", ".zip", None),
+        ("TAR归档", "extension", ".tar", None),
+        ("GZIP压缩", "extension", ".gz,.tgz", None),
+        ("BZIP2压缩", "extension", ".bz2,.tbz2", None),
+        ("XZ压缩", "extension", ".xz,.txz", None),
+        ("ZSTD压缩", "extension", ".zst", None),
+        ("ZIP特征码", "binary", "hex:504B0304", None),
+        ("GZIP特征码", "binary", "hex:1F8B", None),
+        ("BZIP2特征码", "binary", "hex:425A68", None),
+        ("XZ特征码", "binary", "hex:FD377A585A00", None),
+        ("ZSTD特征码", "binary", "hex:28B52FFD", None),
+        ("TAR特征码(ustar)", "binary", "ustar", None),
+        ("Vivado ILA探针(.ltx)", "extension", ".ltx", None),
+    ]
+    _merge_sql = "DELETE FROM feature_rules WHERE " + " OR ".join(
+        ["(name=? AND rule_type=? AND pattern=? AND ext_pattern IS ?)"] * len(_merge_pairs))
+    _merge_arch = conn.execute(_merge_sql, [v for _pair in _merge_pairs for v in _pair])
+    if _merge_arch.rowcount:
+        logger.info(f"feature_rules 迁移：删除压缩包双规则与旧 .ltx 规则 {_merge_arch.rowcount} 条（v2.6.0 合并为组合规则）")
+
     cursor = conn.execute("SELECT COUNT(*) as c FROM feature_rules")
     if cursor.fetchone()["c"] == 0:
         # 内置特征码规则作为【模板】，默认全部禁用（enabled=0），由管理员按需启用。
@@ -553,18 +573,9 @@ def init_db():
                 (str(uuid.uuid4()), name, rtype, pattern, enabled, now_str(), ext_pattern)
             )
     else:
-        # 升级迁移（v2.2.23）：旧库已有规则时不重复播种，但内置模板规则强制重置为禁用。
-        # 原因：历史版本默认启用/用户曾启用，升级后应回到"模板默认禁用"安全基线；
-        # 仅重置与内置模板完全一致（name+type+pattern+ext_pattern）的规则，用户自定义规则不受影响。
-        _migrated = 0
-        for _name, _rtype, _pattern, _enabled, _ext in BUILTIN_FEATURE_RULES:
-            _cur = conn.execute(
-                "UPDATE feature_rules SET enabled=0 WHERE name=? AND rule_type=? AND pattern=? AND ext_pattern IS ? AND enabled=1",
-                (_name, _rtype, _pattern, _ext))
-            _migrated += _cur.rowcount
-        if _migrated:
-            logger.info("feature_rules 迁移：%d 条内置模板规则已重置为禁用（enabled=0），自定义规则未受影响", _migrated)
-        # v2.4.0 补充播种：新内置模板（如组合规则）在既有库中不存在时补插（默认禁用，安全）
+        # v2.6.0（ADR-029）：配置持久化——内置模板的"默认禁用"仅对首次播种/新补充播种生效；
+        # 已存在规则（含管理员已启用的内置模板）尊重管理员配置，升级/重启不重置 enabled。
+        # 补充播种：新内置模板（如合并后的组合规则）在既有库中不存在时补插（默认禁用，安全）
         for _name, _rtype, _pattern, _enabled, _ext in BUILTIN_FEATURE_RULES:
             _exists = conn.execute(
                 "SELECT 1 FROM feature_rules WHERE name=? AND rule_type=? AND pattern=? AND ext_pattern IS ? LIMIT 1",
@@ -937,7 +948,11 @@ def check_auto_approval(files: list) -> dict:
     all_rules = set()
     unmatched = []
     for f in files:
-        matched, rules = match_feature_rules(f["name"])
+        # v2.6.0 修复：必须传入真实文件路径，binary/组合规则（特征码+后缀）才能重读文件头匹配；
+        # 旧版仅传文件名 → file_header=None → binary 规则在免审批判定中永不命中，
+        # 表现为"上传显示已匹配特征码，但提交后仍要求人工审批"。
+        _p = f.get("path") or ""
+        matched, rules = match_feature_rules(f["name"], Path(_p) if _p else None)
         if matched:
             all_rules.update(rules)
         else:
@@ -1501,7 +1516,8 @@ def api_create_submission():
                     md5 = md5_file(dest)
                     ftype = get_file_type(f.name)
                     matched, _ = match_feature_rules(f.name, dest)
-                    files_info.append({"name": f.name, "size": dest.stat().st_size, "type": ftype, "md5": md5, "matched": matched})
+                    files_info.append({"name": f.name, "size": dest.stat().st_size, "type": ftype, "md5": md5, "matched": matched,
+                                       "path": str(dest)})  # v2.6.0: 供免审批判定重读文件头做 binary/组合规则匹配
                     total_size += dest.stat().st_size
         # 清理临时目录
         try:
