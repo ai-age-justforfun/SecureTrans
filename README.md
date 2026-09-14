@@ -95,7 +95,7 @@ SecureTrans/
 │   └── test_api.py           # 全量API测试脚本（318项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
 ├── docs/                     # 统一文档（数字前缀排序，持续刷新）
 │   ├── 00-lean-startup-phase-map.md   # Lean Startup三阶段映射与决策门
-│   ├── 01-scrum-io-definition.md      # Scrum各阶段输入输出定义
+│   ├── 01-scrum-io-definition.md      # AI辅助Agile-Scrum流程模板(v2.0，Scrum Guide审计+裁剪)
 │   ├── 02-prd.md                     # 产品需求文档（内部版本v2.2，文件名不带版本号）
 │   ├── 03-psf-process.md              # PSF阶段标准流程
 │   ├── 04-pmf-process.md              # PMF阶段标准流程（下一阶段准备）
@@ -227,7 +227,7 @@ deploy.sh/verify.sh 全部通过，318项自动化测试 100%（Windows dev + WS
 
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
-- [Scrum各阶段输入输出定义](docs/01-scrum-io-definition.md)
+- [AI辅助Agile-Scrum流程模板 v2.0](docs/01-scrum-io-definition.md)
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
