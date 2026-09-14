@@ -167,6 +167,7 @@ ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
 - **ADR-025 流程规范**：AGENTS.md Part A=AI 辅助软件工程方法唯一来源；任务卡模板 + 六步工作流 + 发布前门禁
 - **ADR-026 git 为中心**：三环境各自独立 git 副本，唯一同步通道=Gitea；WSL 禁用 /mnt/c、/mnt/d 用原生路径；
   /opt/securetrans/.runner + config.yaml 保护（备份/清理禁止移动删除）
+- **ADR-027 双闭环复盘**：nginx 暂不引入（日均个位数访问，触发条件=worker阻塞/对外HTTPS）；PSF 只做"被使用验证的需求"，推演特性标假设；beta=PSF 收尾→PMF 万里长征第一步；stepping-stone 方法论，技术债显式记账+偿还触发；人机协同过程/体会留痕=决策资产
 
 ## B5 研发流程
 
