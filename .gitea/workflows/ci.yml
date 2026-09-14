@@ -44,7 +44,7 @@ jobs:
           WS="${GITHUB_WORKSPACE:-/workspace}"
           cd "$WS"
           if [ ! -f src/app.py ]; then
-            rm -rf "$WS" && mkdir -p "$WS"
+            rm -rf "$WS"/* "$WS"/.[!.]* 2>/dev/null || true
             git clone --depth 1 "${CI_GITEA_URL}/openwrtadmin/SecureTrans.git" "$WS"
             cd "$WS"
           fi
@@ -109,7 +109,7 @@ jobs:
           WS="${GITHUB_WORKSPACE:-/workspace}"
           cd "$WS"
           if [ ! -f src/app.py ]; then
-            rm -rf "$WS" && mkdir -p "$WS"
+            rm -rf "$WS"/* "$WS"/.[!.]* 2>/dev/null || true
             git clone --depth 1 "${CI_GITEA_URL}/openwrtadmin/SecureTrans.git" "$WS"
             cd "$WS"
           fi
@@ -130,7 +130,7 @@ jobs:
           CI_GITEA_URL="${CI_GITEA_URL:-http://${CI_GW}:3000}"
           echo "CI_GITEA_URL=${CI_GITEA_URL}" >> "$GITHUB_ENV"
           WS="${GITHUB_WORKSPACE:-/workspace}"
-          rm -rf "$WS" && mkdir -p "$WS"
+          rm -rf "$WS"/* "$WS"/.[!.]* 2>/dev/null || true
           git clone --depth 1 "${CI_GITEA_URL}/openwrtadmin/SecureTrans.git" "$WS"
           cd "$WS"
 
