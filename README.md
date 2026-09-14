@@ -234,7 +234,7 @@ deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WS
 - [测试报告（361项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
-- [GitHub 迁移方案（Proposal，待发布水平后落地）](docs/14-github-migration.md)
+- [GitHub 迁移方案（Active，v2.6.5 首验落地）](docs/14-github-migration.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
 - [部署指南（唯一部署文档）](docs/DEPLOY.md)
 

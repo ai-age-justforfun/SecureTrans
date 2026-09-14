@@ -1,7 +1,8 @@
-# GitHub 迁移方案（Proposal / 待细化落地）
+# GitHub 迁移方案（Active / 首验落地 v2.6.5）
 
-> **状态：方案讨论（PROPOSAL）** — 本文件是 2026-09-14 与 AI 咨询讨论的完整记录，作为迁移 GitHub 的决策输入。
-> **落地条件：版本达到发布水平（RTM/Release）后**，再细化执行步骤并真正落地（届时升级本文件状态为 ACTIVE）。
+> **状态：已落地首验（ACTIVE，2026-09-15 v2.6.5）** — 本文件从方案讨论升级为落地记录。
+> **首验结果**：GitHub Actions CI-TDD #1/#2 success（等效本地测试环境全量门禁+TDD 392 项）；CD-SIM #1 success（self-hosted runner → 本地 Docker 仿真 18000，独立数据）；生产 10.10.30.8 零影响（v2.6.5/beta/ok 保持不变）。
+> **落地形态**：`ai-age-justforfun/SecureTrans`（private 镜像仓）；`.github/workflows/ci.yml`（CI）+ `.github/workflows/cd-sim.yml`（CD 仿真）+ `.github/docker/Dockerfile.sim`。
 > **关联**：ADR-007（发布策略：代码变更才发布 / 文档-only 不 bump）、ADR-021（CICD 单 job 规避）、08-cicd-gitops-architecture.md（现有 Gitea CI/CD 架构）。
 
 ---
