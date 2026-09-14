@@ -43,12 +43,14 @@ if _ENV_FILE_PATH.exists():
                     os.environ[_k] = _v.strip().strip('"').strip("'")
     except Exception:
         pass  # .env 解析失败不阻塞启动（后续按环境变量/默认值运行）
-DATA_DIR = Path(os.getenv("SECURETRANS_DATA", str(BASE_DIR / "data")).strip())
+DATA_DIR = Path(os.getenv("SECURETRANS_DATA", str(BASE_DIR / "data")).strip()).resolve()
 DB_PATH = DATA_DIR / "securetrans.db"
 LOG_PATH = DATA_DIR / "securetrans.log"
 
 # 存储目录（必须在同一个文件系统，os.rename 才能 0拷贝）
-NAS_ROOT = Path(os.getenv("NAS_ROOT", str(BASE_DIR / "nas")).strip())  # strip 防 .env CRLF 污染(CR)
+# v2.5.0: .resolve() 强制绝对路径——Flask send_file 会 join app.root_path（src/），
+# 若 NAS_ROOT 为相对路径（如 ./nas）会把文件路径错拼为 src/nas/... 导致下载 500（FileNotFoundError）
+NAS_ROOT = Path(os.getenv("NAS_ROOT", str(BASE_DIR / "nas")).strip()).resolve()  # strip 防 .env CRLF 污染(CR)
 STAGING_DIR = NAS_ROOT / "staging"    # 刚上传，待审核
 EXTERNAL_DIR = NAS_ROOT / "external"   # 审核通过，可外网下载
 ARCHIVE_DIR = NAS_ROOT / "archive"     # 过期/驳回，永久归档
@@ -56,7 +58,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.4.0"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.5.0"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -301,10 +303,11 @@ BUILTIN_FEATURE_RULES = [
     ("TAR.GZ组合(特征码+后缀)", "binary", "hex:1F8B", 0, ".tar.gz,.tgz"),
     # === FPGA / EDA ===
     ("Vivado Bitstream(.bit)", "extension", ".bit", 0, None),
-    ("Vivado Bitstream组合(特征码+后缀)", "binary", "hex:AA995566", 0, ".bin,.bit"),
+    # v2.5.0: 同步字支持双字节序——BE 0xAA995566（.bit 原始流）/ LE 0x665599AA（Zynq BOOT.BIN 封装）
+    ("Vivado Bitstream组合(特征码+后缀)", "binary", "hex:AA995566;665599AA", 0, ".bin,.bit"),
     # 修复记录：v2.4.0 修正同步字——Xilinx 标准同步字 0xAA995566（AA 99 55 66），
     # 旧模板误写 hex:5599AA66（字节位置错乱），迁移中自动修正
-    ("Vivado Bit同步字", "binary", "hex:AA995566", 0, None),
+    ("Vivado Bit同步字", "binary", "hex:AA995566;665599AA", 0, None),
 ]
 
 def init_db():
@@ -518,6 +521,12 @@ def init_db():
         "UPDATE feature_rules SET pattern='hex:AA995566' WHERE name='Vivado Bit同步字' AND pattern='hex:5599AA66'")
     if _fix.rowcount:
         logger.info("feature_rules 修正：Vivado Bit同步字 pattern 5599AA66 → AA995566（Xilinx 标准同步字）")
+    # v2.5.0 迁移：Vivado 同步字支持双字节序（BE AA995566 / LE 665599AA，Zynq BOOT.BIN 场景）
+    _fix2 = conn.execute(
+        "UPDATE feature_rules SET pattern='hex:AA995566;665599AA' "
+        "WHERE name IN ('Vivado Bitstream组合(特征码+后缀)','Vivado Bit同步字') AND pattern='hex:AA995566'")
+    if _fix2.rowcount:
+        logger.info("feature_rules 迁移：Vivado 同步字 pattern 扩展为双字节序 hex:AA995566;665599AA（BE/LE）")
 
     cursor = conn.execute("SELECT COUNT(*) as c FROM feature_rules")
     if cursor.fetchone()["c"] == 0:
@@ -882,13 +891,18 @@ def match_feature_rules(filename: str, file_path: Path = None) -> tuple:
                     continue  # 后缀不匹配 → 该组合规则不命中（不进入特征码判断）
             if pattern.startswith("hex:"):
                 # 十六进制特征码：hex:1F8B / hex:504B0304 / hex:FD377A585A00
-                hex_str = pattern[4:].replace(" ", "").replace(",", "").replace("-", "")
-                try:
-                    sig_bytes = bytes.fromhex(hex_str)
-                    if sig_bytes in file_header:
-                        matched.append(rule["name"])
-                except ValueError:
-                    pass
+                # v2.5.0: 支持分号分隔多候选（如双字节序 hex:AA995566;665599AA，任一命中即匹配）
+                for _cand in pattern[4:].split(";"):
+                    _cand = _cand.replace(" ", "").replace(",", "").replace("-", "")
+                    if not _cand:
+                        continue
+                    try:
+                        sig_bytes = bytes.fromhex(_cand)
+                        if sig_bytes in file_header:
+                            matched.append(rule["name"])
+                            break
+                    except ValueError:
+                        continue
             else:
                 # 文本特征码（原有方式）
                 if pattern.encode("utf-8", errors="ignore") in file_header:

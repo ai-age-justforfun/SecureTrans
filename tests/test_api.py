@@ -10,7 +10,10 @@ import http.cookiejar
 import os
 import tempfile
 
-BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
+# Windows 上 localhost 会先尝试 IPv6(::1) 超时 ~2s 再回退 IPv4（服务仅监听 IPv4），导致每请求白白等待 2 秒
+# （2026-09-14 定位：TDD 全量 350 项因此从几分钟拖到 20+ 分钟；WSL/Linux 无此问题）
+# 默认用 127.0.0.1；多网卡/远程环境可传 BASE_URL 覆盖
+BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8000")
 
 # 管理凭据参数化（生产环境 admin 密码可能已修改；verify.sh 通过环境变量传入）
 # 默认 = 重置密码 Init@123456：与 app.py RESET_PASSWORD 默认 / deploy.sh 部署重置 / 登录页提示 同源统一
@@ -20,14 +23,15 @@ ADMIN_PASS = os.environ.get("TEST_ADMIN_PASS", os.environ.get("RESET_PASSWORD", 
 RESET_PWD = os.environ.get("RESET_PASSWORD", "Init@123456")
 
 def _resolve_nas_root():
-    """NAS_ROOT 解析优先级：环境变量 > 安装目录 .env > 本地开发默认(src/nas)
-    保证测试断言路径与服务端(deploy.sh 写入 .env 的 NAS_ROOT)一致，无需手动传参"""
+    """NAS_ROOT 解析优先级：环境变量 > 部署结构 .env（与 app.py 同目录）> 本地开发 src/.env > 默认 src/nas
+    保证测试断言路径与服务端实际 NAS_ROOT 一致（v2.5.0：服务端已 .resolve() 绝对化，本地开发 src/.env 的 ./nas
+    相对 CWD=项目根，此处同样 abspath 绝对化，两者一致），无需手动传参"""
     env = os.getenv("NAS_ROOT")
     if env:
         return env
     _base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # 1) 部署结构：/opt/securetrans/.env + app.py 同目录（deploy.sh 布局，NAS_ROOT 为绝对路径）
     env_file = os.path.join(_base, ".env")
-    # 仅当 .env 与 app.py 同目录（部署结构 /opt/securetrans）才可信，避免误读项目根残留的测试 .env
     if os.path.exists(env_file) and os.path.exists(os.path.join(_base, "app.py")):
         try:
             with open(env_file, encoding="utf-8", errors="ignore") as _f:
@@ -35,6 +39,20 @@ def _resolve_nas_root():
                     _line = _line.strip()
                     if _line.startswith("NAS_ROOT="):
                         return _line.split("=", 1)[1].strip().strip('"').strip("'")
+        except Exception:
+            pass
+    # 2) 本地开发：服务端实际读 src/.env（BASE_DIR=.env），与其保持一致（相对路径按 CWD 绝对化）
+    src_env = os.path.join(_base, "src", ".env")
+    if os.path.exists(src_env):
+        try:
+            with open(src_env, encoding="utf-8", errors="ignore") as _f:
+                for _line in _f:
+                    _line = _line.strip()
+                    if _line.startswith("NAS_ROOT="):
+                        _v = _line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if os.path.isabs(_v):
+                            return _v
+                        return os.path.abspath(_v)
         except Exception:
             pass
     return os.path.join(_base, "src", "nas")
@@ -115,6 +133,19 @@ def test(name, condition, detail=""):
     status = "✅ PASS" if condition else "❌ FAIL"
     results.append({"name": name, "status": status, "detail": detail})
     print(f"{status} | {name}" + (f" | {detail}" if detail and not condition else ""))
+
+def _cleanup_custom_rules():
+    """清理历史中断运行残留的"测试自定义规则*"（enabled 可能为 1，污染后续禁用/启用断言）
+    仅在当前会话为全量模式（非冒烟/非生产）时执行"""
+    if _cur_group != SMOKE_GROUP and not (SMOKE_MODE or ENV_ROLE == 'prod'):
+        try:
+            _code, _rules = request('GET', '/api/config/feature-rules')
+            if isinstance(_rules, list):
+                for _r in _rules:
+                    if _r.get('name', '').startswith('测试自定义规则'):
+                        request('DELETE', f"/api/admin/feature-rules/{_r['id']}")
+        except Exception:
+            pass
 
 def upload_file(filepath, filename):
     """模拟文件上传（multipart/form-data）
@@ -739,6 +770,8 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
          f"code={code}, auto_approval_enabled={data.get('auto_approval_enabled')}")
 
     # 创建特征码规则
+    # 健壮性（2026-09-14）：先清理历史中断运行残留的同名规则（enabled 可能为 1，导致"禁用后仍匹配"误报）
+    _cleanup_custom_rules()
     code, data = request('POST', '/api/admin/feature-rules', json_data={
         "name": "测试自定义规则", "ruleType": "extension", "pattern": ".testext", "enabled": True
     })
@@ -869,6 +902,73 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     request('DELETE', f'/api/admin/feature-rules/{tgz_rule_id}')
     request('DELETE', f'/api/admin/feature-rules/{viv_rule_id}')
     test("删除组合规则", code == 200, f"code={code}")
+
+    # v2.5.0 双字节序特征码（BE AA995566 / LE 665599AA，Zynq BOOT.BIN 场景）
+    print("\n--- 10h2. 双字节序特征码（BE/LE，BOOT.BIN 场景） ---")
+    _set_group("10h2. 双字节序特征码（BE/LE，BOOT.BIN 场景）")
+
+    # 内置模板迁移断言：Vivado 组合规则 pattern 已扩展为双字节序
+    code, rules = request('GET', '/api/config/feature-rules')
+    viv_rule = next((r for r in rules if "Vivado Bitstream组合" in r.get('name', '')), None) if isinstance(rules, list) else None
+    test("内置Vivado组合规则pattern为双字节序", code == 200 and viv_rule is not None and '665599AA' in (viv_rule.get('pattern') or ''),
+         f"code={code}, pattern={viv_rule.get('pattern') if viv_rule else 'N/A'}")
+
+    # 创建双字节序测试规则（模拟新内置模板格式）
+    code, data = request('POST', '/api/admin/feature-rules', json_data={
+        "name": "测试Vivado双序", "ruleType": "binary", "pattern": "hex:AA995566;665599AA",
+        "enabled": True, "extPattern": ".bin,.bit"
+    })
+    viv2_rule_id = data.get('id', '')
+    test("创建双字节序规则(BE;LE)", code == 200 and viv2_rule_id, f"code={code}, id={viv2_rule_id}")
+
+    # 上传 BE 序 .bin（标准 .bit 原始流）→ 命中
+    be_path = os.path.join(test_dir, "test_be.bin")
+    with open(be_path, 'wb') as f:
+        f.write(b"\x00" * 32 + bytes.fromhex('AA995566') + b"\x00" * 64)
+    code, data = upload_file(be_path, "test_be.bin")
+    matched_rules = data.get('matchedRules', [])
+    test("上传BE序.bin命中双序规则", code == 200 and any("测试Vivado双序" in str(r) for r in matched_rules),
+         f"code={code}, matchedRules={matched_rules}")
+
+    # 上传 LE 序 .bin（Zynq BOOT.BIN 封装，offset 32）→ 命中
+    le_path = os.path.join(test_dir, "test_le.bin")
+    with open(le_path, 'wb') as f:
+        f.write(b"\x00" * 32 + bytes.fromhex('665599AA') + b"\x00" * 64)
+    code, data = upload_file(le_path, "test_le.bin")
+    matched_rules = data.get('matchedRules', [])
+    test("上传LE序.bin命中双序规则", code == 200 and any("测试Vivado双序" in str(r) for r in matched_rules),
+         f"code={code}, matchedRules={matched_rules}")
+
+    # 上传 LE 序 + 大写后缀 .BIN（真实 BOOT.BIN 场景）→ 命中（大小写不敏感 + LE 双条件）
+    boot_path = os.path.join(test_dir, "BOOT.BIN")
+    with open(boot_path, 'wb') as f:
+        f.write(b"\x00" * 32 + bytes.fromhex('665599AA') + b"\x00" * 64)
+    code, data = upload_file(boot_path, "BOOT.BIN")
+    matched_rules = data.get('matchedRules', [])
+    test("上传BOOT.BIN大写后缀+LE序命中", code == 200 and any("测试Vivado双序" in str(r) for r in matched_rules),
+         f"code={code}, matchedRules={matched_rules}")
+
+    # 上传 LE 序 + .xyz → 组合不命中（后缀不符）
+    xyz_path = os.path.join(test_dir, "test_le.xyz")
+    with open(xyz_path, 'wb') as f:
+        f.write(b"\x00" * 32 + bytes.fromhex('665599AA') + b"\x00" * 64)
+    code, data = upload_file(xyz_path, "test_le.xyz")
+    matched_rules = data.get('matchedRules', [])
+    test("上传LE序.xyz后缀不符组合不命中", code == 200 and not any("测试Vivado双序" in str(r) for r in matched_rules),
+         f"code={code}, matchedRules={matched_rules}")
+
+    # 上传无同步字 .bin → 不命中
+    none_path = os.path.join(test_dir, "test_none.bin")
+    with open(none_path, 'wb') as f:
+        f.write(b"\x00" * 128)
+    code, data = upload_file(none_path, "test_none.bin")
+    matched_rules = data.get('matchedRules', [])
+    test("上传无同步字.bin双序规则不命中", code == 200 and not any("测试Vivado双序" in str(r) for r in matched_rules),
+         f"code={code}, matchedRules={matched_rules}")
+
+    # 清理双序规则
+    code, _ = request('DELETE', f'/api/admin/feature-rules/{viv2_rule_id}')
+    test("删除双序规则", code == 200, f"code={code}")
 
     # 22c. 网络面隔离（应用层，模拟 X-Network-Zone 头）
     print("\n--- 10i. 网络面隔离（双网卡应用层兜底） ---")
