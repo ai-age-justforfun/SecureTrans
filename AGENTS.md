@@ -174,7 +174,9 @@ ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
 **Lean Startup**：PSF（当前，1周 Sprint）→ PMF（2周 Sprint，docs/04 已就绪）→ Scale。
 **Agile-Scrum 模板（v2.0，docs/01，AI 辅助裁剪版）**：人=PO/SM（决策/验收/流程守护），AI=Developers（编码/测试/文档/CI）。
 **事件**：Sprint Planning（≤1h，定 Goal+选 Story+确认验收）→ 实施（设计/开发/测试并行，TDD+CI）→ Sprint Review（PO 验收+Backlog 调整）→ Retrospective（复盘 ≤3 行动项+假设/技术债刷新）。
-**裁剪**：站会=异步（AI 进度摘要，2+人可选）；看板不强制（Gitea Issues+Milestone）；估算 XS/S/M/L。
+**裁剪**：站会=人机协同站会（每日 3-5 分钟，AI 摘要人决策，提示词模板 docs/01 §9.1）；
+看板=轻量每日一览表（docs/01 §9.2，不引入看板软件）；估算 XS/S/M/L；
+Sprint 周期 2周→1周→1-2天，以协同效率为准演进（人审核是瓶颈则回退）。
 **承诺**：Product Goal（当前=PSF beta 真实使用）；Sprint Goal 期内不可变；DoD=代码提交+TDD+CI 全绿+双环境回归+文档同步+可部署（docs/01 §五）。
 **每 Sprint 交付**：可部署 Increment + 复盘 + 假设/技术债刷新 + push main + 按需发布。
 **假设纪律（ADR-027）**：推演特性标假设（docs/13），证据成立才进 Sprint。
