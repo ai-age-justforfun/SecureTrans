@@ -466,6 +466,7 @@ systemctl start securetrans
 
 **6.3.2 上传大小配置（v2.2.24 起统一口径）**：
 - `.env` 新增 `MAX_FILE_SIZE_MB`（单文件大小上限，默认 800）；请求体限制 `MAX_CONTENT_LENGTH` 自动 = 文件上限 + 1MB（multipart 封装余量），**不要手工配置 MAX_CONTENT_LENGTH**。
+- `.env` 新增 `TEMP_FILE_HOURS`（未提交临时文件保留时长，默认 24 小时；上传后未提交的 staging 残留由系统每天 2:10 自动回收，直接删除不归档，管理员可手动触发 `/api/admin/cleanup-expired` 查看合并计数）。
 - 兼容旧 .env：若仍配置了 `MAX_CONTENT_LENGTH` 且未配置 `MAX_FILE_SIZE_MB`，文件上限自动取该值-1MB（迁移建议：改配 MAX_FILE_SIZE_MB）。
 - 运行时界面"系统配置→最大文件大小"保存后生效（来源=DB，见 5.1 配置权威矩阵）。
 

@@ -1,3 +1,14 @@
+## ◎ v2.6.3-beta 回归（2026-09-14）
+**总计 380 项测试（Windows dev，出厂重置干净库）全部通过，通过率 100%。**
+
+**本轮变更（ADR-032 · 合作方联系人必填 / 无状态上传+临时清理 / 文档体系单源化）：**
+1. **合作方联系人必填**：创建/编辑接口统一校验 contact 非空（400"联系人不能为空"）；前端弹窗 `*` 标记 + 提交前强制检查；自动加入清单路径不受影响；TDD 新增 2 项（创建空联系人拒绝 / 编辑空联系人拒绝）。
+2. **未提交临时文件系统级回收**：新增 `cleanup_abandoned_temp()`（staging 无提交记录目录，超时 TEMP_FILE_HOURS 默认 24h 直接删除不归档不审计）；每天 2:10 定时 + `/api/admin/cleanup-expired` 手动合并（cleaned+tempCleaned+message_en 双语）；TDD 新增 6 项（临时目录生成/超时清理删除/pending 目录保留/手动 API 合并/清理保留单）。
+3. **文档体系单源化**：docs/ADR.md 独立成文（32 条 ADR 唯一权威）；README 仅保留索引表；AGENTS B4 摘要 + 引用。
+4. **双环境基线**：Windows dev 全量 380/380（干净库）；CI 容器（securetrans-ci:3.12）全量 TDD + 性能门禁；生产 CD 部署后 `/api/health` = v2.6.3 / stage=beta / status=ok。
+
+---
+
 ## ◎ v2.6.2-beta 回归（2026-09-14）
 **总计 372 项测试（Windows dev，出厂重置干净库）全部通过，通过率 100%。**
 

@@ -58,7 +58,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.6.2"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.6.3"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -1216,14 +1216,54 @@ def cleanup_expired_files():
         logger.info("过期清理完成，共处理 %d 个文件", cleaned)
     return cleaned
 
+# 未提交临时文件保留时长（小时）：上传后未提交（无 submissions 记录）的 staging 临时目录超时直接删除。
+# 无状态上传（前端刷新即弃）不产生提交单、不正式归档；删除不记审计（从未入库）。
+TEMP_FILE_HOURS = int(os.environ.get("TEMP_FILE_HOURS", "24") or 24)
+
+def cleanup_abandoned_temp():
+    """清理未提交的临时上传目录（staging/<temp_id> 且无对应提交单），超时直接删除，不归档。
+
+    - 已提交单：提交创建时临时目录已被 shutil.rmtree 移除，staging 下仅剩提交单目录（有 submissions 记录）→ 跳过
+    - 未提交残留：无 submissions 记录 → 超时（TEMP_FILE_HOURS，默认 24h）删除
+    """
+    if not STAGING_DIR.exists():
+        return 0
+    db = get_db()
+    now = datetime.datetime.now()
+    cleaned = 0
+    for sub in STAGING_DIR.iterdir():
+        if not sub.is_dir():
+            continue
+        try:
+            exists = db.execute("SELECT COUNT(*) as c FROM submissions WHERE id=?", (sub.name,)).fetchone()["c"]
+        except Exception:
+            exists = 0
+        if exists > 0:
+            continue  # 已提交单目录，交给过期归档流程
+        try:
+            mtime = datetime.datetime.fromtimestamp(sub.stat().st_mtime)
+        except OSError:
+            continue
+        if (now - mtime).total_seconds() >= TEMP_FILE_HOURS * 3600:
+            try:
+                shutil.rmtree(sub, ignore_errors=True)
+                cleaned += 1
+                logger.info("未提交临时目录清理: %s（超时 %dh）", sub.name, TEMP_FILE_HOURS)
+            except Exception as e:
+                logger.error("未提交临时目录清理失败 %s: %s", sub.name, e)
+    if cleaned:
+        logger.info("未提交临时目录清理完成，共 %d 个", cleaned)
+    return cleaned
+
 def start_scheduler():
-    """启动定时任务（APScheduler），每天凌晨 2 点清理过期文件"""
+    """启动定时任务（APScheduler），每天凌晨清理过期文件 + 未提交临时文件"""
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
         scheduler = BackgroundScheduler()
         scheduler.add_job(cleanup_expired_files, "cron", hour=2, minute=0)
+        scheduler.add_job(cleanup_abandoned_temp, "cron", hour=2, minute=10)
         scheduler.start()
-        logger.info("定时任务已启动：每天凌晨 2 点清理过期文件")
+        logger.info("定时任务已启动：每天凌晨 2 点清理过期文件与未提交临时文件")
         return scheduler
     except ImportError:
         logger.warning("APScheduler 未安装，过期清理需手动调用或配置系统 Cron")
@@ -2183,11 +2223,13 @@ def api_list_partners():
 def api_create_partner():
     data = request.get_json()
     name = data.get("name", "").strip()
-    contact = data.get("contact", "")
+    contact = data.get("contact", "").strip()
     email = data.get("email", "")
     enabled = 1 if data.get("enabled", True) else 0
     if not name:
         return jsonify({"error": "合作方名称不能为空"}), 400
+    if not contact:
+        return jsonify({"error": "联系人不能为空"}), 400
     db = get_db()
     exists = db.execute("SELECT COUNT(*) as c FROM partners WHERE name=?", (name,)).fetchone()["c"]
     if exists:
@@ -2208,8 +2250,12 @@ def api_update_partner(partner_id):
     """编辑合作方（名称/联系人/邮箱）。名称去重检查排除自身（COLLATE NOCASE 与提交自动加入一致）。"""
     data = request.get_json(silent=True) or {}
     name = data.get("name", "").strip()
+    contact = data.get("contact", "").strip()
+    email = data.get("email", "")
     if not name:
         return jsonify({"error": "合作方名称不能为空"}), 400
+    if not contact:
+        return jsonify({"error": "联系人不能为空"}), 400
     db = get_db()
     row = db.execute("SELECT * FROM partners WHERE id=?", (partner_id,)).fetchone()
     if not row:
@@ -2219,8 +2265,6 @@ def api_update_partner(partner_id):
     ).fetchone()["c"]
     if dup:
         return jsonify({"error": "合作方已存在"}), 400
-    contact = data.get("contact", "")
-    email = data.get("email", "")
     db.execute("UPDATE partners SET name=?, contact=?, email=? WHERE id=?", (name, contact, email, partner_id))
     db.commit()
     add_audit_log(current_user.username, "update_partner", name, "编辑合作方", get_client_ip())
@@ -2551,7 +2595,11 @@ def api_health():
 @role_required("admin")
 def api_cleanup_expired():
     count = cleanup_expired_files()
-    return jsonify({"message": f"清理完成，共处理 {count} 个过期文件", "cleaned": count})
+    temp_cleaned = cleanup_abandoned_temp()
+    msg = f"清理完成：过期文件 {count} 个，未提交临时文件 {temp_cleaned} 个"
+    msg_en = (f"Cleanup completed: {count} expired file{'s' if count != 1 else ''}, "
+              f"{temp_cleaned} abandoned temp file{'s' if temp_cleaned != 1 else ''}")
+    return jsonify({"message": msg, "message_en": msg_en, "cleaned": count, "tempCleaned": temp_cleaned})
 
 # ============================================================
 # 路由：系统运维（数据生命周期，ADR-011）

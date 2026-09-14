@@ -150,9 +150,9 @@
 **文档原则**：聚焦关键内容；文件名不含版本号（版本写文档内，关键变更用 git tag）；
 ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
 
-## B4 技术决策（ADR-001~026 摘要）
+## B4 技术决策（ADR 摘要）
 
-完整全文在 README。关键强制项：
+**完整全文与全部条目见 `docs/ADR.md`（唯一权威，与 PRD 并列）**；README 只有索引表。关键强制项摘要：
 - **ADR-005 非硬编码**：新增代码/脚本禁止写死地址/端口/网段/路径，必须从 .env 或运行环境读取
 - **ADR-007 发布策略**：文档-only 不发布；代码才 bump+打包+Release+tag；调测门禁=双环境 TDD 全量 100%
 - **ADR-009 部署凭据**：`.env RESET_PASSWORD`（默认 Init@123456）唯一源；禁止出现第二份默认密码；
@@ -172,6 +172,7 @@ ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
 - **ADR-029 v2.6.0 落点**：压缩包双规则合并（内置 21→15 条：ZIP/TAR/GZIP/BZIP2/XZ/ZSTD 各自唯一组合规则=特征码 AND 后缀，TAR.GZ 保留；迁移 `_merge_pairs` 精确删除 13 条旧内置模板，用户规则不受影响）；.ltx 升级组合规则（JSON 根键 hex:7B226C74785F726F6F74 AND .ltx）；特征码启用/禁用配置持久化（删除升级重置 enabled=0 逻辑，管理员配置跨版本保留，默认禁用仅首次播种）；免审批判定修复（check_auto_approval 必须传文件真实路径，binary/组合规则才可命中；files_info 携带 path，旧格式兼容）；测试教训=用例命名避开 is_partner 子串匹配（改用例名"新合作方自动加入测试"）
 - **ADR-030 v2.6.1 落点**：.ltx 特征码改文本 `"ltx_root"`（真实 Vivado 为格式化 JSON `{\n    "ltx_root":`，旧紧凑 hex 不命中；迁移精确更新内置模板，10b3 回归：格式化+紧凑+负向）；性能门禁入 CI（ci_test.sh [3.5/4] 每次跑 100MB 全链路+3 用户并发，秒级断言）；Release body 自动生成近版变更摘要（clone depth 30 + git log，不再只写"自动发布"）；admin 默认审批人仅首次播种（approvers_initialized 标记，置位后永不补回，无审批人提交失败提醒已有）；审计留痕口径（TDD 报告/CI run/Release body/CD 日志/生产只读冒烟各环节留痕）；WSL 测试=CI 容器合一（同一镜像同一全量 TDD，差异仅数据持久性）
 - **ADR-031 v2.6.2 落点**：合作方全量编辑（PUT /api/admin/partners/<id>：名称/联系人/邮箱，去重排除自身 COLLATE NOCASE，前端编辑按钮+弹窗，TDD 6 项）；WSL 常驻测试环境退居二线（测试执行收敛 dev+CI 两环境，WSL 仅作 CI 容器宿主与 Linux 排查入口，ADR-026 修订）；生产只读冒烟=业界标准（healthz+版本+目录校验为 CD 门禁，smoke.sh 只读 11 项，写测试数据只在测试环境）
+- **ADR-032 v2.6.3 落点**：合作方联系人必填（创建/编辑 400"联系人不能为空"，前端 * 标记+强制检查，自动加入路径天然非空不受影响）；无状态上传明示（未提交刷新即弃，写入 PRD）+ 未提交临时文件系统级回收（cleanup_abandoned_temp：staging 无提交记录目录超时 TEMP_FILE_HOURS 默认 24h 直接删除不归档不审计；每天 2:10 定时 + /api/admin/cleanup-expired 手动合并，双语返回）；文档体系单源化（docs/ADR.md 唯一权威，README 索引表+落点摘要，AGENTS B4 摘要+引用）
 
 ## B5 研发流程
 

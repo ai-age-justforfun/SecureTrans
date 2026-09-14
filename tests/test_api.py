@@ -9,6 +9,8 @@ import urllib.error
 import http.cookiejar
 import os
 import tempfile
+import time
+import pathlib
 
 # Windows 上 localhost 会先尝试 IPv6(::1) 超时 ~2s 再回退 IPv4（服务仅监听 IPv4），导致每请求白白等待 2 秒
 # （2026-09-14 定位：TDD 全量 350 项因此从几分钟拖到 20+ 分钟；WSL/Linux 无此问题）
@@ -505,6 +507,16 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     })
     test("重复创建合作方被拒绝", code == 400, f"code={code}")
 
+    # v2.6.3 联系人必填：创建空联系人被拒绝
+    code, data = request('POST', '/api/admin/partners', json_data={"name": "无联系人测试", "contact": " ", "email": ""})
+    test("创建合作方联系人必填(空被拒绝)", code == 400, f"code={code}")
+
+    # v2.6.3 联系人必填：编辑空联系人被拒绝（名称合法但联系人空 → 400）
+    code, data = request('PUT', f'/api/admin/partners/{partner_id}', json_data={
+        "name": "Nexus半导体", "contact": "", "email": "keep@nexus.com"
+    })
+    test("编辑合作方联系人必填(空被拒绝)", code == 400, f"code={code}")
+
     # 合作方列表
     code, data = request('GET', '/api/admin/partners')
     partner_count = len(data) if isinstance(data, list) else 0
@@ -552,15 +564,15 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     code, data = request('PUT', f'/api/admin/partners/{partner_id}', json_data={"name": "  "})
     test("编辑合作方名称为空被拒绝", code == 400, f"code={code}")
     # 编辑为已有合作方名称（排除自身）被拒绝：先建第二个合作方再尝试改名冲突
-    code, data = request('POST', '/api/admin/partners', json_data={"name": "编辑冲突测试", "contact": "", "email": ""})
+    code, data = request('POST', '/api/admin/partners', json_data={"name": "编辑冲突测试", "contact": "冲突测试联系人", "email": ""})
     _dup_pid = data.get('id', '')
     test("创建编辑冲突测试合作方", code == 200, f"code={code}")
     code, data = request('PUT', f'/api/admin/partners/{_dup_pid}', json_data={
-        "name": "Nexus半导体(更新)", "contact": "", "email": ""
+        "name": "Nexus半导体(更新)", "contact": "冲突测试联系人", "email": ""
     })
     test("编辑为已存在名称被拒绝(去重排除自身)", code == 400, f"code={code}")
-    # 编辑不存在合作方 → 404
-    code, data = request('PUT', '/api/admin/partners/nonexistent-id', json_data={"name": "不存在"})
+    # 编辑不存在合作方 → 404（须先通过 name/contact 必填校验）
+    code, data = request('PUT', '/api/admin/partners/nonexistent-id', json_data={"name": "不存在", "contact": "不存在联系人"})
     test("编辑不存在合作方404", code == 404, f"code={code}")
     # 清理冲突测试合作方
     request('DELETE', f'/api/admin/partners/{_dup_pid}')
@@ -568,6 +580,47 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     # 删除合作方
     code, data = request('DELETE', f'/api/admin/partners/{partner_id}')
     test("删除合作方", code == 200, f"code={code}, data={data}")
+
+    # v2.6.3 未提交临时文件清理（无状态上传：选择文件未提交 → 刷新即弃；staging 残留超时自动删除，不归档）
+    _temp_up = os.path.join(test_dir, "abandon_temp.bin")
+    with open(_temp_up, 'wb') as f:
+        f.write(b"ABANDON-TEMP" + b"\x00" * 400)
+    code, data = upload_file(_temp_up, "abandon_temp.bin")
+    _temp_id = data.get('tempId')
+    _temp_path = pathlib.Path(_resolve_nas_root()) / "staging" / _temp_id
+    test("上传未提交生成临时目录", code == 200 and _temp_path.exists(), f"code={code}, tempId={_temp_id}")
+    # 模拟超时：目录 mtime 置为 25 小时前
+    _old_ts = time.time() - 25 * 3600
+    os.utime(_temp_path, (_old_ts, _old_ts))
+    # 单独上传并提交一个 pending 单，验证其目录不被清理（已提交单走过期归档，不属临时清理）
+    _keep_up = os.path.join(test_dir, "keep_sub.bin")
+    with open(_keep_up, 'wb') as f:
+        f.write(b"KEEP-SUB" + b"\x00" * 400)
+    _keep_code, _keep_data = upload_file(_keep_up, "keep_sub.bin")
+    _keep_tid = _keep_data.get('tempId')
+    _keep_code2, _keep_data2 = request('POST', '/api/submissions', json_data={
+        "tempIds": [_keep_tid],
+        "receiverName": "清理保留测试",
+        "receiverOrg": "清理保留单位",
+        "receiverType": "internal",
+        "securityLevel": "internal",
+        "reason": "临时文件清理保留测试",
+        "expiryDays": 30
+    })
+    _keep_sub_id = _keep_data2.get('id')
+    _keep_dir = pathlib.Path(_resolve_nas_root()) / "staging" / _keep_sub_id
+    test("提交生成pending目录", _keep_code2 == 200 and _keep_dir.exists(), f"code={_keep_code2}")
+    if _keep_dir.exists():
+        os.utime(_keep_dir, (_old_ts, _old_ts))
+    # 触发清理（合并：过期文件 + 未提交临时文件）
+    code, data = request('POST', '/api/admin/cleanup-expired')
+    test("手动触发清理API(合并临时清理)", code == 200 and data.get('tempCleaned', 0) >= 1,
+         f"code={code}, tempCleaned={data.get('tempCleaned')}")
+    test("未提交临时目录已被删除", not _temp_path.exists(), f"exists={_temp_path.exists()}")
+    test("已提交pending目录不被清理", _keep_dir.exists(), f"exists={_keep_dir.exists()}")
+    # 清理保留单（DELETE /api/admin/submissions/<id> confirm=DEL），避免残留
+    code, data = request('DELETE', f'/api/admin/submissions/{_keep_sub_id}', json_data={"confirm": "DEL"})
+    test("清理保留单", code == 200, f"code={code}")
 
     # 22. 审批人配置（approvers）
     print("\n--- 10g. 审批人配置（approvers） ---")
@@ -1649,7 +1702,7 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     test("合作方去重：同名不重复加入清单(count=1)", dup_count == 1, f"count={dup_count}")
 
     # --- 合作方使能开关 ---
-    code, data = request('POST', '/api/admin/partners', json_data={"name": "使能开关测试", "enabled": True})
+    code, data = request('POST', '/api/admin/partners', json_data={"name": "使能开关测试", "contact": "使能测试联系人", "enabled": True})
     test("创建合作方(使能开关测试,enabled=1)", code == 200, f"code={code}, data={data}")
     tog_partner_id = data.get('id')
     code, data = request('GET', '/api/partners')

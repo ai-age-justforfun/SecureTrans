@@ -207,7 +207,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.6.2';
+const APP_VERSION = 'v2.6.3';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -308,7 +308,7 @@ const I18N = {
     'partner.newBtn': '+ 新增合作方', 'partner.title': '合作方管理（白名单）', 'partner.createTitle': '新增合作方', 'partner.editTitle': '编辑合作方',
     'partner.hint': '合作方提交文件时一级审批即可（非合作方需二级审批）。禁用后不参与自动判定，也不会出现在提交表单的合作方下拉中。合作方需在系统管理→合作方管理中手工配置维护；提交时若选择合作方但名称不在清单，将自动加入清单（信任模式，PMF 后视需要收紧）。',
     'partner.empty': '暂无合作方，请点击右上角"+ 新增合作方"进行配置',
-    'partner.name': '合作方名称 *', 'partner.namePh': '如：XX科技有限公司', 'partner.contact': '联系人', 'partner.contactPh': '如：张三',
+    'partner.name': '合作方名称 *', 'partner.namePh': '如：XX科技有限公司', 'partner.contact': '联系人 *', 'partner.contactPh': '如：张三',
     'partner.email': '邮箱', 'partner.emailPh': '如：contact@partner.com', 'partner.initialState': '初始状态',
     'partner.confirmToggle': '确定{0}该合作方？', 'partner.confirmDelete': '确定删除合作方 "{0}"？此操作不可恢复。',
     'config.title': '系统配置', 'config.appName': '应用名称', 'config.autoApproval': '免审批开关',
@@ -355,7 +355,7 @@ const I18N = {
     'toast.cleanupDone': '清理完成', 'toast.cleanupFail': '清理失败: {0}',
     'err.externalOnly': '外网面仅提供文件下载',
     'err.requireName': '请填写接收方姓名', 'err.requireOrg': '请填写接收方单位', 'err.requireFile': '请先上传文件',
-    'err.requireUserPwd': '用户名和密码不能为空', 'err.requireUsername': '请输入用户名', 'err.requirePartnerName': '合作方名称不能为空',
+    'err.requireUserPwd': '用户名和密码不能为空', 'err.requireUsername': '请输入用户名', 'err.requirePartnerName': '合作方名称不能为空', 'err.requirePartnerContact': '联系人不能为空',
     'confirm.deleteRule': '确定删除该特征码规则？',
     'prompt.approveComment': '审批通过备注（可选）：', 'prompt.rejectReason': '驳回原因：'
   },
@@ -450,7 +450,7 @@ const I18N = {
     'partner.newBtn': '+ New Partner', 'partner.title': 'Partner Management (Whitelist)', 'partner.createTitle': 'New Partner', 'partner.editTitle': 'Edit Partner',
     'partner.hint': 'Partner submissions only need L1 approval (non-partners need L2). Disabled partners are excluded from auto-detection and the submit-form dropdown. Partners are maintained manually under System Config -> Partner Management; if a submitted partner name is not in the list, it is auto-added (trust mode; may be tightened after PMF).',
     'partner.empty': 'No partners yet. Click "+ New Partner" at the top right to configure.',
-    'partner.name': 'Partner Name *', 'partner.namePh': 'e.g. XX Technology Co., Ltd.', 'partner.contact': 'Contact', 'partner.contactPh': 'e.g. Zhang San',
+    'partner.name': 'Partner Name *', 'partner.namePh': 'e.g. XX Technology Co., Ltd.', 'partner.contact': 'Contact *', 'partner.contactPh': 'e.g. Zhang San',
     'partner.email': 'Email', 'partner.emailPh': 'e.g. contact@partner.com', 'partner.initialState': 'Initial State',
     'partner.confirmToggle': '{0} this partner?', 'partner.confirmDelete': 'Delete partner "{0}"? This cannot be undone.',
     'config.title': 'System Config', 'config.appName': 'App Name', 'config.autoApproval': 'Auto-Approval Switch',
@@ -497,7 +497,7 @@ const I18N = {
     'toast.cleanupDone': 'Cleanup done', 'toast.cleanupFail': 'Cleanup failed: {0}',
     'err.externalOnly': 'External network provides file download only',
     'err.requireName': 'Please fill in recipient name', 'err.requireOrg': 'Please fill in recipient org', 'err.requireFile': 'Please upload files first',
-    'err.requireUserPwd': 'Username and password are required', 'err.requireUsername': 'Username is required', 'err.requirePartnerName': 'Partner name is required',
+    'err.requireUserPwd': 'Username and password are required', 'err.requireUsername': 'Username is required', 'err.requirePartnerName': 'Partner name is required', 'err.requirePartnerContact': 'Contact is required',
     'confirm.deleteRule': 'Delete this signature rule?',
     'prompt.approveComment': 'Approval comment (optional): ', 'prompt.rejectReason': 'Rejection reason: '
   }
@@ -1590,12 +1590,14 @@ function showCreatePartner() {
 async function createPartner() {
   const name = document.getElementById('partnerName').value.trim();
   if (!name) { toast(t('err.requirePartnerName'), 'error'); return; }
+  const contact = document.getElementById('partnerContact').value.trim();
+  if (!contact) { toast(t('err.requirePartnerContact'), 'error'); return; }
   try {
     await api('/api/admin/partners', {
       method: 'POST',
       body: {
         name,
-        contact: document.getElementById('partnerContact').value.trim(),
+        contact,
         email: document.getElementById('partnerEmail').value.trim(),
         enabled: document.getElementById('partnerEnabled').value === '1'
       }
@@ -1629,12 +1631,14 @@ function showEditPartner(id, name, contact, email) {
 async function updatePartner() {
   const name = document.getElementById('partnerName').value.trim();
   if (!name) { toast(t('err.requirePartnerName'), 'error'); return; }
+  const contact = document.getElementById('partnerContact').value.trim();
+  if (!contact) { toast(t('err.requirePartnerContact'), 'error'); return; }
   try {
     await api(`/api/admin/partners/${_editPartnerId}`, {
       method: 'PUT',
       body: {
         name,
-        contact: document.getElementById('partnerContact').value.trim(),
+        contact,
         email: document.getElementById('partnerEmail').value.trim()
       }
     });
