@@ -192,7 +192,14 @@ jobs:
               "${API}/releases" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
           fi
           [ -n "$RID" ] || { echo "Release 创建失败"; exit 1; }
+          EXISTING=$(curl -s -H "Authorization: token ${RELEASETOKEN}" "${API}/releases/${RID}/assets" \
+            | python3 -c "import sys,json; print('\n'.join(a['name'] for a in json.load(sys.stdin)))" 2>/dev/null || true)
           for f in "${PKG}" "packages/securetrans-${V}.tar.gz.md5" "packages/securetrans-${V}.tar.gz.sha256" packages/securetrans-offline-deps.tar.gz; do
+            FNAME=$(basename "$f")
+            if echo "${EXISTING}" | grep -qx "${FNAME}"; then
+              echo "资产已存在，跳过: ${FNAME}"
+              continue
+            fi
             curl -s -X POST -H "Authorization: token ${RELEASETOKEN}" -F "attachment=@${f}" "${API}/releases/${RID}/assets" >/dev/null || true
           done
-          echo "Release v${V} 资产上传完成（${PKG} + md5 + sha256 + offline-deps）"
+          echo "Release v${V} 资产上传完成（${PKG} + md5 + sha256 + offline-deps，同名已存在自动跳过）"
