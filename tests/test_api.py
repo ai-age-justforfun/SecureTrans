@@ -538,6 +538,33 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     test("合作方一级审批通过直接摆渡到external", code == 200 and data.get('status') == 'approved',
          f"code={code}, status={data.get('status')}")
 
+    # v2.6.2 合作方编辑（全量编辑名称/联系人/邮箱；名称去重排除自身，COLLATE NOCASE）
+    code, data = request('PUT', f'/api/admin/partners/{partner_id}', json_data={
+        "name": "Nexus半导体(更新)", "contact": "李经理", "email": "new@nexus.com"
+    })
+    test("编辑合作方(名称/联系人/邮箱)", code == 200, f"code={code}, data={data}")
+    code, data = request('GET', '/api/admin/partners')
+    _edited = next((p for p in data if p.get('id') == partner_id), None) if isinstance(data, list) else None
+    test("编辑生效(名称/联系人/邮箱已更新)", _edited is not None and _edited.get('name') == 'Nexus半导体(更新)'
+         and _edited.get('contact') == '李经理' and _edited.get('email') == 'new@nexus.com',
+         f"edited={_edited}")
+    # 编辑名称为空被拒绝
+    code, data = request('PUT', f'/api/admin/partners/{partner_id}', json_data={"name": "  "})
+    test("编辑合作方名称为空被拒绝", code == 400, f"code={code}")
+    # 编辑为已有合作方名称（排除自身）被拒绝：先建第二个合作方再尝试改名冲突
+    code, data = request('POST', '/api/admin/partners', json_data={"name": "编辑冲突测试", "contact": "", "email": ""})
+    _dup_pid = data.get('id', '')
+    test("创建编辑冲突测试合作方", code == 200, f"code={code}")
+    code, data = request('PUT', f'/api/admin/partners/{_dup_pid}', json_data={
+        "name": "Nexus半导体(更新)", "contact": "", "email": ""
+    })
+    test("编辑为已存在名称被拒绝(去重排除自身)", code == 400, f"code={code}")
+    # 编辑不存在合作方 → 404
+    code, data = request('PUT', '/api/admin/partners/nonexistent-id', json_data={"name": "不存在"})
+    test("编辑不存在合作方404", code == 404, f"code={code}")
+    # 清理冲突测试合作方
+    request('DELETE', f'/api/admin/partners/{_dup_pid}')
+
     # 删除合作方
     code, data = request('DELETE', f'/api/admin/partners/{partner_id}')
     test("删除合作方", code == 200, f"code={code}, data={data}")

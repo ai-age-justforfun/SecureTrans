@@ -58,7 +58,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.6.1"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.6.2"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -2200,6 +2200,31 @@ def api_create_partner():
     partner_id = db.execute("SELECT id FROM partners WHERE name=?", (name,)).fetchone()["id"]
     add_audit_log(current_user.username, "create_partner", name, "添加合作方白名单", get_client_ip())
     return jsonify({"message": "合作方添加成功", "id": partner_id})
+
+@app.route("/api/admin/partners/<partner_id>", methods=["PUT"])
+@login_required
+@role_required("admin")
+def api_update_partner(partner_id):
+    """编辑合作方（名称/联系人/邮箱）。名称去重检查排除自身（COLLATE NOCASE 与提交自动加入一致）。"""
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "合作方名称不能为空"}), 400
+    db = get_db()
+    row = db.execute("SELECT * FROM partners WHERE id=?", (partner_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "合作方不存在"}), 404
+    dup = db.execute(
+        "SELECT COUNT(*) as c FROM partners WHERE name=? COLLATE NOCASE AND id<>?", (name, partner_id)
+    ).fetchone()["c"]
+    if dup:
+        return jsonify({"error": "合作方已存在"}), 400
+    contact = data.get("contact", "")
+    email = data.get("email", "")
+    db.execute("UPDATE partners SET name=?, contact=?, email=? WHERE id=?", (name, contact, email, partner_id))
+    db.commit()
+    add_audit_log(current_user.username, "update_partner", name, "编辑合作方", get_client_ip())
+    return jsonify({"message": "合作方更新成功", "id": partner_id})
 
 @app.route("/api/admin/partners/<partner_id>", methods=["DELETE"])
 @login_required

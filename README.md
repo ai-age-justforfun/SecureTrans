@@ -1,6 +1,6 @@
 # SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.6.1 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（运行收集问题中）
+> 版本：v2.6.2 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（运行收集问题中）
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main + AI 辅助人机协同（AGENTS v2.0）
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -552,6 +552,15 @@ deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WS
 - **与 ADR-029 不重叠**：029 管压缩包规则合并/配置持久化/免审批路径修复；030 管 .ltx 格式化 JSON 修复/性能门禁/发布说明/审批人播种规则/审计口径。
 - **已落点**：v2.6.1（Windows dev 全量 TDD 366/366 通过；真实 chiptop.ltx 匹配验证通过；性能 100MB 全链路 1.05s + 3 并发 0.54s；10b3 新增 4 项 + ADR-030 金丝雀 1 项）。
 
+### ADR-031：合作方全量编辑 / WSL测试环境退居二线 / 生产冒烟为业界标准（v2.6.2，强制）
+- **背景**：beta 使用中发现三件事——① 合作方在提交时自动加入清单后，管理页仅能"禁用/删除"，无法编辑（名称/联系人/邮箱修正只能删除重建）；② 用户质疑"WSL 独立测试环境 + CI 容器测试环境"双环境冗余；③ 用户求证"生产只读冒烟"是否为业界最佳实践。
+- **决策**：
+  1. **合作方全量编辑**：新增 `PUT /api/admin/partners/<id>`（名称/联系人/邮箱；名称必填 + 去重检查排除自身 COLLATE NOCASE，与提交自动加入一致；404 不存在/400 空名/400 重名）；前端表格加"编辑"按钮 + 编辑弹窗（复用新增弹窗，预填当前值）；审计日志 update_partner；TDD 新增 6 项（编辑生效/空名拒绝/重名拒绝/404/清理）。
+  2. **WSL 常驻测试环境退居二线**：职责已被覆盖——Windows dev 全量 TDD（第一道快速门禁，秒级）+ CI 容器全量 TDD（发布门禁，Linux 环境，每次全新数据）。WSL 不再单独跑 verify.sh / 不再做"三环境 git 副本 push 同步"（ADR-026 修订：以 git 为中心不变，但测试执行收敛到 dev + CI 两环境）；WSL 保留为 CI 容器宿主（rocky10-st docker daemon）与 Linux 问题排查入口（按需 `docker run securetrans-ci:3.12` 复现）。
+  3. **生产只读冒烟 = 业界标准**：生产环境自动化验证遵循"健康检查 + 只读冒烟 + 版本/目录校验"（SRE/DevOps 标准：smoke test in prod 必须 read-only，写测试数据只允许在测试环境；蓝绿/金丝雀部署的 validation hook 同此原则）。本系统单实例无灰度，CD 以 healthz + 包内版本=部署版本 + 加载目录校验为门禁，smoke.sh 只读 11 项；功能验收靠人工 beta 走查（符合 12-Factor / ADR-017 fail-safe）。
+- **与 ADR-030 不重叠**：030 管 .ltx/性能门禁/发布说明/审批人播种；031 管合作方编辑功能、测试环境收敛、生产冒烟原则确认。
+- **已落点**：v2.6.2（Windows dev 全量 TDD 372/372 通过；合作方编辑 6 项新增用例；CI 容器全量 + 性能门禁；生产 CD 部署后 `/api/health` = v2.6.2/beta/ok/production）。
+
 ---
 
 ## 许可证
@@ -562,4 +571,4 @@ deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WS
 
 ---
 
-*SecureTrans v2.6.1 | 2026-09-14*
+*SecureTrans v2.6.2 | 2026-09-14*

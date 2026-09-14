@@ -207,7 +207,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.6.1';
+const APP_VERSION = 'v2.6.2';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -305,7 +305,7 @@ const I18N = {
     'user.adKw': '关键词（用户名/姓名）', 'user.adColUser': '用户名', 'user.adColName': '显示名', 'user.adColEmail': '邮箱', 'user.adColDept': '部门',
     'user.confirmReset': '确定重置用户 "{0}" 的密码？', 'user.confirmDelete': '确定删除用户 "{0}"？此操作不可恢复。',
     'user.confirmToggle': '确定{0}用户 "{1}"？',
-    'partner.newBtn': '+ 新增合作方', 'partner.title': '合作方管理（白名单）', 'partner.createTitle': '新增合作方',
+    'partner.newBtn': '+ 新增合作方', 'partner.title': '合作方管理（白名单）', 'partner.createTitle': '新增合作方', 'partner.editTitle': '编辑合作方',
     'partner.hint': '合作方提交文件时一级审批即可（非合作方需二级审批）。禁用后不参与自动判定，也不会出现在提交表单的合作方下拉中。合作方需在系统管理→合作方管理中手工配置维护；提交时若选择合作方但名称不在清单，将自动加入清单（信任模式，PMF 后视需要收紧）。',
     'partner.empty': '暂无合作方，请点击右上角"+ 新增合作方"进行配置',
     'partner.name': '合作方名称 *', 'partner.namePh': '如：XX科技有限公司', 'partner.contact': '联系人', 'partner.contactPh': '如：张三',
@@ -349,7 +349,7 @@ const I18N = {
     'toast.deleteSuccess': '用户已删除', 'toast.deleteFail': '删除失败: {0}',
     'toast.toggleSuccess': '操作成功', 'toast.toggleFail': '操作失败: {0}',
     'toast.resetSuccess': '密码已重置', 'toast.resetFail': '重置失败: {0}',
-    'toast.partnerCreate': '合作方创建成功',
+    'toast.partnerCreate': '合作方创建成功', 'toast.partnerUpdate': '合作方更新成功',
     'toast.ruleToggled': '规则状态已切换', 'toast.ruleDeleted': '规则已删除',
     'toast.ruleSaved': '规则已保存', 'toast.configSaved': '配置已保存', 'toast.saveFail': '保存失败: {0}',
     'toast.cleanupDone': '清理完成', 'toast.cleanupFail': '清理失败: {0}',
@@ -447,7 +447,7 @@ const I18N = {
     'user.adKw': 'Keyword (username / name)', 'user.adColUser': 'Username', 'user.adColName': 'Display Name', 'user.adColEmail': 'Email', 'user.adColDept': 'Department',
     'user.confirmReset': 'Reset password for user "{0}"?', 'user.confirmDelete': 'Delete user "{0}"? This cannot be undone.',
     'user.confirmToggle': '{0} user "{1}"?',
-    'partner.newBtn': '+ New Partner', 'partner.title': 'Partner Management (Whitelist)', 'partner.createTitle': 'New Partner',
+    'partner.newBtn': '+ New Partner', 'partner.title': 'Partner Management (Whitelist)', 'partner.createTitle': 'New Partner', 'partner.editTitle': 'Edit Partner',
     'partner.hint': 'Partner submissions only need L1 approval (non-partners need L2). Disabled partners are excluded from auto-detection and the submit-form dropdown. Partners are maintained manually under System Config -> Partner Management; if a submitted partner name is not in the list, it is auto-added (trust mode; may be tightened after PMF).',
     'partner.empty': 'No partners yet. Click "+ New Partner" at the top right to configure.',
     'partner.name': 'Partner Name *', 'partner.namePh': 'e.g. XX Technology Co., Ltd.', 'partner.contact': 'Contact', 'partner.contactPh': 'e.g. Zhang San',
@@ -491,7 +491,7 @@ const I18N = {
     'toast.deleteSuccess': 'User deleted', 'toast.deleteFail': 'Delete failed: {0}',
     'toast.toggleSuccess': 'Operation successful', 'toast.toggleFail': 'Operation failed: {0}',
     'toast.resetSuccess': 'Password reset', 'toast.resetFail': 'Reset failed: {0}',
-    'toast.partnerCreate': 'Partner created',
+    'toast.partnerCreate': 'Partner created', 'toast.partnerUpdate': 'Partner updated',
     'toast.ruleToggled': 'Rule toggled', 'toast.ruleDeleted': 'Rule deleted',
     'toast.ruleSaved': 'Rule saved', 'toast.configSaved': 'Config saved', 'toast.saveFail': 'Save failed: {0}',
     'toast.cleanupDone': 'Cleanup done', 'toast.cleanupFail': 'Cleanup failed: {0}',
@@ -1552,6 +1552,7 @@ async function renderPartners() {
                   <td class="text-sm text-muted">${p.created_at || '-'}</td>
                   <td class="flex gap-8">
                     <button class="btn btn-sm ${p.enabled == 1 ? 'btn-secondary' : 'btn-primary'}" onclick="togglePartnerEnabled('${p.id}', ${p.enabled == 1 ? 'false' : 'true'})">${p.enabled == 1 ? t('common.disable') : t('common.enable')}</button>
+                    <button class="btn btn-sm" onclick="showEditPartner('${p.id}', '${String(p.name || '').replace(/'/g, "\\'")}', '${String(p.contact || '').replace(/'/g, "\\'")}', '${String(p.email || '').replace(/'/g, "\\'")}')" data-i18n="common.edit">编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="deletePartner('${p.id}', '${p.name}')" data-i18n="common.delete">删除</button>
                   </td>
                 </tr>`).join('')}
@@ -1600,6 +1601,44 @@ async function createPartner() {
       }
     });
     toast(t('toast.partnerCreate'), 'success');
+    closeModal();
+    renderPartners();
+  } catch (e) {
+    toast(t('toast.createFail', e.message), 'error');
+  }
+}
+
+// v2.6.2：合作方编辑（全量编辑名称/联系人/邮箱；名称去重检查排除自身，COLLATE NOCASE）
+let _editPartnerId = null;
+function showEditPartner(id, name, contact, email) {
+  _editPartnerId = id;
+  document.getElementById('modalTitle').textContent = t('partner.editTitle');
+  document.getElementById('modalBody').innerHTML = `
+    <div class="form-group mb-8"><label data-i18n="partner.name">合作方名称 *</label><input type="text" id="partnerName" value="${name}" placeholder="${t('partner.namePh')}"></div>
+    <div class="form-group mb-8"><label data-i18n="partner.contact">联系人</label><input type="text" id="partnerContact" value="${contact}" placeholder="${t('partner.contactPh')}"></div>
+    <div class="form-group mb-8"><label data-i18n="partner.email">邮箱</label><input type="email" id="partnerEmail" value="${email}" placeholder="${t('partner.emailPh')}"></div>
+  `;
+  document.getElementById('modalFooter').innerHTML = `
+    <button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.cancel">取消</button>
+    <button class="btn btn-primary" onclick="updatePartner()" data-i18n="common.save">保存</button>
+  `;
+  applyI18n();
+  openModal();
+}
+
+async function updatePartner() {
+  const name = document.getElementById('partnerName').value.trim();
+  if (!name) { toast(t('err.requirePartnerName'), 'error'); return; }
+  try {
+    await api(`/api/admin/partners/${_editPartnerId}`, {
+      method: 'PUT',
+      body: {
+        name,
+        contact: document.getElementById('partnerContact').value.trim(),
+        email: document.getElementById('partnerEmail').value.trim()
+      }
+    });
+    toast(t('toast.partnerUpdate'), 'success');
     closeModal();
     renderPartners();
   } catch (e) {

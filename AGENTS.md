@@ -171,6 +171,7 @@ ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
 - **ADR-028 v2.5.1 落点**：Vivado 规则精简为唯一组合规则（同步字 AND .bin/.bit）+ .ltx 扩展名规则（旧 .bit 独立规则/仅同步字规则删除，迁移清理）；公司内部/合作方一级通过不产生二级审批记录（审计链修复+历史幻影记录清理，语义B仅限非合作方）；性能并发 story（perf_test.py PERF_CONCURRENCY 3-5 用户）；提交页取消/清空按钮；AD mock 三环境审计（dev/test/CI=true、生产=false，组23自动探测）
 - **ADR-029 v2.6.0 落点**：压缩包双规则合并（内置 21→15 条：ZIP/TAR/GZIP/BZIP2/XZ/ZSTD 各自唯一组合规则=特征码 AND 后缀，TAR.GZ 保留；迁移 `_merge_pairs` 精确删除 13 条旧内置模板，用户规则不受影响）；.ltx 升级组合规则（JSON 根键 hex:7B226C74785F726F6F74 AND .ltx）；特征码启用/禁用配置持久化（删除升级重置 enabled=0 逻辑，管理员配置跨版本保留，默认禁用仅首次播种）；免审批判定修复（check_auto_approval 必须传文件真实路径，binary/组合规则才可命中；files_info 携带 path，旧格式兼容）；测试教训=用例命名避开 is_partner 子串匹配（改用例名"新合作方自动加入测试"）
 - **ADR-030 v2.6.1 落点**：.ltx 特征码改文本 `"ltx_root"`（真实 Vivado 为格式化 JSON `{\n    "ltx_root":`，旧紧凑 hex 不命中；迁移精确更新内置模板，10b3 回归：格式化+紧凑+负向）；性能门禁入 CI（ci_test.sh [3.5/4] 每次跑 100MB 全链路+3 用户并发，秒级断言）；Release body 自动生成近版变更摘要（clone depth 30 + git log，不再只写"自动发布"）；admin 默认审批人仅首次播种（approvers_initialized 标记，置位后永不补回，无审批人提交失败提醒已有）；审计留痕口径（TDD 报告/CI run/Release body/CD 日志/生产只读冒烟各环节留痕）；WSL 测试=CI 容器合一（同一镜像同一全量 TDD，差异仅数据持久性）
+- **ADR-031 v2.6.2 落点**：合作方全量编辑（PUT /api/admin/partners/<id>：名称/联系人/邮箱，去重排除自身 COLLATE NOCASE，前端编辑按钮+弹窗，TDD 6 项）；WSL 常驻测试环境退居二线（测试执行收敛 dev+CI 两环境，WSL 仅作 CI 容器宿主与 Linux 排查入口，ADR-026 修订）；生产只读冒烟=业界标准（healthz+版本+目录校验为 CD 门禁，smoke.sh 只读 11 项，写测试数据只在测试环境）
 
 ## B5 研发流程
 
