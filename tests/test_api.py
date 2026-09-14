@@ -618,6 +618,12 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
          f"code={code}, tempCleaned={data.get('tempCleaned')}")
     test("未提交临时目录已被删除", not _temp_path.exists(), f"exists={_temp_path.exists()}")
     test("已提交pending目录不被清理", _keep_dir.exists(), f"exists={_keep_dir.exists()}")
+    # v2.6.4 审计边界：未提交临时文件清理（从未入库、无业务动作）不写审计日志
+    code, data = request('GET', '/api/audit-logs')
+    _audit_now = data if isinstance(data, list) else []
+    _temp_audit = [a for a in _audit_now if a.get('action') == 'system_cleanup_temp']
+    test("审计边界: 临时文件清理不写审计(system_cleanup_temp=0)", len(_temp_audit) == 0,
+         f"found={len(_temp_audit)}")
     # 清理保留单（DELETE /api/admin/submissions/<id> confirm=DEL），避免残留
     code, data = request('DELETE', f'/api/admin/submissions/{_keep_sub_id}', json_data={"confirm": "DEL"})
     test("清理保留单", code == 200, f"code={code}")
@@ -1493,6 +1499,18 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     external_ids = [s.get('id') for s in data] if isinstance(data, list) else []
     test("归档文件不在 external 下载列表", expire_sub_id not in external_ids,
          f"expire_id={expire_sub_id}, in_external={expire_sub_id in external_ids}")
+
+    # v2.6.4 审计留痕：超时归档（审批通过但未下载→系统自动归档）必须写审计，且说明为超时归档
+    code, data = request('GET', '/api/audit-logs')
+    _audit_list = data if isinstance(data, list) else []
+    _arch_audit = [a for a in _audit_list if a.get('action') == 'system_archive_expired' and a.get('target') == expire_sub_id]
+    test("审计: 超时归档留痕(system_archive_expired)", len(_arch_audit) >= 1,
+         f"found={len(_arch_audit)}")
+    test("审计: 超时归档说明含'超时归档'", len(_arch_audit) >= 1 and '超时归档' in (_arch_audit[0].get('detail') or ''),
+         f"detail={_arch_audit[0].get('detail') if _arch_audit else 'N/A'}")
+    _manual_audit = [a for a in _audit_list if a.get('action') == 'admin_cleanup_manual']
+    test("审计: 管理员手动清理留痕(admin_cleanup_manual)", len(_manual_audit) >= 1,
+         f"found={len(_manual_audit)}")
 
     # 20e. 修改密码（专用测试用户 testpwuser，不碰生产 admin 密码）
     print("\n--- 10e. 修改密码 ---")

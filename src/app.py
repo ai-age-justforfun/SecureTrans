@@ -58,7 +58,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.6.3"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.6.4"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -1205,11 +1205,17 @@ def cleanup_expired_files():
             expiry_days = row["expiry_days"] if row["expiry_days"] is not None else _cfg_expiry
             if (now - approved_dt).days >= expiry_days:
                 sub_id = row["id"]
+                elapsed_days = (now - approved_dt).days
                 move_to_archive(sub_id, from_dir="external")
                 db.execute("UPDATE submissions SET status='archived', archived_time=? WHERE id=?", (now_str(), sub_id))
                 db.commit()
                 cleaned += 1
                 logger.info("过期清理: %s 已归档", sub_id)
+                # 审计留痕（定时系统动作也必须可审计）：说明为超时归档
+                add_audit_log(
+                    "system", "system_archive_expired", target=sub_id,
+                    detail=f"超时归档：审批通过后 {elapsed_days} 天未下载/未处理，达到有效期 {expiry_days} 天，文件自动移至 archive（定时系统动作）"
+                )
         except Exception as e:
             logger.error("过期清理失败 %s: %s", row["id"], e)
     if cleaned:
@@ -1217,14 +1223,14 @@ def cleanup_expired_files():
     return cleaned
 
 # 未提交临时文件保留时长（小时）：上传后未提交（无 submissions 记录）的 staging 临时目录超时直接删除。
-# 无状态上传（前端刷新即弃）不产生提交单、不正式归档；删除不记审计（从未入库）。
+# 无状态上传（前端刷新即弃）不产生提交单、不正式归档；删除不记审计（从未入库、无业务动作，纯存储清理，审计策略见 docs/ADR.md）。
 TEMP_FILE_HOURS = int(os.environ.get("TEMP_FILE_HOURS", "24") or 24)
 
 def cleanup_abandoned_temp():
     """清理未提交的临时上传目录（staging/<temp_id> 且无对应提交单），超时直接删除，不归档。
 
     - 已提交单：提交创建时临时目录已被 shutil.rmtree 移除，staging 下仅剩提交单目录（有 submissions 记录）→ 跳过
-    - 未提交残留：无 submissions 记录 → 超时（TEMP_FILE_HOURS，默认 24h）删除
+    - 未提交残留：无 submissions 记录 → 超时（TEMP_FILE_HOURS，默认 24h）删除，不记审计（从未入库、无业务动作）
     """
     if not STAGING_DIR.exists():
         return 0
@@ -1249,6 +1255,9 @@ def cleanup_abandoned_temp():
                 shutil.rmtree(sub, ignore_errors=True)
                 cleaned += 1
                 logger.info("未提交临时目录清理: %s（超时 %dh）", sub.name, TEMP_FILE_HOURS)
+                # 审计边界（ADR 审计策略）：临时文件从未入库、未产生业务动作（无提交单），
+                # 纯存储清理不写审计日志（审计只覆盖：用户/管理员动作 + 涉及业务数据的定时系统动作，
+                # 如已审批未下载的超时归档 system_archive_expired）
             except Exception as e:
                 logger.error("未提交临时目录清理失败 %s: %s", sub.name, e)
     if cleaned:
@@ -2599,6 +2608,11 @@ def api_cleanup_expired():
     msg = f"清理完成：过期文件 {count} 个，未提交临时文件 {temp_cleaned} 个"
     msg_en = (f"Cleanup completed: {count} expired file{'s' if count != 1 else ''}, "
               f"{temp_cleaned} abandoned temp file{'s' if temp_cleaned != 1 else ''}")
+    # 审计留痕：管理员手动触发清理（合并两类），明细（逐单超时归档）由 system_archive_expired 记录
+    add_audit_log(
+        (session.get("user_data") or {}).get("username", "admin"), "admin_cleanup_manual", target="",
+        detail=f"手动触发清理：过期归档 {count} 个，未提交临时文件清理 {temp_cleaned} 个"
+    )
     return jsonify({"message": msg, "message_en": msg_en, "cleaned": count, "tempCleaned": temp_cleaned})
 
 # ============================================================
