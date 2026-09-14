@@ -107,6 +107,7 @@ SecureTrans/
 │   ├── 10-prod-sim-verification.md    # 生产模拟验证（+ 测试报告txt）
 │   ├── 11-architecture-evolution.md   # 架构演进（Flask→FastAPI→Nginx 等决策）
 │   ├── 12-project-retrospective.md   # 项目复盘总结（PSF 阶段全链路）
+│   ├── 13-backlog-hypotheses.md      # Backlog 推演假设与验证标准（PMF 前哨，ADR-027）
 │   └── DEPLOY.md                      # 部署指南（唯一，含测试/生产/双OS/网络隔离/防火墙）
 └── infra/                    # 基础设施配置
     ├── deploy.sh             # 一键部署脚本（9步自动化, Linux）
