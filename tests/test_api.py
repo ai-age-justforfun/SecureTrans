@@ -1,4 +1,4 @@
-﻿"""
+"""
 SecureTrans 本地全量 API 测试脚本
 使用 Python 标准库 urllib，无需额外依赖
 """
