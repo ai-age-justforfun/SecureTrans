@@ -1,0 +1,98 @@
+# SecureTrans GitHub CI（等效本地测试环境 · ADR-019 测试/生产隔离）
+# 触发：push 到 main / tag v* / PR → GitHub 托管 runner（ubuntu-latest，在线安装依赖）
+# 与 Gitea CI 同门禁：静态检查 → 版本双源一致性 → env 键一致性 → 脚本完整性 → 全量 TDD（干净环境+新数据）
+# 生产不做写测试（ADR-017）；CD 仿真走 cd-sim.yml（self-hosted runner + 本地 Docker，端口 18000）
+
+name: CI-TDD
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+
+jobs:
+  ci-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies (online)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r infra/docker/requirements.txt
+          echo "依赖安装 PASS"
+
+      - name: Static check (py_compile + static_check)
+        run: |
+          python -m py_compile src/app.py tests/test_api.py infra/static_check.py
+          python infra/static_check.py src/app.py tests/test_api.py
+          echo "静态检查 PASS"
+
+      - name: 版本号双源一致性（app.py -> index.html）
+        run: |
+          set -euo pipefail
+          V_BE=$(grep -m1 '^APP_VERSION = "v' src/app.py | sed -E 's/.*"v([^"]+)".*/\1/')
+          V_FE=$(grep -m1 "const APP_VERSION = 'v" src/static/index.html | sed -E "s/.*'v([^']+)'.*/\1/")
+          echo "  backend: ${V_BE} | frontend: ${V_FE}"
+          [ "$V_BE" = "$V_FE" ] || { echo "版本不一致 FAIL"; exit 1; }
+          echo "版本一致性 PASS"
+
+      - name: env 模板 ENV_ROLE 正确性
+        run: |
+          grep -q '^ENV_ROLE=test' env/dev.env || { echo "env/dev.env 缺少 ENV_ROLE=test"; exit 1; }
+          grep -q '^ENV_ROLE=test' env/test.env || { echo "env/test.env 缺少 ENV_ROLE=test"; exit 1; }
+          grep -q '^ENV_ROLE=prod' env/prod.env.template || { echo "env/prod.env.template 缺少 ENV_ROLE=prod"; exit 1; }
+          echo "env 模板 ENV_ROLE PASS"
+
+      - name: 关键脚本完整性
+        run: |
+          for f in infra/deploy.sh infra/verify.sh infra/smoke.sh infra/package.sh infra/ci_test.sh; do
+            [ -f "$f" ] || { echo "缺少 $f"; exit 1; }
+          done
+          echo "脚本完整性 PASS"
+
+      - name: 配置键一致性（dev/test/prod, ADR-020）
+        run: |
+          python - <<'EOF'
+          import re
+          def keys(p):
+              return {m.group(1) for m in re.finditer(r'^\s*([A-Z][A-Z0-9_]*)=', open(p, encoding='utf-8').read(), re.M)}
+          dev, test, prod = keys('env/dev.env'), keys('env/test.env'), keys('env/prod.env.template')
+          core = dev & test
+          drift = dev ^ test
+          missing_in_prod = core - prod
+          errs = []
+          if drift: errs.append(f"dev/test 键不一致: {sorted(drift)}")
+          if missing_in_prod: errs.append(f"prod 缺少核心键: {sorted(missing_in_prod)}")
+          if errs:
+              for e in errs: print("FAIL:", e)
+              exit(1)
+          print(f"配置键一致性 PASS (dev={len(dev)} test={len(test)} prod={len(prod)})")
+          EOF
+
+      - name: Full TDD (clean env + fresh data)
+        run: |
+          set -euo pipefail
+          set -a; . env/test.env; set +a
+          export SECURETRANS_DATA=/tmp/st-data NAS_ROOT=/tmp/st-data
+          export HOST=127.0.0.1 PORT=18000
+          export APP_STAGE=beta
+          mkdir -p /tmp/st-data
+          (cd src && gunicorn -b 127.0.0.1:18000 -w 1 --threads 4 app:app >/tmp/st-app.log 2>&1) &
+          GUNI_PID=$!
+          trap 'kill $GUNI_PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 40); do
+            curl -sf http://127.0.0.1:18000/api/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18000/api/health || { echo "服务未就绪"; tail -30 /tmp/st-app.log; exit 1; }
+          echo "服务已就绪，开始全量 TDD"
+          BASE_URL="http://127.0.0.1:18000" NAS_ROOT="/tmp/st-data" \
+          RESET_PASSWORD="Init@123456" ENV_ROLE="test" \
+          python tests/test_api.py
+          echo "全量 TDD PASS"

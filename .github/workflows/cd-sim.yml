@@ -1,0 +1,49 @@
+# SecureTrans CD 仿真（self-hosted runner · 本地 Docker · 端口 18000 · 绝不触碰生产）
+# 背景：生产 10.10.30.8 在封闭数据中心，GitHub 无法直连（Gitea cd.yml 负责真实生产发布）。
+# 本 workflow = GitHub 端到端的 CD 仿真验证：release published 时在本地 self-hosted runner
+# 构建镜像 + 独立容器（volume 独立数据），healthz 验证，证明"代码可部署可运行"链路完整。
+# 约束：端口 18000 与生产 8000 隔离；数据 volume securetrans-sim-data 独立；不写生产任何数据。
+
+name: CD-SIM
+
+on:
+  release:
+    types: [ published ]
+
+jobs:
+  deploy-sim:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sim image (online deps)
+        run: |
+          docker build -f .github/docker/Dockerfile.sim -t securetrans-sim:latest .
+
+      - name: Restart sim container (isolated, port 18000)
+        shell: pwsh
+        run: |
+          docker rm -f securetrans-sim 2>$null | Out-Null
+          docker run -d --name securetrans-sim `
+            -p 18000:8000 `
+            -e SECURETRANS_DATA=/data -e NAS_ROOT=/data `
+            -e HOST=0.0.0.0 -e PORT=8000 `
+            -e APP_STAGE=sim -e ENV_ROLE=test -e AD_MOCK_MODE=true `
+            -e RESET_PASSWORD=Init@123456 `
+            -v securetrans-sim-data:/data `
+            securetrans-sim:latest
+          Write-Host "sim container started"
+
+      - name: Health check (sim)
+        shell: pwsh
+        run: |
+          for ($i=0; $i -lt 30; $i++) {
+            try {
+              $h = Invoke-RestMethod -Uri "http://127.0.0.1:18000/api/health" -TimeoutSec 3
+              Write-Host "SIM HEALTH: $($h.version) / $($h.stage) / $($h.status)"
+              exit 0
+            } catch { Start-Sleep -Seconds 2 }
+          }
+          Write-Error "SIM health check failed after 60s"
+          docker logs --tail 30 securetrans-sim
+          exit 1
