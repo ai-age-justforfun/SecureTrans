@@ -146,6 +146,7 @@
 | 迭代小结 | docs/07-psf-sprintN-retrospective.md | 每个 Sprint 结束 |
 | 部署指南（唯一） | docs/DEPLOY.md | 部署流程变更时 |
 | 复盘总结 | docs/12-project-retrospective.md | 阶段里程碑 |
+| GitHub 迁移方案（Proposal） | docs/14-github-migration.md | 方案讨论时；落地前升级为 ACTIVE |
 
 **文档原则**：聚焦关键内容；文件名不含版本号（版本写文档内，关键变更用 git tag）；
 ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
