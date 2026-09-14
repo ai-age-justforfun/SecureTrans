@@ -58,7 +58,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.6.0"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.6.1"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -302,8 +302,10 @@ BUILTIN_FEATURE_RULES = [
     # "仅同步字无后缀规则"（过宽易误报、组合规则已全覆盖，迁移中自动清理）。
     # v2.6.0: .ltx（Vivado ILA 调试探针，JSON 文本）从"纯扩展名规则"升级为组合规则——
     #   特征码 hex:7B226C74785F726F6F74 = `{"ltx_root`（标准 JSON 根键，4KB 头内）AND 后缀 .ltx
+    # v2.6.1（ADR-030）: Vivado 实际生成的 .ltx 为格式化 JSON（`{\n    "ltx_root":`，带换行与缩进），
+    #   紧凑 hex 特征 `{"ltx_root` 不匹配 → 改为文本特征码 `"ltx_root"`（UTF-8 子串，兼容紧凑/格式化两种 JSON 排版）
     ("Vivado Bitstream组合(特征码+后缀)", "binary", "hex:AA995566;665599AA", 0, ".bin,.bit"),
-    ("Vivado ILA探针组合(特征码+后缀)", "binary", "hex:7B226C74785F726F6F74", 0, ".ltx"),
+    ("Vivado ILA探针组合(特征码+后缀)", "binary", "\"ltx_root\"", 0, ".ltx"),
 ]
 
 def init_db():
@@ -484,16 +486,22 @@ def init_db():
         "INSERT OR IGNORE INTO local_users (id,username,password_hash,display_name,email,role,status,must_change_password,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
         (str(uuid.uuid4()), "admin", admin_hash, "系统管理员", "admin@localhost", "admin", "active", 1, now_str())
     )
-    # 默认审批人（v2.2.31，ADR-015）：admin 显式播种为一级+二级审批人，保证提交审批逻辑闭环；
-    # 幂等（INSERT OR IGNORE 唯一约束 level+username 不存在则插入——approvers 表无唯一约束，用 EXISTS 判断）
-    _seed_admin = conn.execute("SELECT COUNT(*) as c FROM approvers WHERE level=1 AND username='admin'").fetchone()["c"]
-    if _seed_admin == 0:
-        conn.execute("INSERT INTO approvers (id,level,username,display_name,scope) VALUES (?,?,?,?,?)",
-                     (str(uuid.uuid4()), 1, "admin", "系统管理员", "all"))
-    _seed_admin2 = conn.execute("SELECT COUNT(*) as c FROM approvers WHERE level=2 AND username='admin'").fetchone()["c"]
-    if _seed_admin2 == 0:
-        conn.execute("INSERT INTO approvers (id,level,username,display_name,scope) VALUES (?,?,?,?,?)",
-                     (str(uuid.uuid4()), 2, "admin", "系统管理员", "all"))
+    # 默认审批人（v2.2.31，ADR-015）：admin 显式播种为一级+二级审批人，保证提交审批逻辑闭环。
+    # v2.6.1（ADR-030）修正：仅【首次初始化】播种一次（approvers_initialized 标记，幂等）；
+    # 后续启动/升级【绝不自动补回】——审批人由管理员人工配置（删除即删除，避免"删除后重启被补回"）；
+    # 无一级/二级审批人时提交 API 已提供明确失败提醒（"未配置一级审批人/二级审批人"）。
+    _init_appr = conn.execute(
+        "SELECT COUNT(*) as c FROM system_config WHERE key='approvers_initialized'").fetchone()["c"]
+    if _init_appr == 0:
+        _seed_admin = conn.execute("SELECT COUNT(*) as c FROM approvers WHERE level=1 AND username='admin'").fetchone()["c"]
+        if _seed_admin == 0:
+            conn.execute("INSERT INTO approvers (id,level,username,display_name,scope) VALUES (?,?,?,?,?)",
+                         (str(uuid.uuid4()), 1, "admin", "系统管理员", "all"))
+        _seed_admin2 = conn.execute("SELECT COUNT(*) as c FROM approvers WHERE level=2 AND username='admin'").fetchone()["c"]
+        if _seed_admin2 == 0:
+            conn.execute("INSERT INTO approvers (id,level,username,display_name,scope) VALUES (?,?,?,?,?)",
+                         (str(uuid.uuid4()), 2, "admin", "系统管理员", "all"))
+        conn.execute("INSERT OR IGNORE INTO system_config (key,value) VALUES ('approvers_initialized','1')")
 
     # 初始系统配置：单一来源 = .env（AUTO_APPROVAL_ENABLED / EXTERNAL_EXPIRY_DAYS / MAX_CONTENT_LENGTH）
     defaults = {
@@ -563,6 +571,16 @@ def init_db():
     _merge_arch = conn.execute(_merge_sql, [v for _pair in _merge_pairs for v in _pair])
     if _merge_arch.rowcount:
         logger.info(f"feature_rules 迁移：删除压缩包双规则与旧 .ltx 规则 {_merge_arch.rowcount} 条（v2.6.0 合并为组合规则）")
+
+    # v2.6.1（ADR-030）迁移：.ltx 特征码升级——Vivado 实际生成的 .ltx 为格式化 JSON
+    # （`{\n    "ltx_root":`，带换行与缩进），紧凑 hex 特征 `{"ltx_root` 无法命中真实生产文件；
+    # 升级为文本特征码 `"ltx_root"`（UTF-8 子串匹配，兼容紧凑/格式化两种 JSON 排版）。
+    # 精确匹配 v2.6.0 内置模板（name+type+pattern+ext_pattern），用户自定义修改不受影响。
+    _ltx_fix = conn.execute(
+        "UPDATE feature_rules SET pattern='\"ltx_root\"' "
+        "WHERE name='Vivado ILA探针组合(特征码+后缀)' AND rule_type='binary' AND pattern='hex:7B226C74785F726F6F74' AND ext_pattern='.ltx'")
+    if _ltx_fix.rowcount:
+        logger.info(f"feature_rules 迁移：.ltx 特征码升级为文本 `\"ltx_root\"`（v2.6.1，兼容格式化 JSON）")
 
     cursor = conn.execute("SELECT COUNT(*) as c FROM feature_rules")
     if cursor.fetchone()["c"] == 0:

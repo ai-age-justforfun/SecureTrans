@@ -1,6 +1,6 @@
 # SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.6.0 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（运行收集问题中）
+> 版本：v2.6.1 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（运行收集问题中）
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main + AI 辅助人机协同（AGENTS v2.0）
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -540,6 +540,18 @@ deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WS
 - **与 ADR-028 不重叠**：028 管 Vivado 精简/审批审计/性能 UX；029 管压缩包组合规则统一、配置持久化、免审批路径修复。
 - **已落点**：v2.6.0（Windows dev 全量 TDD 361/361 通过；10b1 改 15 条断言+组合负向×2，新增 10b2 免审批回归组：.gz 含 1F8B 提交自动通过、.bin 含 AA995566 提交自动通过——直击生产复现场景）。
 
+### ADR-030：.ltx 格式化JSON修复 / 性能门禁入CI / 发布说明 / 审批人仅首次播种（v2.6.1，强制）
+- **背景**：beta 验收与审计发现五类问题——① 生产启用 .ltx 规则+免审批后真实 Vivado 文件不匹配（chiptop.ltx 为格式化 JSON `{\n    "ltx_root":`，旧紧凑 hex 特征 `{"ltx_root` 不命中）；② 多用户并发性能未纳入 CI（每次 CI 需验证最低性能，防静默退化）；③ Release 发布说明仅一句"自动发布"，缺新功能/性能/bug 修复摘要；④ admin 默认审批人每次启动都被补种——管理员删除后重启/升级又被加回；⑤ 审计留痕与生产冒烟方式需澄清（见下）。
+- **决策**：
+  1. **.ltx 特征码改为文本模式**：`"ltx_root"`（带引号的 JSON 根键，UTF-8 子串匹配 4KB 头部）——兼容紧凑/格式化两种 JSON 排版；新增迁移精确更新 v2.6.0 内置模板（hex:7B226C74785F726F6F74 → `"ltx_root"`），用户自定义规则不受影响。新增 10b3 回归组：格式化 JSON（真实 Vivado 输出）提交免审批通过 + 紧凑 JSON 兼容 + 无 ltx_root 负向。
+  2. **性能门禁入 CI（ci_test.sh [3.5/4]）**：每次 CI 容器跑 `perf_test.py` 100MB 大文件全链路（上传→摆渡→下载→MD5）+ 3 用户并发（PERF_CONCURRENCY=3），秒级断言（本地实测 100MB 全链路 1.05s、并发 0.54s）；最低性能要求防静默退化。
+  3. **Release 发布说明自动生成**：package job 克隆深度 1→30，Release body 用 `git log --oneline -15 --no-merges` 生成近版变更摘要（conventional commits：feat/fix/docs/perf 一目了然），不再只写"自动发布"。
+  4. **admin 默认审批人仅首次播种**：init_db 以 system_config 标记 `approvers_initialized` 控制——首次初始化（表空）播种 admin 为一级+二级审批人（开箱闭环），置位后【永不自动补回】；审批人完全人工配置；无一级/二级审批人时提交 API 已有明确失败提醒（"未配置一级审批人/二级审批人"）。新增源码金丝雀断言。
+  5. **审计留痕口径**：每个环节有记录——TDD（docs/06-test-report.md + verify.sh 输出）、CI（Gitea Actions run 日志留痕）、Release（Gitea Releases 含 body 变更摘要）、CD（cd.yml run + cd-deploy.sh 日志）、生产验证（/api/health + smoke.sh 只读冒烟）。生产冒烟 = 只读白名单 11 项（健康/登录/外网隔离/审计可达），不写生产数据（ADR-017 fail-safe）；admin 密码已改时冒烟登录项为 warning 不阻断（CD 以服务健康 + 版本生效 + 加载目录校验为门禁），生产功能验收靠人工 beta 走查。
+  6. **WSL 测试环境与 CI 容器关系**：已合一——CI 容器（securetrans-ci:3.12）即运行于 WSL（rocky10-st 独立 docker daemon），同一镜像/同一 Python 3.12/同一依赖/同一全量 TDD（ci_test.sh）；差异仅数据：WSL 本机为持久数据，CI 每次全新容器+新配置+新数据（干净回归，防版本干扰）。Windows dev 全量 TDD 为第一道门禁，CI 容器为发布门禁，生产只读冒烟为部署门禁。
+- **与 ADR-029 不重叠**：029 管压缩包规则合并/配置持久化/免审批路径修复；030 管 .ltx 格式化 JSON 修复/性能门禁/发布说明/审批人播种规则/审计口径。
+- **已落点**：v2.6.1（Windows dev 全量 TDD 366/366 通过；真实 chiptop.ltx 匹配验证通过；性能 100MB 全链路 1.05s + 3 并发 0.54s；10b3 新增 4 项 + ADR-030 金丝雀 1 项）。
+
 ---
 
 ## 许可证
@@ -550,4 +562,4 @@ deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WS
 
 ---
 
-*SecureTrans v2.6.0 | 2026-09-14*
+*SecureTrans v2.6.1 | 2026-09-14*

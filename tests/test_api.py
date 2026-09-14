@@ -573,6 +573,21 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     test("默认播种admin为一级审批人", code == 200 and _admin_appr1, f"code={code}, appr1={_admin_appr1}")
     test("默认播种admin为二级审批人", code == 200 and _admin_appr2, f"code={code}, appr2={_admin_appr2}")
 
+    # v2.6.1（ADR-030）金丝雀：admin 默认审批人【仅首次初始化播种】——源码级断言
+    # 背景：v2.6.0 及之前 init_db 每次启动都检查"admin 是否在审批人表，缺则补"，
+    # 导致管理员删除 admin 审批人后，重启/升级被自动补回（用户上报）。修复后：
+    #   - system_config 标记 approvers_initialized 控制播种（首次置位，后续跳过）
+    #   - 无一级/二级审批人时提交 API 已有明确失败提醒（未配置一级审批人/二级审批人）
+    _appr_src = ""
+    try:
+        _appr_src = open(os.path.join(os.path.dirname(__file__), '..', 'src', 'app.py'), encoding='utf-8').read()
+    except Exception:
+        _appr_src = ""
+    test("ADR-030金丝雀: 审批人播种受approvers_initialized标记控制(仅首次)",
+         "approvers_initialized" in _appr_src and
+         "INSERT OR IGNORE INTO system_config (key,value) VALUES ('approvers_initialized','1')" in _appr_src,
+         f"标记存在={('approvers_initialized' in _appr_src)}")
+
     # 配置审批人
     code, data = request('POST', '/api/admin/approvers', json_data={
         "level": 1, "username": "deptmgr1", "displayName": "部门主管1", "scope": "all"
@@ -1182,7 +1197,9 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
         ("XZ压缩(特征码+后缀)", "cover.xz", b"\xfd7zXZ\x00xz"),
         ("ZSTD压缩(特征码+后缀)", "cover.zst", b"\x28\xb5\x2f\xfdzstd"),
         ("Vivado Bitstream组合(特征码+后缀)", "cover_viv.bin", b"\x00" * 64 + b"\xaa\x99\x55\x66" + b"\x00" * 64),
-        ("Vivado ILA探针组合(特征码+后缀)", "cover_viv.ltx", b'{"ltx_root":{"version":4}'),
+        # v2.6.1: .ltx 样本改为【格式化 JSON】（真实 Vivado 输出 `{\n    "ltx_root":`，带换行缩进），
+        # 文本特征码 `"ltx_root"` 需同时兼容紧凑与格式化两种排版
+        ("Vivado ILA探针组合(特征码+后缀)", "cover_viv.ltx", b'{\n    "ltx_root": {\n        "version": 4\n    }\n}'),
     ]
     for _name, _fname, _content in _cover:
         _p = os.path.join(test_dir, _fname)
@@ -1254,6 +1271,39 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
         "reason": "10b2 Vivado组合规则免审批回归", "expiryDays": 7})
     test("10b2 提交.bin免审批自动通过(autoApproved=true)", _code == 200 and _data.get('autoApproved') == True and _data.get('status') == 'approved',
          f"code={_code}, autoApproved={_data.get('autoApproved') if isinstance(_data,dict) else 'N/A'}, status={_data.get('status') if isinstance(_data,dict) else 'N/A'}")
+    # v2.6.1 10b3. .ltx 真实生产场景回归（用户上报：生产启用 .ltx 规则+免审批，但 Vivado 格式化 JSON 不匹配）
+    # 复现：chiptop.ltx 头部为 `{\n    "ltx_root":`（格式化 JSON，带换行缩进），旧紧凑 hex 特征 `{"ltx_root` 不命中
+    print("\n--- 10b3. .ltx 格式化JSON免审批回归（真实Vivado输出） ---")
+    _set_group("10b3. .ltx 格式化JSON免审批回归（真实Vivado输出）")
+    # 格式化 JSON（真实 Vivado 输出排版）→ 必须命中
+    _ltx_p = os.path.join(test_dir, "auto_viv.ltx")
+    with open(_ltx_p, 'wb') as _f:
+        _f.write(b'{\n    "ltx_root": {\n        "version": 4,\n        "minor": 0\n    }\n}\n')
+    _code, _data = upload_file(_ltx_p, "auto_viv.ltx")
+    _ltx_tmp = _data.get('tempId') if isinstance(_data, dict) else None
+    test("10b3 上传.ltx(格式化JSON)匹配ILA组合规则", _code == 200 and _data.get('matched') == True and _ltx_tmp,
+         f"code={_code}, matched={_data.get('matched') if isinstance(_data,dict) else 'N/A'}")
+    _code, _data = request('POST', '/api/submissions', json_data={
+        "tempIds": [_ltx_tmp], "receiverName": "ltx免审批", "receiverEmail": "ltx@test.com",
+        "receiverOrg": "测试公司", "receiverType": "partner", "securityLevel": "internal",
+        "reason": "10b3 .ltx格式化JSON免审批回归", "expiryDays": 7})
+    test("10b3 提交.ltx免审批自动通过(autoApproved=true)", _code == 200 and _data.get('autoApproved') == True and _data.get('status') == 'approved',
+         f"code={_code}, autoApproved={_data.get('autoApproved') if isinstance(_data,dict) else 'N/A'}, status={_data.get('status') if isinstance(_data,dict) else 'N/A'}")
+    # 紧凑 JSON（旧样本排版）→ 仍须命中（文本特征 `"ltx_root"` 兼容两种排版）
+    _ltx2_p = os.path.join(test_dir, "auto_viv2.ltx")
+    with open(_ltx2_p, 'wb') as _f:
+        _f.write(b'{"ltx_root":{"version":4,"minor":0}}')
+    _code, _data = upload_file(_ltx2_p, "auto_viv2.ltx")
+    test("10b3 上传.ltx(紧凑JSON)也匹配ILA组合规则(双排版兼容)", _code == 200 and _data.get('matched') == True,
+         f"code={_code}, matched={_data.get('matched') if isinstance(_data,dict) else 'N/A'}")
+    # 负向：.ltx 但无 ltx_root 键（如普通 JSON 配置）→ 组合规则不命中
+    _ltx3_p = os.path.join(test_dir, "auto_viv3.ltx")
+    with open(_ltx3_p, 'wb') as _f:
+        _f.write(b'{\n    "other_key": 123\n}\n')
+    _code, _data = upload_file(_ltx3_p, "auto_viv3.ltx")
+    _m3 = _data.get('matchedRules', []) if isinstance(_data, dict) else []
+    test("10b3 上传.ltx(无ltx_root键)组合规则不命中(负向)", _code == 200 and _data.get('matched') == False and not any("ILA" in str(r) for r in _m3),
+         f"code={_code}, matched={_data.get('matched') if isinstance(_data,dict) else 'N/A'}, matchedRules={_m3}")
 
     # 20c. 审批驳回流程
     print("\n--- 10c. 审批驳回流程 ---")

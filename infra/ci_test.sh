@@ -60,4 +60,8 @@ BASE_URL="http://127.0.0.1:${PORT}" NAS_ROOT="$DATA_ROOT" \
 RESET_PASSWORD="$RESET_PASSWORD" ENV_ROLE="test" \
 /venv/bin/python tests/test_api.py
 
+echo "[3.5/4] 性能门禁（ADR-030）：100MB 大文件全链路 + 3 用户并发（秒级断言）..."
+PERF_SIZE_MB=100 PERF_CONCURRENCY=3 PERF_CONC_SIZE_MB=1 PERF_ADMIN_PASS="$RESET_PASSWORD" \
+/venv/bin/python tests/perf_test.py "http://127.0.0.1:${PORT}"
+
 echo "[4/4] 容器内测试完成（/data 随容器销毁，工作区零残留）"

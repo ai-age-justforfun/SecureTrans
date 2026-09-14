@@ -1,3 +1,15 @@
+## ◎ v2.6.1-beta 回归（2026-09-14）
+**总计 366 项测试（Windows dev，出厂重置干净库）全部通过，通过率 100%。**
+
+**本轮变更（ADR-030 · .ltx 格式化JSON修复/性能门禁/发布说明/审批人播种规则）：**
+1. **.ltx 特征码修复（真实生产文件验证）**：Vivado 实际生成 .ltx 为格式化 JSON（`{\n    "ltx_root":`），旧紧凑 hex 特征 `{"ltx_root` 不命中（生产上报）→ 改为文本特征码 `"ltx_root"`（兼容紧凑/格式化排版）；**本地实测真实 chiptop.ltx 上传 matched=True**；新增 10b3 回归组 4 项（格式化 JSON 免审批通过 / 紧凑 JSON 兼容 / 无 ltx_root 负向不命中 / 提交免审批 autoApproved=true）。
+2. **性能门禁（ci_test.sh [3.5/4] 入 CI）**：100MB 大文件全链路 + 3 用户并发独立会话 + MD5 端到端校验；本地实测 100MB 全链路 1.05s（上传 216.7MB/s / 摆渡 40.5ms / 下载 294.1MB/s / MD5 匹配），3 用户并发 0.54s 全部成功。
+3. **Release 发布说明自动生成**：package job clone depth 1→30，body 用 git log 前 15 条生成近版变更摘要（feat/fix/perf 可审计），不再只写"自动发布"。
+4. **admin 默认审批人仅首次播种（ADR-030 金丝雀）**：init_db 用 system_config 标记 `approvers_initialized` 控制——首次初始化播种 admin 一级+二级审批人，置位后永不自动补回（管理员删除即删除）；无一级/二级审批人时提交失败提醒已有；新增源码金丝雀断言。
+5. **双环境基线**：Windows dev 全量 366/366（干净库）；性能门禁本地实测通过；CI 容器（securetrans-ci:3.12）将含性能步骤全量回归；生产 CD 部署后 `/api/health` = v2.6.1 / stage=beta / status=ok。
+
+---
+
 ## ◎ v2.6.0-beta 回归（2026-09-14）
 **总计 361 项测试（Windows dev，出厂重置干净库）全部通过，通过率 100%。**
 

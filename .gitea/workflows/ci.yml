@@ -131,7 +131,8 @@ jobs:
           echo "CI_GITEA_URL=${CI_GITEA_URL}" >> "$GITHUB_ENV"
           WS="${GITHUB_WORKSPACE:-/workspace}"
           rm -rf "$WS"/* "$WS"/.[!.]* 2>/dev/null || true
-          git clone --depth 1 "${CI_GITEA_URL}/openwrtadmin/SecureTrans.git" "$WS"
+          # --depth 30：Release body 需生成近版变更摘要（git log changelog），浅克隆 1 层不足
+          git clone --depth 30 "${CI_GITEA_URL}/openwrtadmin/SecureTrans.git" "$WS"
           cd "$WS"
 
       - name: 生成 offline-deps（镜像 wheelhouse 自包含；旧镜像 fallback Gitea Release）
@@ -184,11 +185,14 @@ jobs:
           PKG=$(ls packages/securetrans-*.tar.gz | head -1)
           V=$(basename "$PKG" | sed 's/securetrans-//;s/.tar.gz//')
           API="${CI_GITEA_URL}/api/v1/repos/openwrtadmin/SecureTrans"
+          # v2.6.1（ADR-030）：Release body 自动生成近版变更摘要（conventional commits 前 15 条），
+          # 保留"新功能/性能需求/Bug修复"可审计说明，不再只写一句"自动发布"
+          CHANGES=$(git log --oneline -15 --no-merges 2>/dev/null | sed 's/"/\\"/g' | awk '{printf "\\n- %s", $0}' || true)
           RID=$(curl -s -H "Authorization: token ${RELEASETOKEN}" "${API}/releases?limit=50" \
             | python3 -c "import sys,json; rs=json.load(sys.stdin); print(next((str(r['id']) for r in rs if r.get('tag_name')=='v${V}'), ''))" 2>/dev/null || true)
           if [ -z "$RID" ]; then
             RID=$(curl -s -X POST -H "Authorization: token ${RELEASETOKEN}" -H "Content-Type: application/json" \
-              -d "{\"tag_name\":\"v${V}\",\"name\":\"v${V}\",\"body\":\"SecureTrans v${V}（CI 容器构建自动发布）\",\"draft\":false,\"prerelease\":false}" \
+              -d "{\"tag_name\":\"v${V}\",\"name\":\"v${V}\",\"body\":\"SecureTrans v${V}（CI 容器构建自动发布）本版变更：${CHANGES}\",\"draft\":false,\"prerelease\":false}" \
               "${API}/releases" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
           fi
           [ -n "$RID" ] || { echo "Release 创建失败"; exit 1; }
