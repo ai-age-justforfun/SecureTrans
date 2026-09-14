@@ -8,7 +8,7 @@
 4. **提交页取消/清空按钮（10g4）**：submit.btnCancel 双语 + cancelSubmit() 重置所选文件与表单。
 5. **AD 模拟三环境审计（组 23）**：dev/test/CI AD_MOCK_MODE=true（mock 全链路通过），生产 AD_MOCK_MODE=false（真实 AD，组 23 自动跳过、组 24 冒烟白名单只读）。
 6. **验证**：Windows dev 全量 361/361（含新增 10g3/10g4 与 21 条规则覆盖）；10b1 组合负向确认"仅同步字规则已删除"。
-**双环境基线**：Windows dev 361/361、WSL test / CI 容器待本版 CICD 实跑确认。
+**双环境基线**：Windows dev 361/361；CI 容器（securetrans-ci:3.12）经 CI-TDD #93（run 170）实跑通过（ci-check 24s：静态门禁 + 容器全量 TDD；package 7s：发布包构建校验）；生产 CD-Deploy #94（run 171）deploy 成功，`/api/health` = v2.5.1 / stage=beta / status=ok。
 
 ---
 
