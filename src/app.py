@@ -58,7 +58,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.5.0"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.5.1"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -302,12 +302,12 @@ BUILTIN_FEATURE_RULES = [
     # === 组合规则（binary 特征码 AND 后缀，v2.4.0 新增）===
     ("TAR.GZ组合(特征码+后缀)", "binary", "hex:1F8B", 0, ".tar.gz,.tgz"),
     # === FPGA / EDA ===
-    ("Vivado Bitstream(.bit)", "extension", ".bit", 0, None),
     # v2.5.0: 同步字支持双字节序——BE 0xAA995566（.bit 原始流）/ LE 0x665599AA（Zynq BOOT.BIN 封装）
+    # v2.5.1: Vivado 精简为唯一组合规则（特征码 AND .bin/.bit）。删除旧"扩展名 .bit 独立规则"与
+    # "仅同步字无后缀规则"（过宽易误报、组合规则已全覆盖，迁移中自动清理）。
+    # .ltx（Vivado ILA 调试探针，JSON 文本）无 bitstream 同步字，用独立扩展名规则覆盖。
     ("Vivado Bitstream组合(特征码+后缀)", "binary", "hex:AA995566;665599AA", 0, ".bin,.bit"),
-    # 修复记录：v2.4.0 修正同步字——Xilinx 标准同步字 0xAA995566（AA 99 55 66），
-    # 旧模板误写 hex:5599AA66（字节位置错乱），迁移中自动修正
-    ("Vivado Bit同步字", "binary", "hex:AA995566;665599AA", 0, None),
+    ("Vivado ILA探针(.ltx)", "extension", ".ltx", 0, None),
 ]
 
 def init_db():
@@ -527,6 +527,22 @@ def init_db():
         "WHERE name IN ('Vivado Bitstream组合(特征码+后缀)','Vivado Bit同步字') AND pattern='hex:AA995566'")
     if _fix2.rowcount:
         logger.info("feature_rules 迁移：Vivado 同步字 pattern 扩展为双字节序 hex:AA995566;665599AA（BE/LE）")
+    # v2.5.1 迁移：删除旧 Vivado 内置规则（扩展名 .bit 独立规则 + 仅同步字规则），保留唯一组合规则
+    # 注：内置模板播种时 ext_pattern 均为 NULL（extension 规则 pattern 即扩展名），故按 NULL 匹配
+    _legacy_del = conn.execute(
+        "DELETE FROM feature_rules WHERE (name='Vivado Bitstream(.bit)' AND rule_type='extension' AND ext_pattern IS NULL) "
+        "OR (name='Vivado Bit同步字' AND rule_type='binary' AND ext_pattern IS NULL)")
+    if _legacy_del.rowcount:
+        logger.info(f"feature_rules 清理：删除旧 Vivado 规则 {_legacy_del.rowcount} 条（v2.5.1，保留组合规则）")
+    # v2.5.1 迁移：删除历史遗留的"内部提交幻影二级审批记录"
+    # 背景：旧版 approve 端点对 receiver_type='internal' 也走了"语义B自动跳过二级"分支，
+    # 错误写入 level=2 的"自动跳过二级"审批记录（内部提交仅一级流程，审计链不应出现二级记录）。
+    # 仅删除 comment 精确匹配"自动跳过二级"且所属提交为 internal 的记录，不影响人工二级审批记录。
+    _clean = conn.execute(
+        "DELETE FROM approvals WHERE level=2 AND comment='自动跳过二级：审批人同时具备一级和二级审批权限' "
+        "AND submission_id IN (SELECT id FROM submissions WHERE receiver_type='internal')")
+    if _clean.rowcount:
+        logger.info(f"审计修复：删除 internal 提交的幻影二级审批记录 {_clean.rowcount} 条（v2.5.1）")
 
     cursor = conn.execute("SELECT COUNT(*) as c FROM feature_rules")
     if cursor.fetchone()["c"] == 0:
@@ -1671,14 +1687,15 @@ def api_approve(sub_id):
         db.execute("UPDATE submissions SET status=?, archived_time=?, current_path=? WHERE id=?",
                    (new_status, now_str(), str(ARCHIVE_DIR / sub_id), sub_id))
     elif level == 1:
-        # 一级通过：合作方直接摆渡，非合作方进入二级
-        if sub["receiver_type"] == "partner":
+        # 一级通过：公司内部/合作方直接摆渡（仅一级流程，不涉及二级）；
+        # 非合作方进入二级审批。
+        if sub["receiver_type"] in ("partner", "internal"):
             move_to_external(sub_id)
             new_status = "approved"
             db.execute("UPDATE submissions SET status=?, approved_time=?, current_path=? WHERE id=?",
                        (new_status, now_str(), str(EXTERNAL_DIR / sub_id), sub_id))
         elif can_approve_level(2):
-            # 语义B：当前一级审批人同时具备二级审批权限（如二级审批人被配置为一级审批人），
+            # 语义B（仅非合作方）：当前一级审批人同时具备二级审批权限（如二级审批人被配置为一级审批人），
             # 一级已由同一人把关，自动跳过二级审批，直接摆渡。避免同人重复审批。
             move_to_external(sub_id)
             new_status = "approved"

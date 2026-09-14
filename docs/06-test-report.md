@@ -1,3 +1,17 @@
+## ◎ v2.5.1-beta 回归（2026-09-14）
+**总计 361 项测试（Windows dev）全部通过，通过率 100%。**
+
+**本轮变更（ADR-028 · 特征码精简/审批审计修复/并发与 UX）：**
+1. **Vivado 特征码规则精简**：内置规则 22→21 条——删除"扩展名 .bit 独立规则"与"仅同步字无后缀规则"，保留唯一组合规则（同步字 AND .bin/.bit）；新增"Vivado ILA探针(.ltx)"扩展名规则；迁移自动清理旧规则（实测 BOOT.BIN LE 665599AA / chiptop.bit BE AA995566 / chiptop.ltx JSON 均可达）。
+2. **审批详情审计修复（10g3）**：公司内部/合作方一级审批通过直接摆渡，审批链不含二级记录；迁移清理历史 internal 幻影"自动跳过二级"记录；语义B仅限非合作方。
+3. **多用户并发性能（perf_test.py）**：新增 PERF_CONCURRENCY（3-5 用户 × 独立会话全链路 + MD5 校验）；本地实测 3 用户 × 1MB 全链路墙钟 0.56s 全部成功。
+4. **提交页取消/清空按钮（10g4）**：submit.btnCancel 双语 + cancelSubmit() 重置所选文件与表单。
+5. **AD 模拟三环境审计（组 23）**：dev/test/CI AD_MOCK_MODE=true（mock 全链路通过），生产 AD_MOCK_MODE=false（真实 AD，组 23 自动跳过、组 24 冒烟白名单只读）。
+6. **验证**：Windows dev 全量 361/361（含新增 10g3/10g4 与 21 条规则覆盖）；10b1 组合负向确认"仅同步字规则已删除"。
+**双环境基线**：Windows dev 361/361、WSL test / CI 容器待本版 CICD 实跑确认。
+
+---
+
 ## ◎ v2.3.3-beta 回归（2026-09-11）
 **总计 309 项测试（Windows dev）/ 308 项（WSL test）全部通过，通过率 100%；容器内（securetrans-ci:3.12）全量 309/309 通过。**
 

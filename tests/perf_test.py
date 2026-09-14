@@ -23,8 +23,11 @@
   PERF_MAX_DOWNLOAD_S 下载最长允许秒数（默认 600）
   PERF_MAX_TOTAL_S    全链路最长允许秒数（默认 900）
   PERF_KEEP=1         保留数据不清理（默认自动清理）
+  PERF_CONCURRENCY    多用户并发用户数（默认 0=关闭；3-5 模拟 beta 多用户并发）
+  PERF_CONC_SIZE_MB   每个并发用户的文件大小 MB（默认 10，避免测试数据过大）
+  PERF_CONC_MAX_S     并发全链路最长允许秒数（默认 120）
 
-依赖：仅 Python 标准库（urllib / http.client / hashlib）。
+依赖：仅 Python 标准库（urllib / http.client / hashlib / threading）。
 """
 import hashlib
 import http.client
@@ -35,6 +38,7 @@ import random
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import urllib.request
 import uuid
@@ -47,6 +51,9 @@ MAX_UPLOAD_S = int(os.getenv("PERF_MAX_UPLOAD_S", "600"))
 MAX_DOWNLOAD_S = int(os.getenv("PERF_MAX_DOWNLOAD_S", "600"))
 MAX_TOTAL_S = int(os.getenv("PERF_MAX_TOTAL_S", "900"))
 KEEP = os.getenv("PERF_KEEP", "0") == "1"
+CONCURRENCY = int(os.getenv("PERF_CONCURRENCY", "0"))
+CONC_SIZE_MB = int(os.getenv("PERF_CONC_SIZE_MB", "10"))
+CONC_MAX_S = int(os.getenv("PERF_CONC_MAX_S", "120"))
 
 # ---- HTTP 工具（复用 cookie 会话）----
 def _parse_base(url):
@@ -59,15 +66,15 @@ def _parse_base(url):
 HOST, PORT = _parse_base(BASE_URL)
 cookie_jar = {}
 
-def api(method, path, json_data=None, headers=None, timeout=120):
-    """JSON API（urllib，带 cookie）"""
-    global cookie_jar
+def api(method, path, json_data=None, headers=None, timeout=120, ck=None):
+    """JSON API（urllib，带 cookie）；ck 为独立会话 cookie dict（并发测试用）"""
+    jar = ck if ck is not None else cookie_jar
     req_headers = dict(headers or {})
     body = None
     if json_data is not None:
         body = json.dumps(json_data).encode("utf-8")
         req_headers["Content-Type"] = "application/json"
-    req_headers.update(cookie_jar)
+    req_headers.update(jar)
     req = urllib.request.Request(BASE_URL + path, data=body, headers=req_headers, method=method)
     try:
         resp = urllib.request.urlopen(req, timeout=timeout)
@@ -85,6 +92,84 @@ def login():
     cookie_jar["Cookie"] = _grab_cookie()
     print(f"[OK] 登录成功: {ADMIN_USER}")
 
+# ---- 多用户并发（v2.5.1，story：3-5 用户并发，保证当前正常性能）----
+def _concurrent_worker(uid, size_mb, results):
+    """单个并发用户：独立会话完成 生成→上传→提交→审批→下载→MD5 校验"""
+    try:
+        ck = {"Cookie": _grab_cookie()}
+        tmp_dir = tempfile.mkdtemp(prefix=f"securetrans_conc_{uid}_")
+        filepath = os.path.join(tmp_dir, f"conc_{uid}_{int(time.time())}.bin")
+        total_bytes = size_mb * 1024 * 1024
+        seed = random.randbytes(512)
+        md5_orig = hashlib.md5()
+        with open(filepath, "wb") as f:
+            chunk = (seed * (4096 // len(seed) + 1))[:4096]
+            written = 0
+            while written < total_bytes:
+                w = min(len(chunk), total_bytes - written)
+                f.write(chunk[:w])
+                md5_orig.update(chunk[:w])
+                written += w
+        t0 = time.time()
+        code, data = stream_upload(filepath, os.path.basename(filepath), ck=ck)
+        if code != 200:
+            raise RuntimeError(f"upload {code}: {data}")
+        temp_id = data.get("tempId")
+        code, data = api("POST", "/api/submissions", json_data={
+            "tempIds": [temp_id], "receiverName": f"并发用户{uid}",
+            "receiverEmail": f"conc{uid}@test.local", "receiverOrg": f"并发测试合作方-{uid}",
+            "receiverType": "partner", "securityLevel": "internal", "reason": "并发性能测试",
+        }, ck=ck)
+        if code != 200:
+            raise RuntimeError(f"submit {code}: {data}")
+        sub_id = data.get("id")
+        code, data = api("POST", f"/api/submissions/{sub_id}/approve",
+                         json_data={"action": "approve", "comment": "并发性能通过"}, ck=ck)
+        if code != 200 or data.get("status") != "approved":
+            raise RuntimeError(f"approve {code}: {data}")
+        dl_path = os.path.join(tmp_dir, "dl.bin")
+        with open(dl_path, "wb") as f:
+            dl_s, md5_dl, x_md5, _ = stream_download(
+                f"/api/external/{sub_id}/download/{os.path.basename(filepath)}", f,
+                max_wait=60, ck=ck)
+        ok = (md5_orig.hexdigest() == md5_dl == (x_md5 or ""))
+        results[uid] = {"ok": ok, "elapsed": time.time() - t0, "size_mb": size_mb,
+                        "upload_code": code, "sub_id": sub_id}
+        if not KEEP:
+            try:
+                api("DELETE", f"/api/admin/submissions/{sub_id}", json_data={"confirm": "DEL"}, ck=ck)
+            except Exception:
+                pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    except Exception as e:
+        results[uid] = {"ok": False, "error": str(e)}
+
+
+def concurrent_test(users, size_mb, max_s):
+    """并发主流程：N 用户同时全链路，断言全部成功且不超时"""
+    print(f"\n[7/7] 多用户并发测试（{users} 用户 × {size_mb}MB/用户，max {max_s}s）...")
+    results, threads = {}, []
+    t0 = time.time()
+    for i in range(users):
+        t = threading.Thread(target=_concurrent_worker, args=(i, size_mb, results))
+        threads.append(t)
+        t.start()
+    for t in threads:
+        t.join()
+    wall = time.time() - t0
+    print(f"    并发全链路总耗时（墙钟）: {wall:.2f}s")
+    for i in sorted(results):
+        r = results[i]
+        if r.get("ok"):
+            print(f"    用户{i+1}: OK  耗时 {r['elapsed']:.2f}s（含独立会话+全链路）")
+        else:
+            print(f"    用户{i+1}: FAIL {r.get('error', 'unknown')}")
+    ok_all = all(r.get("ok") for r in results.values()) and len(results) == users
+    ok_time = wall <= max_s
+    print(f"    并发结果: {'全部成功 ✓' if ok_all else '存在失败 ✗'} | "
+          f"耗时{'达标 ✓' if ok_time else f'超阈值 ✗ ({wall:.1f}s > {max_s}s)'}")
+    return ok_all and ok_time
+
 def _grab_cookie():
     # 登录响应中的 Set-Cookie（用 http.client 拿原始头）
     conn = http.client.HTTPConnection(HOST, PORT, timeout=30)
@@ -101,8 +186,9 @@ def _grab_cookie():
             return v.split(";")[0]
     return ""
 
-def stream_upload(filepath, filename):
-    """流式 multipart 上传（http.client，不把文件读入内存）"""
+def stream_upload(filepath, filename, ck=None):
+    """流式 multipart 上传（http.client，不把文件读入内存）；ck 为独立会话 cookie"""
+    jar = ck if ck is not None else cookie_jar
     boundary = "----SecureTransPerf" + uuid.uuid4().hex
     head = (f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
@@ -115,8 +201,8 @@ def stream_upload(filepath, filename):
     conn.putrequest("POST", "/api/submissions/upload")
     conn.putheader("Content-Type", f"multipart/form-data; boundary={boundary}")
     conn.putheader("Content-Length", str(content_length))
-    if "Cookie" in cookie_jar:
-        conn.putheader("Cookie", cookie_jar["Cookie"])
+    if "Cookie" in jar:
+        conn.putheader("Cookie", jar["Cookie"])
     conn.endheaders()
     conn.send(head)
     with open(filepath, "rb") as f:
@@ -134,12 +220,13 @@ def stream_upload(filepath, filename):
     except Exception:
         return resp.status, {"error": raw[:200]}
 
-def stream_download(path, dest_fp, max_wait=600):
-    """流式下载到文件并计算 MD5，返回 (耗时秒, md5, x_header)"""
+def stream_download(path, dest_fp, max_wait=600, ck=None):
+    """流式下载到文件并计算 MD5，返回 (耗时秒, md5, x_header)；ck 为独立会话 cookie"""
+    jar = ck if ck is not None else cookie_jar
     conn = http.client.HTTPConnection(HOST, PORT, timeout=max_wait + 60)
     conn.putrequest("GET", path)
-    if "Cookie" in cookie_jar:
-        conn.putheader("Cookie", cookie_jar["Cookie"])
+    if "Cookie" in jar:
+        conn.putheader("Cookie", jar["Cookie"])
     conn.endheaders()
     resp = conn.getresponse()
     x_md5 = resp.getheader("X-File-MD5")
@@ -282,6 +369,15 @@ def main():
     if total_s > MAX_TOTAL_S:
         print(f"[失败] 全链路耗时 {total_s:.1f}s 超过阈值 {MAX_TOTAL_S}s")
         passed = False
+
+    # 多用户并发阶段（v2.5.1）：PERF_CONCURRENCY>1 时执行，纳入总结果
+    conc_passed = True
+    if CONCURRENCY > 1:
+        conc_passed = concurrent_test(CONCURRENCY, CONC_SIZE_MB, CONC_MAX_S)
+        if not conc_passed:
+            print("[失败] 多用户并发测试未通过")
+            passed = False
+
     print(f"\n结果: {'全部通过 ✓' if passed else '存在失败 ✗'}")
 
     # 清理

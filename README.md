@@ -1,6 +1,6 @@
-﻿# SecureTrans — 轻量级跨网文件审批摆渡系统
+# SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.3.7 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（运行收集问题中）
+> 版本：v2.5.1 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（运行收集问题中）
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main + AI 辅助人机协同（AGENTS v2.0）
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
@@ -49,20 +49,20 @@ cd src && python app.py
 # 另一个终端运行测试
 cd tests
 python test_api.py
-# 预期：318项测试全部通过，通过率100%（Windows dev）；WSL 测试环境 318 项
+# 预期：361项测试全部通过，通过率100%（Windows dev）；WSL 测试环境 361 项
 ```
 
 ### 一键部署（服务器，Rocky Linux）
 
 ```bash
 # 1. 上传发布包 securetrans-<版本>.tar.gz 到服务器
-tar xzf securetrans-v2.3.7.tar.gz -C /opt/securetrans --strip-components=1
+tar xzf securetrans-v2.5.1.tar.gz -C /opt/securetrans --strip-components=1
 cd /opt/securetrans
 
 # 2. 一键部署（9步自动化：Python 3.12 获取 → venv → 依赖 → .env → systemd → 启动验证）
 sudo bash infra/deploy.sh
 
-# 3. 部署验证（318项全量测试；admin 凭据自动取 .env RESET_PASSWORD；BASE_URL 自动适配 .env HOST/PORT；若 admin 密码已手工修改，用 VERIFY_ADMIN_PASS 显式传入）
+# 3. 部署验证（361项全量测试；admin 凭据自动取 .env RESET_PASSWORD；BASE_URL 自动适配 .env HOST/PORT；若 admin 密码已手工修改，用 VERIFY_ADMIN_PASS 显式传入）
 bash infra/verify.sh
 
 # 4. 防火墙放行 8000（Alpha 内测：内网 + 办公外网访问）
@@ -92,7 +92,7 @@ SecureTrans/
 │   │   ├── dev.env           # 开发环境配置（Windows 本地 + AD mock）
 │   └── static/               # 前端静态文件（SPA + 登录页）
 ├── tests/                    # 自动化测试
-│   └── test_api.py           # 全量API测试脚本（318项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
+│   └── test_api.py           # 全量API测试脚本（361项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
 ├── docs/                     # 统一文档（数字前缀排序，持续刷新）
 │   ├── 00-lean-startup-phase-map.md   # Lean Startup三阶段映射与决策门
 │   ├── 01-scrum-io-definition.md      # AI辅助Agile-Scrum流程模板(v2.0，Scrum Guide审计+裁剪)
@@ -100,7 +100,7 @@ SecureTrans/
 │   ├── 03-psf-process.md              # PSF阶段标准流程
 │   ├── 04-pmf-process.md              # PMF阶段标准流程（下一阶段准备）
 │   ├── 05-test-cases.md               # 测试用例
-│   ├── 06-test-report.md              # 测试报告（318项全通过）
+│   ├── 06-test-report.md              # 测试报告（361项全通过）
 │   ├── 07-psf-sprint4-retrospective.md # PSF阶段迭代小结
 │   ├── 08-cicd-gitops-architecture.md # CICD/GitOps架构规划
 │   ├── 09-preprod-verification.md     # 生产预验收清单
@@ -112,7 +112,7 @@ SecureTrans/
 └── infra/                    # 基础设施配置
     ├── deploy.sh             # 一键部署脚本（9步自动化, Linux）
     ├── deploy.ps1            # 一键部署脚本（Windows）
-    ├── verify.sh             # 部署验证脚本（318项，BASE_URL 自适应 + 凭据自动取 .env RESET_PASSWORD）
+    ├── verify.sh             # 部署验证脚本（361项，BASE_URL 自适应 + 凭据自动取 .env RESET_PASSWORD）
     ├── get-offline-python.sh # 离线 Python 3.12 RPM 获取（联网 Rocky8 跑一次）
     ├── nginx-securetrans.conf        # Nginx双网卡配置
     ├── nginx-securetrans-single.conf # Nginx单网卡配置
@@ -221,7 +221,7 @@ main ────●────●────●────●────  �
 
 ### 当前阶段
 **PSF（问题-方案匹配验证）— Beta 内部测试运行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，
-deploy.sh/verify.sh 全部通过，318项自动化测试 100%（Windows dev + WSL test）+ 800MB 性能压力测试通过
+deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WSL test）+ 800MB 性能压力测试 + 3-5 用户并发测试通过
 （MD5 端到端一致）+ CD 全自动部署打通（Release 发布 → 生产自动升级，run #136）；**清库后启动内部
 同事 beta 测试，运行收集问题，持续迭代**。全项目复盘见 [项目复盘总结](docs/12-project-retrospective.md)。
 
@@ -231,7 +231,7 @@ deploy.sh/verify.sh 全部通过，318项自动化测试 100%（Windows dev + WS
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（318项全通过）](docs/06-test-report.md)
+- [测试报告（361项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
@@ -291,8 +291,8 @@ deploy.sh/verify.sh 全部通过，318项自动化测试 100%（Windows dev + WS
   - **调测期（PSF Alpha/Beta）**：代码/脚本/配置模板每次变更即发布（密集发布，便于服务器及时验证）
   - **正式发布后（RTM）**：默认不逐次发布，关键里程碑手工发布
   - **文档-only 变更**（README/AGENTS/docs/*.md）：commit + push main，不 bump、不打包、不建 Release（随仓库演进，代码发布时包内自动带入最新）
-  - **调测门禁**：本地调测中间阶段保持双环境 TDD 全量回归——Windows 开发环境（testing：`python test_api.py` 318项）
-    + WSL 测试环境（production：`infra/verify.sh` 318项），**全部通过才允许 bump + 发布**
+  - **调测门禁**：本地调测中间阶段保持双环境 TDD 全量回归——Windows 开发环境（testing：`python test_api.py` 361项）
+    + WSL 测试环境（production：`infra/verify.sh` 361项），**全部通过才允许 bump + 发布**
   - 版本号是发布产物属性，APP_VERSION 只在代码发布时递增；文档内部版本号独立演进
 
 ### ADR-008：端口/网络面部署选型（单/双网卡 × 单/双端口）
@@ -518,6 +518,17 @@ deploy.sh/verify.sh 全部通过，318项自动化测试 100%（Windows dev + WS
   5. **人机协同双闭环**：闭环 A（技术-工程-产品：需求→ADR→TDD→CI/CD→发布→beta 已闭环）；闭环 B（商业：PSF 问题/方案验证→PMF 市场验证→Scale，正在收尾 PSF）；过程层（体会/回退/心态）同为项目资产，决策留痕 = 下一轮决策输入。
 - **已落点**：2026-09-14 本记录；nginx 升级触发条件列入 Backlog；代码零改动。
 
+### ADR-028：特征码精简 / 审批审计修复 / 并发与 UX（v2.5.1，强制）
+- **背景**：beta 手工验收发现三类问题——① Vivado 特征码多条规则重叠（扩展名 .bit 独立规则无同步字也可命中、仅同步字规则无后缀过宽），且真实文件验证发现 .ltx（ILA 探针，JSON 文本）无 bitstream 同步字；② 审批详情审计链错误：内部提交一级通过被误插"自动跳过二级"幻影记录；③ 性能/UX 需求增补。
+- **决策**：
+  1. **Vivado 规则精简为模板**（内置 22→21 条）：删除"Vivado Bitstream(.bit)"（extension）与"Vivado Bit同步字"（binary 无后缀）；保留唯一 `Vivado Bitstream组合(特征码+后缀)`（hex:AA995566;665599AA AND .bin,.bit，实测覆盖 BOOT.BIN/chiptop.bit）；新增 `Vivado ILA探针(.ltx)`（extension，覆盖 JSON 探针文件）。迁移按 name+type+ext_pattern IS NULL 精确清理旧规则；新规则补充播种默认禁用（老规矩：特征码默认全禁用、免审批总开关默认关闭，管理员手工配置）。
+  2. **审批详情审计修复**：公司内部/合作方一级审批通过即摆渡，审批链**不得出现二级记录**（含"自动跳过"注释）；语义B（同人自动跳过二级）仅限非合作方；迁移删除 internal 提交的历史幻影 level=2 记录（仅限 comment 精确匹配"自动跳过二级"者，人工二级记录不受影响）。
+  3. **多用户并发性能 story**：`tests/perf_test.py` 新增 `PERF_CONCURRENCY`（3-5 用户 × 独立会话全链路 + MD5 校验）+ `PERF_CONC_SIZE_MB`/`PERF_CONC_MAX_S`；本地实测 3 用户 × 1MB 墙钟 0.56s 全部成功；作为性能回归（非 CI 默认项，按需启用避免拉长流水线）。
+  4. **提交页"取消/清空"按钮**：submit.btnCancel 双语 + `cancelSubmit()` 重置所选文件与表单（本地重置，staging 临时文件由系统清理任务回收）；防止"准备文件不对无法取消"。
+  5. **AD mock 三环境审计（确认结论）**：dev/test/CI 一律 `AD_MOCK_MODE=true`（组 23 自动探测 mock 全链路，不触网）；生产 `AD_MOCK_MODE=false` 直连真实 AD（SSSD/LDAP 同源兼容）；组 23 生产自动跳过、组 24 冒烟白名单只读。
+- **与 ADR-024/025 不重叠**：本 ADR 管单版本功能/审计/性能落点；ADR-024 管 CD 链路；ADR-025 管 AI 辅助流程方法论。
+- **已落点**：v2.5.1（Windows dev 全量 TDD 361/361 通过；10g3 审计详情修复 / 10g4 取消按钮 / 10b1 21 条规则覆盖均有断言）。
+
 ---
 
 ## 许可证
@@ -528,4 +539,4 @@ deploy.sh/verify.sh 全部通过，318项自动化测试 100%（Windows dev + WS
 
 ---
 
-*SecureTrans v2.3.7 | 2026-09-11*
+*SecureTrans v2.5.1 | 2026-09-14*

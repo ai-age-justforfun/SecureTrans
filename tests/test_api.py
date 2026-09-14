@@ -754,6 +754,49 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     request('DELETE', f'/api/admin/local-users/dual1')
     test("清理dual1测试数据", True, "dual1 用户与审批人配置已删除")
 
+    # 22c. v2.5.1 审批详情审计修复：内部/合作方一级通过不得出现二级记录
+    print("\n--- 10g3. 内部提交一级审批不含二级记录（v2.5.1 修复） ---")
+    _set_group("10g3. 内部提交一级审批不含二级记录（v2.5.1 修复）")
+
+    # 创建 internal 提交单（EXE 不匹配 → 需人工一级审批）
+    b_int = os.path.join(test_dir, "internal_test.exe")
+    with open(b_int, 'wb') as f:
+        f.write(b"MZ\x90\x00" + b"\x00" * 500)
+    code, data = upload_file(b_int, "internal_test.exe")
+    int_temp_id = data.get('tempId')
+    code, data = request('POST', '/api/submissions', json_data={
+        "tempIds": [int_temp_id],
+        "receiverName": "内部接收人",
+        "receiverEmail": "internal@test.local",
+        "receiverType": "internal",
+        "securityLevel": "internal",
+        "reason": "v2.5.1内部一级审批审计修复测试",
+        "expiryDays": 7
+    })
+    int_sub_id = data.get('id')
+    test("创建内部提交单(pending)", code == 200 and data.get('status') == 'pending',
+         f"code={code}, status={data.get('status')}")
+    # admin（同时具备一级+二级权限）一级审批通过 → 直接摆渡 approved
+    code, data = request('POST', f'/api/submissions/{int_sub_id}/approve', json_data={
+        "action": "approve", "comment": "内部一级通过"
+    })
+    test("内部一级审批通过直接摆渡(approved)", code == 200 and data.get('status') == 'approved',
+         f"code={code}, status={data.get('status')}")
+    # 审计详情：内部提交只允许一级记录，不得出现二级（无论审批人是否双级权限）
+    code, data = request('GET', f'/api/submissions/{int_sub_id}')
+    approval_levels = [(a.get('level'), a.get('action')) for a in data.get('approvals', [])]
+    test("内部一级审批详情不含二级记录", approval_levels == [(1, 'approve')],
+         f"approvals={approval_levels}")
+
+    # 22d. v2.5.1 前端提交页取消/清空按钮（文件选错可重置）
+    print("\n--- 10g4. 前端提交取消/清空按钮（v2.5.1） ---")
+    _set_group("10g4. 前端提交取消/清空按钮（v2.5.1）")
+    _html_now = open(os.path.join(os.path.dirname(__file__), '..', 'src', 'static', 'index.html'), encoding='utf-8').read()
+    test("前端: 提交页含取消/清空按钮+函数+i18n",
+         'onclick="cancelSubmit()"' in _html_now and 'function cancelSubmit()' in _html_now
+         and "'submit.btnCancel'" in _html_now and 'toast.cancelSubmit' in _html_now,
+         "cancelSubmit 按钮/函数/i18n 键存在")
+
     # 22b. 特征码规则管理 + 系统配置默认值
     print("\n--- 10h. 特征码规则管理 + 系统配置默认值 ---")
     _set_group("10h. 特征码规则管理 + 系统配置默认值")
@@ -1079,13 +1122,14 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     test("上传TAR.GZ压缩包（匹配特征码+自动解包）", code == 200 and tar_matched and len(tar_inner) >= 1,
          f"code={code}, matched={tar_matched}, innerFiles={len(tar_inner)}")
 
-    # 上传 .bit 文件（Vivado Bitstream，二进制特征码 0x0009 开头）
+    # 上传 .bit 文件（Vivado Bitstream 组合规则：Xilinx 0x0009 头 + 同步字 AA995566 + .bit 后缀）
+    # v2.5.1: 旧"扩展名 .bit 独立规则"已删除，.bit 需含同步字才命中组合规则（与真实 chiptop.bit 一致）
     bit_path = os.path.join(test_dir, "test_fpga.bit")
     with open(bit_path, 'wb') as f:
-        f.write(b"\x00\x09" + b"\x00" * 100)  # Vivado bitstream 以 0x0009 开头
+        f.write(b"\x00\x09" + b"\xaa\x99\x55\x66" + b"\x00" * 100)  # Vivado bitstream 0x0009 头 + 同步字
     code, data = upload_file(bit_path, "test_fpga.bit")
     bit_matched = data.get('matched', False)
-    test("上传Vivado Bitstream(.bit)（二进制特征码匹配）", code == 200 and bit_matched,
+    test("上传Vivado Bitstream(.bit)（组合规则：同步字+后缀命中）", code == 200 and bit_matched,
          f"code={code}, matched={bit_matched}")
 
     # 上传 .xyz 文件（不匹配任何特征码规则）
@@ -1097,28 +1141,28 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     test("上传XYZ文件（不匹配特征码）", code == 200 and not txt_matched,
          f"code={code}, matched={txt_matched}")
 
-    # 特征码规则列表验证（20条规则）
+    # 特征码规则列表验证（21条内置规则）
     code, data = request('GET', '/api/config/feature-rules')
     rule_count = len(data) if isinstance(data, list) else 0
-    test("特征码规则列表（20条规则完整）", code == 200 and rule_count >= 20,
+    test("特征码规则列表（21条规则完整）", code == 200 and rule_count >= 20,
          f"code={code}, count={rule_count}")
 
-    # v2.4.1 10b1. 内置特征码规则逐条覆盖（22 条内置模板全量，作为 TDD 用例集+CI 门禁）
-    print("\n--- 10b1. 内置特征码规则逐条覆盖（22条） ---")
-    _set_group("10b1. 内置特征码规则逐条覆盖（22条）")
+    # v2.4.1 10b1. 内置特征码规则逐条覆盖（21 条内置模板全量，作为 TDD 用例集+CI 门禁）
+    # v2.5.1: Vivado 精简为组合规则 + .ltx 探针扩展名规则（删除 .bit 独立规则与仅同步字规则）
+    print("\n--- 10b1. 内置特征码规则逐条覆盖（21条） ---")
+    _set_group("10b1. 内置特征码规则逐条覆盖（21条）")
 
-    # 存在性：内置 22 条规则名必须全部存在于规则列表（以服务端实际返回为准）
+    # 存在性：内置 21 条规则名必须全部存在于规则列表（以服务端实际返回为准）
     _builtin_names = [
         "PDF文档", "Word文档", "Excel表格", "PPT演示", "图片文件", "文本文件",
         "ZIP压缩包", "TAR归档", "GZIP压缩", "BZIP2压缩", "XZ压缩", "ZSTD压缩",
         "ZIP特征码", "GZIP特征码", "BZIP2特征码", "XZ特征码", "ZSTD特征码", "TAR特征码(ustar)",
-        "TAR.GZ组合(特征码+后缀)", "Vivado Bitstream(.bit)",
-        "Vivado Bitstream组合(特征码+后缀)", "Vivado Bit同步字",
+        "TAR.GZ组合(特征码+后缀)", "Vivado Bitstream组合(特征码+后缀)", "Vivado ILA探针(.ltx)",
     ]
     code, data = request('GET', '/api/config/feature-rules')
     _rule_names = [r.get('name', '') for r in data] if isinstance(data, list) else []
     _missing = [n for n in _builtin_names if not any(n in rn for rn in _rule_names)]
-    test("内置22条特征码规则全部存在", code == 200 and not _missing,
+    test("内置21条特征码规则全部存在", code == 200 and not _missing,
          f"code={code}, missing={_missing}")
 
     # 逐条正向命中：每条内置规则构造最小样本，断言规则名 ∈ matchedRules
@@ -1142,9 +1186,8 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
         ("ZSTD特征码", "cover_sig_zstd.bin", b"\x28\xb5\x2f\xfdsig"),
         ("TAR特征码(ustar)", "cover_sig_tar.bin", b"\x00" * 257 + b"ustarsig"),
         ("TAR.GZ组合(特征码+后缀)", "cover_combo.tar.gz", b"\x1f\x8b\x08\x00combo"),
-        ("Vivado Bitstream(.bit)", "cover_viv.bit", b"\x00\x09" + b"\xaa\x99\x55\x66"),
         ("Vivado Bitstream组合(特征码+后缀)", "cover_viv.bin", b"\x00" * 64 + b"\xaa\x99\x55\x66" + b"\x00" * 64),
-        ("Vivado Bit同步字", "cover_sync.bin", b"\x00" * 64 + b"\xaa\x99\x55\x66" + b"\x00" * 64),
+        ("Vivado ILA探针(.ltx)", "cover_viv.ltx", b'{"ltx_root":{"version":4}'),
     ]
     for _name, _fname, _content in _cover:
         _p = os.path.join(test_dir, _fname)
@@ -1155,7 +1198,8 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
         test(f"内置规则命中[{_name}]", _code == 200 and any(_name in str(r) for r in _matched),
              f"code={_code}, matchedRules={_matched}")
 
-    # 组合规则负向：.xyz 含同步字 → Vivado 组合不命中（后缀不符），仅同步字命中
+    # 组合规则负向：.xyz 含同步字 → Vivado 组合不命中（后缀不符），
+    # 且"仅同步字"规则已删除（v2.5.1）→ 无任何规则命中
     _neg = os.path.join(test_dir, "cover_sync.xyz")
     with open(_neg, 'wb') as _f:
         _f.write(b"\x00" * 64 + b"\xaa\x99\x55\x66")
@@ -1163,7 +1207,7 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     _matched = _data.get('matchedRules', []) if isinstance(_data, dict) else []
     _combo_hit = any("Vivado Bitstream组合" in str(r) for r in _matched)
     _sync_hit = any("Vivado Bit同步字" in str(r) for r in _matched)
-    test("组合规则负向[.xyz后缀不符组合不命中]", _code == 200 and not _combo_hit and _sync_hit,
+    test("组合规则负向[.xyz后缀不符组合不命中、同步字规则已删除]", _code == 200 and not _combo_hit and not _sync_hit,
          f"code={_code}, combo_hit={_combo_hit}, sync_hit={_sync_hit}, matchedRules={_matched}")
 
     # 20c. 审批驳回流程
@@ -1715,7 +1759,8 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     # ============================================================
     # 前置：前序测试（免审批场景）可能启用了内置规则，此处幂等恢复为禁用后再断言
     # （模拟生产旧库升级迁移效果；断言代表规则覆盖 extension/binary/EDA 三类）
-    _BUILTIN_WANT = {("PDF文档", "extension", ".pdf"), ("ZIP特征码", "binary", "hex:504B0304"), ("Vivado Bit同步字", "binary", "hex:5599AA66")}
+    _BUILTIN_WANT = {("PDF文档", "extension", ".pdf"), ("ZIP特征码", "binary", "hex:504B0304"),
+                     ("Vivado Bitstream组合(特征码+后缀)", "binary", "hex:AA995566;665599AA")}
     code, data = request('GET', '/api/config/feature-rules')
     if code == 200 and isinstance(data, list):
         for _r in data:

@@ -118,7 +118,7 @@
 ## B1 项目概况
 
 - **项目**：SecureTrans — 轻量级跨网文件审批摆渡系统（内网提交/审批 → 外网下载）
-- **阶段/版本**：PSF→Beta（v2.3.7，APP_STAGE=beta；版本号单一来源 `src/app.py` APP_VERSION，前端 index.html 同步）
+- **阶段/版本**：PSF→Beta（v2.5.1，APP_STAGE=beta；版本号单一来源 `src/app.py` APP_VERSION，前端 index.html 同步）
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝；Python 3.12 venv
 - **架构**：后端单文件 `src/app.py`，前端单页 `src/static/index.html`（i18n 双语）
 - **开发模式**：主干开发，单分支 main；Sprint 只进文档不进目录/commit
@@ -168,6 +168,7 @@ ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
 - **ADR-026 git 为中心**：三环境各自独立 git 副本，唯一同步通道=Gitea；WSL 禁用 /mnt/c、/mnt/d 用原生路径；
   /opt/securetrans/.runner + config.yaml 保护（备份/清理禁止移动删除）
 - **ADR-027 双闭环复盘**：nginx 暂不引入（日均个位数访问，触发条件=worker阻塞/对外HTTPS）；PSF 只做"被使用验证的需求"，推演特性标假设；beta=PSF 收尾→PMF 万里长征第一步；stepping-stone 方法论，技术债显式记账+偿还触发；人机协同过程/体会留痕=决策资产
+- **ADR-028 v2.5.1 落点**：Vivado 规则精简为唯一组合规则（同步字 AND .bin/.bit）+ .ltx 扩展名规则（旧 .bit 独立规则/仅同步字规则删除，迁移清理）；公司内部/合作方一级通过不产生二级审批记录（审计链修复+历史幻影记录清理，语义B仅限非合作方）；性能并发 story（perf_test.py PERF_CONCURRENCY 3-5 用户）；提交页取消/清空按钮；AD mock 三环境审计（dev/test/CI=true、生产=false，组23自动探测）
 
 ## B5 研发流程
 
@@ -183,7 +184,7 @@ Sprint 周期 2周→1周→1-2天，以协同效率为准演进（人审核是�
 
 ## B6 测试规范
 
-- **全量 TDD**：`tests/test_api.py`（318 项，标准库 urllib 无额外依赖）；启动服务后 `cd tests && python test_api.py`
+- **全量 TDD**：`tests/test_api.py`（361 项，标准库 urllib 无额外依赖）；启动服务后 `cd tests && python test_api.py`
 - **部署验证**：`infra/verify.sh`（BASE_URL 自适应 .env HOST/PORT；admin 凭据自动取 RESET_PASSWORD，
   手工改密后 `VERIFY_ADMIN_PASS=<密码> bash infra/verify.sh`）
 - **生产冒烟**：`infra/smoke.sh`（只读白名单 11 项，不写业务数据；凭据同 verify）

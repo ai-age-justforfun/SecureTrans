@@ -207,7 +207,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.5.0';
+const APP_VERSION = 'v2.5.1';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -277,6 +277,7 @@ const I18N = {
     'submit.receiverEmailOpt': '接收方邮箱（可选）',
     'submit.reason': '外发事由', 'submit.reasonPh': '请说明文件外发的原因和用途',
     'submit.btnSubmit': '提交审批',
+    'submit.btnCancel': '取消/清空',
     'submit.matched': '✓ 匹配特征码', 'submit.unmatched': '✗ 需人工审批',
     'submit.allMatched': '所有文件匹配特征码，提交后将免审批自动通过',
     'submit.partMatched': '部分文件不匹配特征码，提交后需人工审批',
@@ -338,6 +339,7 @@ const I18N = {
     'audit.byType': '按文件类型', 'audit.byDay': '按每日',
     'audit.personType': '人员 / 文件类型', 'audit.personDay': '人员 / 日期', 'audit.range': '统计范围：{0} 至 {1}', 'audit.days': '（{0} 天）',
     'toast.uploadSuccess': '文件 "{0}" 上传成功', 'toast.uploadFail': '上传失败: {0}',
+    'toast.cancelSubmit': '已清空所选文件与表单',
     'toast.submitSuccessAuto': '提交成功，免审批自动通过！提交单号: {0}',
     'toast.submitSuccess': '提交成功，进入审批流程。提交单号: {0}', 'toast.submitFail': '提交失败: {0}',
     'toast.approveDone': '审批完成，当前状态: {0}', 'toast.approveFail': '审批失败: {0}',
@@ -417,6 +419,7 @@ const I18N = {
     'submit.receiverEmailOpt': 'Recipient Email (optional)',
     'submit.reason': 'Reason for Transfer', 'submit.reasonPh': 'Explain why and how the files are used',
     'submit.btnSubmit': 'Submit for Approval',
+    'submit.btnCancel': 'Cancel / Clear',
     'submit.matched': '✓ Matched signature', 'submit.unmatched': '✗ Needs manual approval',
     'submit.allMatched': 'All files match signatures; they will be auto-approved after submission',
     'submit.partMatched': 'Some files do not match signatures; manual approval will be required',
@@ -478,6 +481,7 @@ const I18N = {
     'audit.byType': 'By File Type', 'audit.byDay': 'By Day',
     'audit.personType': 'User / File Type', 'audit.personDay': 'User / Date', 'audit.range': 'Range: {0} to {1}', 'audit.days': ' ({0} days)',
     'toast.uploadSuccess': 'File "{0}" uploaded', 'toast.uploadFail': 'Upload failed: {0}',
+    'toast.cancelSubmit': 'Cleared selected files and form',
     'toast.submitSuccessAuto': 'Submitted and auto-approved! No: {0}',
     'toast.submitSuccess': 'Submitted, entering approval flow. No: {0}', 'toast.submitFail': 'Submit failed: {0}',
     'toast.approveDone': 'Approval done, current status: {0}', 'toast.approveFail': 'Approval failed: {0}',
@@ -856,6 +860,7 @@ function renderSubmit() {
       </div>
       <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
         <button class="btn btn-primary" onclick="submitFiles()" data-i18n="submit.btnSubmit">提交审批</button>
+        <button class="btn btn-secondary" onclick="cancelSubmit()" data-i18n="submit.btnCancel">取消/清空</button>
         <span id="autoApproveHint" class="text-sm text-muted"></span>
       </div>
     </div>
@@ -945,6 +950,26 @@ function renderFileList() {
 function removeFile(index) {
   uploadedFiles.splice(index, 1);
   renderFileList();
+}
+
+// v2.5.1: 取消/清空提交（文件选错或准备不对时重置整个提交表单）
+function cancelSubmit() {
+  uploadedFiles.length = 0;
+  renderFileList();
+  const input = document.getElementById('fileInput');
+  if (input) input.value = '';
+  const dirInput = document.getElementById('dirInput');
+  if (dirInput) dirInput.value = '';
+  const fields = ['receiverName', 'receiverOrg', 'receiverEmail', 'reason'];
+  fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const rt = document.getElementById('receiverType');
+  if (rt) rt.value = 'internal';
+  const ps = document.getElementById('partnerSelect');
+  if (ps) ps.value = '';
+  const sl = document.getElementById('securityLevel');
+  if (sl) sl.value = 'internal';
+  onReceiverTypeChange();
+  toast(t('toast.cancelSubmit'), 'success');
 }
 
 async function onReceiverTypeChange() {
