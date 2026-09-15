@@ -116,9 +116,14 @@ jobs:
           RID=$(curl -s -H "Authorization: token ${RELEASETOKEN}" "${API}/releases?limit=50" \
             | python3 -c "import sys,json; rs=json.load(sys.stdin); print(next((str(r['id']) for r in rs if r.get('tag_name')=='v${V}'), ''))" 2>/dev/null || true)
           if [ -z "$RID" ]; then
-            RID=$(curl -s -X POST -H "Authorization: token ${RELEASETOKEN}" -H "Content-Type: application/json" \
-              -d "{\"tag_name\":\"v${V}\",\"name\":\"v${V}\",\"body\":\"SecureTrans v${V}（CI 容器构建自动发布）本版变更：${CHANGES}\",\"draft\":false,\"prerelease\":false}" \
-              "${API}/releases" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+            # v2.7.1（ADR-044 落点）：prerelease 动态跟随 APP_STAGE——release=正式（stable），
+          # alpha/beta/rc 一律 prerelease=true（v2.7.1 曾因写死 false 显示"稳定"，Gitea 1.27 API 编辑 bug 无法 PATCH 补救）
+          STAGE=$(grep -m1 '^APP_STAGE' src/app.py | sed -E 's/.*"([a-z]+)".*/\1/' || echo "alpha")
+          if [ "$STAGE" = "release" ]; then PRE="false"; else PRE="true"; fi
+          echo "APP_STAGE=${STAGE} → prerelease=${PRE}"
+          RID=$(curl -s -X POST -H "Authorization: token ${RELEASETOKEN}" -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"v${V}\",\"name\":\"v${V}\",\"body\":\"SecureTrans v${V}（CI 容器构建自动发布）本版变更：${CHANGES}\",\"draft\":false,\"prerelease\":${PRE}}" \
+            "${API}/releases" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
           fi
           [ -n "$RID" ] || { echo "Release 创建失败"; exit 1; }
           EXISTING=$(curl -s -H "Authorization: token ${RELEASETOKEN}" "${API}/releases/${RID}/assets" \
