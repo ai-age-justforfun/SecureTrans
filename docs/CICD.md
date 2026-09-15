@@ -536,6 +536,50 @@ deploy:
 
 ---
 
+## 10. 触发机制与 AI 边界（2026-09-15 审核，ADR-047）
+
+> 核心结论：**触发全部是 git 服务器原生事件钩子，AI 不在流水线中间介入**；人/AI 只做两件事——
+> ① 打 tag（发布决策）② 应急手动 dispatch。成熟期 = 平台自治。
+
+### 10.1 三平台触发事件（逐条审核）
+
+| 平台 | CI | Release | CD | 触发者 |
+|---|---|---|---|---|
+| Gitea | push main / push tag v* | push tag v* / release | release published / workflow_dispatch | git 事件（自动） |
+| GitHub | push main / push tag v* / pull_request | push tag v* / release / workflow_dispatch | release published / workflow_dispatch | git 事件（自动） |
+| GitLab | tag ^v / branch gitlabcicotest | tag ^v | tag ^v | git 事件（自动） |
+
+- Gitea 无 pull_request（单分支主干开发，不需要）；GitHub 多 pull_request（云端协作预留）
+- GitLab 实验线 ci-check 限定 gitlabcicotest 分支，**推 main 到 GitLab 不触发任何流水线**（2026-09-15 已验证：API 查最近流水线仍为实验线 689/690/691）
+
+### 10.2 发布链：tag 推送后全自动
+
+```text
+[人/AI 唯一介入点]  git tag vX.Y.Z && git push <remote> vX.Y.Z   ← 发布决策（ADR-007 人拍板）
+        ↓ tag 事件（平台原生钩子，无 AI 介入）
+   Gitea:  tag → release.yml(构建7资产+镜像+建Release) → published → cd.yml(真实生产 CD)     全自动
+   GitHub: tag → release.yml(云构建4资产+GHCR+建Release) → published → cd-sim.yml(云仿真18000) 全自动
+   GitLab: tag → release(实验资产) → deploy(实验 18080 独立容器)                             全自动
+```
+
+**tag 推送范围 = 发布范围**：三个 remote 相互独立——
+- 推 tag 到 Gitea → 触发**生产 CD**（10.10.30.8 docker 8000）
+- 推 tag 到 GitHub → 触发**云闭环**（CI-TDD + Release + GHCR + CD-SIM）
+- 推 tag 到 GitLab → 触发**实验线**（18080 独立容器，不碰生产）
+- **日常同步只推 main（不推 tag）→ 不触发任何 release/CD**（安全基线）
+
+### 10.3 AI 边界（阶段演进，ADR-047）
+
+| 阶段 | AI 角色 | 平台角色 |
+|---|---|---|
+| 孵化期（当前已过） | 深度介入：编写 workflow/脚本、配置 runner/secret、试运行与排障 | 执行 |
+| 成熟期（目标态） | 只保留：① 发布决策（打 tag + push）② 应急 dispatch 重跑 | **自治**：CI 门禁→Release→CD 全链事件驱动 |
+
+- 门禁逻辑全在 `infra/*.sh`（平台无关），三平台 workflow 只是"壳"——换平台/改门禁不需要 AI 介入流水线本体
+- 应急通道：三平台 CD 均有 `workflow_dispatch`（手动触发），用于 release published 偶发失败时重跑
+
+---
+
 ## 附：本项目三平台 workflow 索引
 
 | 平台 | 文件 | 职责 |

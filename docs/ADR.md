@@ -78,6 +78,7 @@
   - **调测门禁**：本地调测中间阶段保持双环境 TDD 全量回归——Windows 开发环境（testing：`python test_api.py` 361项）
     + WSL 测试环境（production：`infra/verify.sh` 361项），**全部通过才允许 bump + 发布**
   - 版本号是发布产物属性，APP_VERSION 只在代码发布时递增；文档内部版本号独立演进
+  - **发布触发自动化与 AI 边界**：见 **ADR-047**（三平台触发机制=git 事件自动；AI 只保留打 tag/发布决策 + 应急 dispatch，流水线本体平台自治）
 
 ---
 
@@ -677,3 +678,17 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   - **选型原则（跨平台沉淀）**：① **一个权威仓库 + 一个备份仓库**（权威=所有 git 操作与生产 CD 唯一；备份=容灾/分发/独立验证，永不接触生产，ADR-036）；② **认证 token > SSH >> 账号密码**，本地 credential 文件不入库（ADR-042）；③ **CI 门禁逻辑平台无关**（放 infra/*.sh，三平台 workflow 只是"壳"，迁移平台零重写门禁）；④ **环境即代码**（FROM python:3.12-slim 官方镜像 + 离线 wheelhouse，CI/CD 免手工装依赖）；⑤ 每个阶段聚焦主要矛盾、跟随调整形成动态平衡（ADR-027）。
 - **与既有 ADR 不重复**：ADR-036 管本项目权威/备份仓库体系实例（Gitea+GitHub）；ADR-042 管认证方法论；ADR-045 管 GitLab 实验线打通实例；docs/CICD.md 管三平台操作手册（对比表/模板/入门）。**本 ADR 管三平台通用优劣势归纳与未来项目选型方法论**（决策可复用、不绑定本项目），三者互补不重叠。
 - **已落点**：2026-09-15——三平台全链路实证（Gitea CI/Release/CD 生产全绿；GitHub CI-TDD/RELEASE/CD-SIM 云闭环全绿；GitLab ci-check/release/deploy 实验线全绿）；docs/CICD.md（操作手册）+ 本 ADR（选型方法论）同步入库。
+
+### ADR-047：发布触发自动化与 AI 边界——AI 孵化 → 平台自治（方法论 + 本项目强制）
+- **背景**：2026-09-15 对三平台（Gitea/GitHub/GitLab）全部 workflow 触发机制逐条审核，回答"触发是靠 AI 还是靠 git 机制"。结论=**触发全部是 git 服务器原生事件钩子**（push/tag/release published），AI 不在流水线中间介入；唯一需要人/AI 的动作是"打 tag"（发布决策）。成熟期目标是 AI 不再深度介入，由平台机制自治保证。
+- **决策（触发机制审核结论，三平台对齐）**：
+  | 平台 | CI | Release | CD | 触发者 |
+  |---|---|---|---|---|
+  | Gitea | push main / push tag v* | push tag v* / release | release published / workflow_dispatch | git 事件（自动） |
+  | GitHub | push main / push tag v* / pull_request | push tag v* / release / workflow_dispatch | release published / workflow_dispatch | git 事件（自动） |
+  | GitLab | tag ^v / branch gitlabcicotest | tag ^v | tag ^v | git 事件（自动） |
+  - **发布链全自动**：`git tag vX.Y.Z && git push origin vX.Y.Z`（人/AI 唯一介入点）→ tag 事件 → release workflow（构建资产+建 Release）→ release published 事件 → CD workflow（Gitea 真实生产 / GitHub 云仿真 / GitLab 实验 18080）——**链式全自动，无 AI 介入**。
+  - **tag 推送范围 = 发布范围**：三平台 remote 独立，推 tag 到哪个 remote 就触发哪个平台的 release/CD（Gitea=生产 CD、GitHub=云闭环+GHCR、GitLab=实验线 18080）；**日常同步只推 main（不推 tag）就不会触发任何 release/CD**。GitHub 多 pull_request 触发（云协作预留，本地主干开发用不上）；GitLab 实验线 ci-check 限定 gitlabcicotest 分支（推 main 不触发，已验证 2026-09-15）。
+  - **AI 边界（阶段演进）**：孵化期=AI 深度介入（编写 workflow/脚本、配置 runner/secret、试运行与排障）；成熟期=AI 只保留两件事——① 发布决策：执行 `git tag` + push（ADR-007 由人拍板）；② 应急：手动 workflow_dispatch 重跑。**流水线本体（CI 门禁→Release→CD）平台自治，AI 不再深度介入**。
+- **与既有 ADR 不重复**：ADR-007 管发布节奏与门禁（何时发、发不发）；ADR-037 管环境职责分层（CI=门禁/Release=发布/CD=部署）；ADR-046 管平台选型。**本 ADR 管"谁触发流水线 + AI 与平台自治的边界"**，三者互补。
+- **已落点**：2026-09-15——三平台 workflow 触发段逐条审核入库（docs/CICD.md §10）；三平台 main 全同步 57d89bf；已验证推 GitLab main 不触发流水线（rules 过滤）。
