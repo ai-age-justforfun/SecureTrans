@@ -20,7 +20,7 @@ jobs:
   deploy-sim:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build sim image (online deps)
         run: |
@@ -61,3 +61,26 @@ jobs:
           else
             echo "manual dispatch: 仅验证可部署可运行（版本随分支）"
           fi
+
+      - name: Data cleanliness assert (fresh container, no history/test data)
+        run: |
+          # 目的：证明 CD-SIM 容器 = 全新环境（无 TDD 测试数据、无历史数据），达到生产发布级洁净标准。
+          # 说明：云端容器无持久卷（无 -v）、不 COPY tests、无灌数据动作；本地 127.0.0.1:8000 的历史
+          # 数据来自旧本地仿真容器 securetrans-sim-data 命名卷（已退役），非本 workflow 行为。
+          # ① 文件系统层：staging / external / archive 业务目录必须为空
+          BIZ=$(docker exec securetrans-sim sh -c 'find /data/staging /data/external /data/archive -type f 2>/dev/null | wc -l')
+          echo "业务文件数: $BIZ"
+          [ "$BIZ" = "0" ] || { echo "::error::容器非全新（业务文件=$BIZ，存在历史数据）"; exit 1; }
+          echo "文件系统洁净: OK (staging/external/archive 均为空)"
+          # ② 应用层：admin 默认重置密码登录 → 提交记录总数必须为 0
+          rm -f /tmp/st_cookies.txt
+          LOGIN=$(curl -sf -c /tmp/st_cookies.txt -X POST http://127.0.0.1:18000/api/login \
+            -H 'Content-Type: application/json' -d '{"username":"admin","password":"Init@123456"}') \
+            || { echo "::error::admin 默认重置密码登录失败（RESET_PASSWORD=Init@123456 应可登录）"; exit 1; }
+          echo "ADMIN LOGIN: $LOGIN"
+          SUBS=$(curl -sf -b /tmp/st_cookies.txt http://127.0.0.1:18000/api/admin/submissions/all) \
+            || { echo "::error::提交记录 API 获取失败"; exit 1; }
+          CNT=$(printf '%s' "$SUBS" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))')
+          echo "提交记录总数: $CNT"
+          [ "$CNT" = "0" ] || { echo "::error::容器存在历史提交（$CNT 条），非全新环境"; exit 1; }
+          echo "DATA CLEAN: OK（全新容器，无历史/测试数据，与生产发布级洁净标准一致）"
