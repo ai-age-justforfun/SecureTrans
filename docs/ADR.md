@@ -528,6 +528,6 @@
 - **决策（环境即代码）**：CI/CD 的 Python 3.12 由官方基础镜像 `FROM python:3.12-slim` 提供（GitHub .github/docker/Dockerfile.sim 在线装依赖；Gitea infra/docker/Dockerfile 离线 wheelhouse + /venv），**免手工安装 Python**；唯一例外是生产裸机（Rocky 8.10 systemd，deploy.sh + offline-python RPM）。升级 Python/依赖 = 改 FROM 行 + 重建镜像 + 重新生成 wheelhouse（pip download --python-version NNN）+ 同步生产 RPM——环境即代码，升级是改一行 + 重建。
 - **决策（Dockerfile 位置保持 infra/docker/）**：Gitea 对 Dockerfile 位置无默认约定（workflow 目录 .gitea/workflows/ 有约定，Dockerfile 是构建时 -f 指定）；移动 .github/docker 与 infra/docker 无收益且破坏既有引用（ci.yml 构建命令、release.yml -r 路径），保持原样。
 - **与既有 ADR 不重叠**：ADR-016/017/018/019/020/021（CI 分层/容器隔离/环境角色）为运行机制，本 ADR 为职责划分与对齐决策；ADR-036 管仓库权威/备份，本 ADR 管环境职责与 flow 命名对齐；ADR-007 管发布策略。
-- **已落点**：v2.6.7（Gitea：ci.yml 仅 CI + release.yml 独立发布 + cd.yml 部署全链验证；GitHub：CI-TDD → RELEASE → CD-SIM 云仿真验证；见验证记录）。
+- **已落点**：v2.6.7（Gitea 权威：ci.yml 仅 CI #137/#138 success → release.yml 独立发布 Release v2.6.7 4 资产（31.05MB+md5+sha256+offline-deps）→ cd.yml #139 → 生产 v2.6.7/beta/ok；GitHub 备份：CI-TDD #14~#18 success → RELEASE #3/#5 success（云端构建 4 资产）→ CD-SIM #6 success（云端 Docker 仿真 + 版本断言 v2.6.7）。**关键修复（GitHub 保护机制）**：GITHUB_TOKEN 创建的 Release 不触发 release 事件（防递归）→ release.yml 末尾显式 `gh workflow run cd-sim.yml -f version=<V>`（permissions 加 actions: write + GH_TOKEN），CD-SIM 支持 workflow_dispatch inputs.version 做版本断言；双仓 flow 命名对齐：Gitea package→release）。
 ---
 *文档结束 | SecureTrans ADR 全录 | 2026-09-15*

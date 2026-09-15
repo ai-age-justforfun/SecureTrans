@@ -127,6 +127,8 @@ Windows dev 全量 TDD（380/380）→ git push → Gitea CI（act_runner + secu
 - **发布策略**：本文件属于 **docs-only 变更**（ADR-007），不 bump 版本、不打包、不建 Release；
 - **ADR 定位**：本文件是**方案讨论（Proposal）**，尚未决策，**不写入 docs/ADR.md**；落地时若产生关键架构决策，追加为新 ADR（如 ADR-033 GitHub 迁移/双轨）；
 - **文档一致性**：README / AGENTS 的文档索引同步增加本文件条目。
+- **v2.6.7 关键修复（GitHub 保护机制，已合入 ADR-037）**：GITHUB_TOKEN 创建的 Release **不触发 release 事件**（防递归保护）→ 历史 CD-SIM 仅由手动 dispatch 触发；release.yml 末尾显式 `gh workflow run cd-sim.yml --ref main -f version=<V>`（release.yml 需 `permissions: actions: write`，该步骤需 `env: GH_TOKEN: ${{ github.token }}`——缺 GH_TOKEN 会 exit 4），CD-SIM 增加 `workflow_dispatch.inputs.version` 供 dispatch 模式版本断言；实测 RELEASE #5 → CD-SIM #6（version=v2.6.7 断言通过）。
+- **双仓 flow 命名对齐（v2.6.7）**：Gitea 原 package job 独立为 `.gitea/workflows/release.yml`（job 名 release，只发布）；`.gitea/workflows/ci.yml` 只留 ci-check 完整门禁；GitHub `.github/workflows/{ci,release,cd-sim}.yml`——CI=完整门禁、Release=只发布、CD=只部署（Gitea 生产 SSH / GitHub 云端仿真），职责与命名完全对齐（ADR-037）。
 
 ---
 
