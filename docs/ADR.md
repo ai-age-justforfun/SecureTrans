@@ -642,3 +642,20 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
 - **与既有 ADR 不重复**：ADR-034 管有效期口径；ADR-035 管管理员附件审查；**本 ADR 管审计统计的可视化口径正确性**（业务动作分类 + 去重 + 白名单后缀），并承载 CD docker 通道改造的落点。ADR-040 的 act_runner 空闲终止问题在 v2.7.1 CI 期**复发实证**（WSL 空闲后 act_runner 无进程、队列积压 4 个 queued run），按 ADR-040 方式 nohup 直跑重启即恢复；后续纳入 WSL 保活监控（Windows 计划任务 VBS 已在位）。
 - **已落点**：2026-09-15 v2.7.1（rc 阶段，首个 docker 通道 CD）——commit 813851d 推 Gitea main + GitHub 备份仓；WSL 容器化全量 TDD（复刻 CI：ci_test.sh 干净数据）通过（100MB 全链路 0.82s、MD5 四方一致、3 用户并发 0.68s 全过）；Gitea CI run 251（v2.7.1）→ Release → CD docker 通道 → 生产 10.10.30.8 容器 8000 内网冒烟；统计正确性由用户在内网页面人工复核（生产不跑全量 TDD，ADR-017）。
 ---
+### ADR-045：GitLab CICD 实验线打通（gitlabcicotest，v2.7.1 rc，方法论+隔离纪律）
+- **背景**：用户开通自建 GitLab（10.10.30.9，HTTP/SSH 防火墙放通、HTTPS 未启用），要求：将本项目推送新 GitLab 仓库，打通 CI/CD（gitlabcicotest 命名）；必要时新建独立 WSL Ubuntu 24.04 distro 做 CI/CD；**绝对不允许碰当前 Rocky 测试/生产环境**，用新建环境独立测试、独立部署（docker 隔离）。这是继 Gitea（权威）+ GitHub（备份/云端闭环，docs/14）后第三条平台验证线，目标是"gitlab 也发布成功"并沉淀可复用 CI/CD 迁移方法论。
+- **决策**：
+  1. **环境隔离（强制）**：实验线全套独立——`gitlabcicotest` WSL（Ubuntu 24.04，D:\wsl\gitlabcicotest）+ 内部独立 docker daemon + 独立数据目录 `/opt/securetrans-gitlab/{data,nas}` + 独立端口 18080（容器 8000）+ 独立 .env（prod 模板清洗 + 实验覆盖）。**与生产 Rocky 10.10.30.8 /opt/securetrans、/mnt/nas/securetrans 完全零接触**；GitLab 实验 Release 用独立 tag 记录，不影响 Gitea/GitHub 主链 tag（本地 tag 恢复主链指向）。
+  2. **认证**：root 登录创建 PAT（api/read/write，存 `~/.securetrans/gitlab-token.txt`，ADR-042）；git remote URL 用 `oauth2:<token>@host`（不入库）；`GITLAB_PAT` 仓库变量（API 创建）供 release job 调 GitLab Release API。
+  3. **Runner（gitlabcicotest-docker）**：gitlab-runner 19.3.3 官方二进制 + docker executor（`pull_policy = "if-not-present"` 用本地镜像，**docker executor 默认 always 会尝试拉远端 registry 导致失败**）+ volumes 挂 `/var/run/docker.sock` 与 `/opt/securetrans-gitlab`（CD 经 docker.sock 操作宿主 daemon，可信代码模型同 ADR-039）+ tag `gitlabcicotest,docker`；WSL 无 systemd → `nohup gitlab-runner run &`（同 ADR-040 经验）。
+  4. **CI 镜像复用**：`securetrans-gitlab-ci:3.12` 直接复用 `infra/docker/Dockerfile`（python:3.12-slim + wheelhouse 离线依赖，offline-deps 从 Gitea 网关 172.29.112.1:3000 Release 下载解压）——**同一镜像、同一 Python、同一依赖、同一全量 TDD**（与 Gitea CI 容器完全同源，WSL 测试=CI 合一原则延伸）。
+  5. **流水线职责对齐（ADR-037）**：`ci-check`（push gitlabcicotest 或 tag v*：py_compile + static_check + 版本双源 + env 键一致性 + 脚本完整性 + `bash infra/ci_test.sh` 全量 TDD）→ `release`（tag v*：wheelhouse 打包 offline-deps + package.sh + md5/sha256 + GitLab Release 创建 + 主包上传 Generic Package）→ `deploy`（tag v*：Dockerfile.run 构建运行镜像 + 独立 docker 部署 18080 + 容器 IP 只读冒烟）。`GITHUB_WORKSPACE` 变量须设为 `$CI_PROJECT_DIR`（ci_test.sh 的 workspace 探测默认 /workspace）。
+  6. **实验部署冒烟视角**：job 容器内 localhost 是 job 容器自身，**冒烟必须用 `docker inspect` 取容器 IP**；实验 env 覆盖 `INTERNAL_CIDRS=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`（localhost/docker bridge 判内网）供手工全流程验证（生产保持真实网段，ADR-043 冒烟纪律不适用实验环境）。
+- **教训（跨平台 CI/CD 迁移沉淀）**：
+  1. **Windows git autocrlf**：新文件入库被转 CRLF（bash 脚本在 Linux 容器报 `\r` 错误）→ 仓库 `.gitattributes` 加 `*.yml text eol=lf` + 本仓库 `core.autocrlf=false`；**Windows 侧 `git cat-file | python` 管道计数 CRLF 是 PowerShell 管道伪影，权威验证必须在 Linux 侧**（`git cat-file -p origin/xxx:.gitlab-ci.yml | grep -c $'\r'`）。
+  2. **docker executor pull_policy** 默认 always → 本地构建镜像必须 `pull_policy = "if-not-present"`。
+  3. **卷属主**：容器内 uid 1000（Dockerfile.run USER）写宿主卷，`mkdir` 后必须 `chown -R 1000:1000`（否则 PermissionError: /nas/staging）。
+  4. **env 模板行尾注释**：`prod.env.template` 的 `TEMP_FILE_HOURS=24  # 注释` 直接 `--env-file` 会导致 `int() invalid literal`——生成干净 env 须同时去行首与行尾注释（`sed -e 's/^#.*//' -e 's/[[:space:]]*#.*$//'`）。
+  5. **GitLab Release 资产**：GitLab 自动为 tag 生成 4 个 sources（zip/tar.gz/tar.bz2/tar）即"发布成功"；文件资产另走 Generic Package Registry。
+- **与既有 ADR 不重复**：ADR-036 管权威/备份仓库（Gitea+GitHub）；ADR-042 管认证方法论（本 ADR 落点 GitLab PAT）；**本 ADR 管第三条平台线（GitLab）的 CICD 实验打通与环境隔离纪律**，沉淀跨平台 CI/CD 迁移的共同坑（CRLF/pull_policy/卷属主/env 注释/容器冒烟视角）。
+- **已落点**：2026-09-15 v2.7.1 rc——GitLab 项目 `root/securetrans`（id=209，私有，默认分支 gitlabcicotest）；Runner id=19；CI 镜像 488MB；流水线 686/688 全绿（CI 全量 TDD + Release v2.7.1 四资产 + CD 独立部署）；18080 独立部署冒烟 OK（health v2.7.1/prod/ok）+ admin 登录成功；生产 Rocky 未触碰（数据全在 /opt/securetrans-gitlab）。

@@ -236,6 +236,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
 - [GitHub 迁移方案（Active，v2.6.5 首验落地）](docs/14-github-migration.md)
+- [GitLab CICD 实验线（Active，v2.7.1 首验落地）](docs/15-gitlab-cicd.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
 - [部署指南（唯一部署文档）](docs/DEPLOY.md)
 
@@ -294,6 +295,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 042 | AI 访问外部系统认证：token > ssh >> 账号密码 + 本地 credential 文件不入库（方法论） | v2.7.0 |
 | 043 | 部署形态正式切换：Docker 默认、原生退役 + 蓝绿切换顺序纪律（先停原生再起容器） | v2.7.0 |
 | 044 | 审计统计四维口径重构（提交文件数按名去重+审批+下载+管理操作仅admin）+ CD 正式切换 Docker 通道（v2.7.1 首个验证） | v2.7.1 |
+| 045 | GitLab CICD 实验线打通（gitlabcicotest：独立 WSL+docker+数据，跨平台 CI/CD 迁移教训，docs/15） | v2.7.1 |
 
 > **使用方式**：决策冲突时以 docs/ADR.md 对应条目为准；新增决策只追加编号（ADR-0xx），不修改历史条目。
 > 最新落点摘要（ADR-031/032/033/034 核心）：合作方全量编辑+联系人必填；WSL 测试收敛为 dev+CI 两环境；生产只读冒烟=业界标准；
