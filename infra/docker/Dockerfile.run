@@ -1,0 +1,54 @@
+# SecureTrans 生产运行镜像（ADR-038 Docker 一站式交付）
+# 用途：RTM 起发布的第 5 资产（image.tar.gz）——任何 Linux + docker/podman 一条命令部署，
+#       与宿主发行版解耦（容器共享宿主内核 + 镜像内用户态；Debian 12 bookworm glibc 2.36 最低内核 3.2，
+#       Rocky 8.10 内核 4.18 完全兼容，一个镜像处处运行）。
+# 决策（ADR-038-1）：默认 python:3.12.11-slim-bookworm（ABI 兼容归一化、镜像最小；固定 bookworm 防
+#       python:3.12-slim 漂移到 trixie/Debian13 引入 glibc 升级不确定性）；若后续遇兼容问题切换 rockylinux:8。
+# 构建（构建上下文 = 仓库根，需 packages/securetrans-offline-deps.tar.gz 存在——release.yml 先打包后构建镜像）：
+#   docker build -f infra/docker/Dockerfile.run -t securetrans:vX.Y.Z .
+# 依赖全部离线（wheelhouse 来自 offline-deps 发布包，与裸机/CI 同一来源，保证依赖一致性）
+FROM python:3.12.11-slim-bookworm
+
+# 运行时系统依赖：ldap-utils=AD 查询命令行（Debian 包名；RHEL 系对应 openldap-clients，生产必需，
+# ADR 教训：生产缺失此包导致 AD 用户搜索失败）、curl=healthcheck、procps=进程诊断；
+# 不装 ssh/rsync/jq（那是 CI/CD 镜像的职责，运行镜像精简）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl procps ldap-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# 非 root 运行（生产最小权限；容器内以 uid 1000 运行，数据卷属主需为 1000）
+RUN useradd -m -u 1000 -s /bin/bash securetrans
+
+WORKDIR /opt/securetrans/src
+
+# 离线依赖（wheelhouse 来自 securetrans-offline-deps.tar.gz，解压后 /tmp/wheelhouse）
+COPY requirements.txt /tmp/requirements.txt
+COPY packages/securetrans-offline-deps.tar.gz /tmp/offline-deps.tar.gz
+RUN mkdir -p /tmp/wheelhouse \
+    && tar xzf /tmp/offline-deps.tar.gz -C /tmp/ \
+    && python -m venv /venv \
+    && /venv/bin/pip install --no-index --find-links /tmp/wheelhouse -r /tmp/requirements.txt \
+    && /venv/bin/pip install --no-index --find-links /tmp/wheelhouse gunicorn==21.2.0 \
+    && rm -rf /root/.cache/pip /tmp/wheelhouse /tmp/offline-deps.tar.gz
+
+# 应用源码（含前端静态资源）
+COPY src/ /opt/securetrans/src/
+
+# 数据卷挂载点（宿主映射见 compose.yaml / docker-deploy.sh，路径与裸机布局语义一致）：
+#   /data = SECURETRANS_DATA（SQLite + 日志 + 配置备份）
+#   /nas  = NAS_ROOT（staging/external/archive 业务文件）
+RUN mkdir -p /data /nas && chown -R securetrans:securetrans /data /nas /opt/securetrans/src
+
+ENV PATH="/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    HOST=0.0.0.0 \
+    PORT=8000 \
+    ENV_ROLE=production \
+    SECURETRANS_DATA=/data \
+    NAS_ROOT=/nas
+
+USER securetrans
+EXPOSE 8000
+
+# 启动：gunicorn（与裸机 systemd 同参数：-w 2 -t 300；容器内端口 8000，宿主端口由 -p 映射）
+CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8000", "-t", "300", "app:app"]

@@ -1,0 +1,42 @@
+# SecureTrans Docker Compose（ADR-038 蓝绿部署形态）
+# 用法：
+#   docker compose -f infra/docker/compose.yaml up -d      # 有 docker-compose 的环境
+#   podman-compose -f infra/docker/compose.yaml up -d      # 生产 Rocky 8.10（已预装 podman 4.9，可选 podman-compose）
+#   bash infra/docker-deploy.sh <image.tar.gz>             # 推荐：一条命令（load + run + health + smoke，无需 compose）
+#
+# 蓝绿部署原则（ADR-038-3/4）：
+#   - 容器跑 18000 端口，与原生 systemd 8000 完全分离
+#   - 直接映射当前生产全部持久化数据（共享数据，小范围蓝绿，beta 期风险可控）
+#   - 验证通过后切 8000 或换端口正式接管；数据/配置与裸机路线可互换、可回退
+#
+# 配置：
+#   - env_file 指向生产 .env（AD/密码/有效期等全部来自唯一配置源，ADR-016/034）
+#   - 容器内数据路径固定为 /data /nas（由本文件 environment 覆盖），宿主目录映射与裸机一致
+#   - SECURETRANS_ENV_FILE 环境变量可覆盖 .env 位置（默认 /opt/securetrans/.env）
+
+services:
+  securetrans:
+    image: securetrans:${SECURETRANS_IMAGE_TAG:-latest}
+    container_name: securetrans-docker
+    restart: unless-stopped
+    ports:
+      - "${SECURETRANS_DOCKER_PORT:-18000}:8000"
+    env_file:
+      - ${SECURETRANS_ENV_FILE:-/opt/securetrans/.env}
+    environment:
+      # 容器内路径固定（与宿主路径解耦，宿主映射见 volumes）
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      ENV_ROLE: "production"
+      SECURETRANS_DATA: "/data"
+      NAS_ROOT: "/nas"
+    volumes:
+      # 与裸机生产完全一致的数据/文件路径（ADR-038-4 数据卷映射宿主目录）
+      - /opt/securetrans/data:/data
+      - /mnt/nas/securetrans:/nas
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

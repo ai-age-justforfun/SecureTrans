@@ -1,0 +1,24 @@
+# SecureTrans Docker 构建上下文排除（镜像构建 = 仓库根，只打包运行必需）
+.git
+.venv
+venv
+__pycache__
+*.pyc
+data
+nas
+packages/securetrans-2.*.tar.gz
+packages/securetrans-*.md5
+packages/securetrans-*.sha256
+docs
+tests
+infra/*.service
+infra/deploy.sh
+infra/verify.sh
+infra/smoke.sh
+infra/env-refresh.sh
+infra/package.sh
+infra/preflight.sh
+infra/_ssh_check.py
+infra/release.ps1
+node_modules
+*.log

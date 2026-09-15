@@ -529,5 +529,19 @@
 - **决策（Dockerfile 位置保持 infra/docker/）**：Gitea 对 Dockerfile 位置无默认约定（workflow 目录 .gitea/workflows/ 有约定，Dockerfile 是构建时 -f 指定）；移动 .github/docker 与 infra/docker 无收益且破坏既有引用（ci.yml 构建命令、release.yml -r 路径），保持原样。
 - **与既有 ADR 不重叠**：ADR-016/017/018/019/020/021（CI 分层/容器隔离/环境角色）为运行机制，本 ADR 为职责划分与对齐决策；ADR-036 管仓库权威/备份，本 ADR 管环境职责与 flow 命名对齐；ADR-007 管发布策略。
 - **已落点**：v2.6.7（Gitea 权威：ci.yml 仅 CI #137/#138 success → release.yml 独立发布 Release v2.6.7 4 资产（31.05MB+md5+sha256+offline-deps）→ cd.yml #139 → 生产 v2.6.7/beta/ok；GitHub 备份：CI-TDD #14~#18 success → RELEASE #3/#5 success（云端构建 4 资产）→ CD-SIM #6 success（云端 Docker 仿真 + 版本断言 v2.6.7）。**关键修复（GitHub 保护机制）**：GITHUB_TOKEN 创建的 Release 不触发 release 事件（防递归）→ release.yml 末尾显式 `gh workflow run cd-sim.yml -f version=<V>`（permissions 加 actions: write + GH_TOKEN），CD-SIM 支持 workflow_dispatch inputs.version 做版本断言；双仓 flow 命名对齐：Gitea package→release）。
+
+---
+
+### ADR-038：Docker 一站式交付 + 蓝绿部署验证 + Registry 分发策略（v2.7.0 前决策，架构决策）
+- **背景**：进入 RTM 阶段前，用户复盘了从零部署的完整成本（手工装 Python3.12 / 编译 venv / 开防火墙 / 传包 / 改 .env / 适配 prod，一周起步），明确诉求：**发布时同时提供 Docker 方案，一条命令部署运行，功能性能一步到位**。并澄清对 Docker 构建/运行与宿主发行版关系的疑问（容器共享宿主内核 + 镜像内用户态；构建产物与构建机器/目标发行版解耦；容器只依赖宿主内核 ABI）。
+- **决策 1（镜像基础：python:3.12-slim）**：默认基于 `python:3.12-slim`（Debian 12，glibc 2.36，最低内核要求 3.2；生产 Rocky 8.10 内核 4.18 >> 3.2 完全兼容；Ubuntu 24.04 / Rocky 10 / 其他发行版同样兼容——**一个镜像处处运行，无需多发行版变体**）。理由：目标未来可能是不同 Linux 不同版本，只保证 ABI 兼容归一化即可；镜像越小越好。**若后续遇到兼容问题再切换 `rockylinux:8` 同源镜像**（与生产 glibc 2.28 完全同源，代价是镜像更大、维护更重）。
+- **决策 2（Gitea 自动化镜像构建：kaniko 无特权）**：Gitea release job 运行在容器 label（docker://securetrans-ci）内，**不引入 docker.sock / 不改 runner 特权配置、不恢复双 label**；用 **kaniko 无特权构建**（/kaniko/executor --tar-path 导出镜像 tar，无需 docker daemon），产物 gzip 后作为 release 第 5 资产。用户已授权直接安装使用 kaniko。
+- **决策 3（蓝绿部署验证：Docker 18000 端口共享生产数据）**：当前生产 10.10.30.8 保持原生 systemd 部署不动；Docker 容器运行在 **18000 端口**（与原生 8000 完全分离），**直接映射当前全部持久化数据和文件系统路径**（SECURETRANS_DATA / NAS_ROOT 同一宿主目录）。同网段走通后正式切换 Docker 为唯一部署形态，后续版本全部 Docker 部署。**为什么 RTM 而非正式 release 做**：当前仅 2 个 beta 用户，风险小可控；即使数据丢失/不一致，最坏情况道歉 + 重置生产环境与程序（尽量避免）；一旦公司业务全部上线后，共享数据的蓝绿必须更加谨慎。**数据丢失/不一致本身视为一次部署验证机会**。
+- **决策 4（数据卷映射宿主目录）**：数据卷默认映射宿主目录，与当前裸机部署路径完全一致（/opt/securetrans/data、/mnt/nas/securetrans 布局沿用），保证 Docker 与原生两条路线**数据可互换、可回退**。
+- **建议 1（直接用当前部署环境）**：直接在生产环境检查/安装 Docker（此前未确认 docker 及依赖是否 ready）；dnf mirror 防火墙仍开放可在线安装；若系统已内置容器运行时则更简单，做到即插即用。
+- **建议 2（端口分离 + 逐步切换）**：Docker 跑 18000，与原生 8000 分开；同网段验证通过后正式切换，用几次迭代验证"一站式部署运维"目标是否达成。
+- **建议 3（Registry 分发策略：GHCR 为标准，tar.gz 为离线兜底）**：GitHub 侧业界最佳实践 = **推送到 OCI Registry（GHCR，ghcr.io）** 而非仅 Release 附件——`docker pull ghcr.io/<owner>/securetrans:<tag>` 即用；**GHCR 与 GitHub 账号天然打通**（PAT 或 GITHUB_TOKEN 认证，无需单独注册，Actions 内 GITHUB_TOKEN 自带 packages: write 权限，`docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}`）；**public 镜像免费**（存储+带宽），private 有额度（RTM 阶段可 public 或 private 视发布策略）。Release 的 image.tar.gz 保留为**封闭数据中心离线兜底**（docker load），两者并存：在线=registry pull，离线=release 附件。备选 registry 对比：Docker Hub（public 免费但限拉取、需单独账号、与 GitHub 无 OAuth）、Quay.io（Red Hat，public 免费）、阿里云 ACR 个人版（国内加速）——GitHub 生态首选 GHCR。
+- **与既有 ADR 不重叠**：ADR-037 管双仓 flow 职责对齐（本 ADR 在其基础上新增镜像资产与 registry 通道）；ADR-016 管 12-Factor 配置（本 ADR 复用 env 抽象做卷/端口映射）；ADR-008 单网卡方案不变（容器内同样单端口 + 网络面白名单）；ADR-020/021 容器隔离与生产边界（蓝绿共享数据是**有意的受控风险**，beta 期 2 用户，非生产常规）。
+- **已落点**：v2.7.0 前决策记录（实施中：Dockerfile.run + compose.yaml + docker-deploy.sh + Gitea kaniko 构建 + GitHub GHCR push + 生产 18000 蓝绿验证）。
 ---
 *文档结束 | SecureTrans ADR 全录 | 2026-09-15*
