@@ -21,10 +21,11 @@ set -euo pipefail
 IMAGE_TAR="${1:?用法: bash infra/docker-deploy.sh <image.tar.gz> [端口]}"
 DOCKER_PORT="${2:-${SECURETRANS_DOCKER_PORT:-18000}}"
 ENV_FILE="${SECURETRANS_ENV_FILE:-/opt/securetrans/.env}"
+ENV_ROLE_VAL="${SECURETRANS_ENV_ROLE:-production}"   # 生产默认 production；本地/测试可覆盖为 test（全量 TDD 形态）
 DATA_DIR="${SECURETRANS_HOST_DATA:-/opt/securetrans/data}"
 NAS_DIR="${SECURETRANS_HOST_NAS:-/mnt/nas/securetrans}"
 CONTAINER_NAME="securetrans-docker"
-IMAGE_TAG="${SECURETRANS_IMAGE_TAG:-securetrans:latest}"
+IMAGE_TAG="${SECURETRANS_IMAGE_TAG:-}"   # 空=自动从 load 输出解析（镜像包内 tag 为准，避免 latest 与包不匹配）
 
 if command -v podman >/dev/null 2>&1; then
   RUNTIME=podman
@@ -41,19 +42,34 @@ echo "[OK] 运行时: ${RUNTIME} ($(${RUNTIME} --version 2>/dev/null | head -1))
 [ -d "$DATA_DIR" ] || echo "[WARN] 宿主数据目录不存在: $DATA_DIR（首次部署将自动创建）"
 [ -d "$NAS_DIR" ] || echo "[WARN] NAS 目录不存在: $NAS_DIR"
 
-# 数据目录属主归一化到容器 uid 1000（非 root 运行）；仅当目录已存在且非 1000 时提示（不擅自 chown 生产数据）
+# 数据目录属主归一化到容器 uid（ADR-038 蓝绿共享数据）：镜像内用户固定 uid 1000，宿主数据属主可能不同
+# （如生产 securetrans 用户 uid=973）。脚本自动检测宿主数据目录属主并以 --user uid:gid 运行容器，
+# 进程非 root 且可写宿主数据；无需修改生产数据属主、无需重建镜像。
+HOST_UID=""
+HOST_GID=""
 if [ -d "$DATA_DIR" ]; then
-  OWNER=$(stat -c '%u' "$DATA_DIR")
-  [ "$OWNER" = "1000" ] || echo "[WARN] $DATA_DIR 属主 uid=$OWNER（容器内 uid=1000 需可写；无法写时改属主 chown -R 1000:1000）"
+  HOST_UID=$(stat -c '%u' "$DATA_DIR")
+  HOST_GID=$(stat -c '%g' "$DATA_DIR")
+  if [ "$HOST_UID" != "1000" ]; then
+    echo "[OK] 宿主数据属主 uid=$HOST_UID gid=$HOST_GID（容器默认 uid=1000）→ 容器以 --user ${HOST_UID}:${HOST_GID} 运行"
+  else
+    HOST_UID=""; HOST_GID=""   # 与镜像默认一致，不加 --user
+  fi
 fi
 
 # ---------- 1. 加载镜像 ----------
 echo "[1/5] 加载镜像 $IMAGE_TAR ..."
-if ${RUNTIME} image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
+if [ -n "$IMAGE_TAG" ] && ${RUNTIME} image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
   echo "[OK] 镜像 $IMAGE_TAG 已存在，跳过 load"
 else
-  ${RUNTIME} load -i "$IMAGE_TAR"
-  echo "[OK] load 完成"
+  LOADED_OUT=$(${RUNTIME} load -i "$IMAGE_TAR" 2>&1 | tail -1)
+  echo "[OK] load: $LOADED_OUT"
+  # 自动解析包内实际 tag（如 "Loaded image: securetrans:v2.7.0"）；显式 SECURETRANS_IMAGE_TAG 优先
+  if [ -z "$IMAGE_TAG" ]; then
+    IMAGE_TAG=$(echo "$LOADED_OUT" | sed -n 's/.*Loaded image: *//p' | sed 's|docker.io/library/||')
+    [ -n "$IMAGE_TAG" ] || { echo "[FAIL] 无法解析镜像 tag（$LOADED_OUT）；可设置 SECURETRANS_IMAGE_TAG 显式指定"; exit 1; }
+    echo "[OK] 使用镜像 tag: $IMAGE_TAG"
+  fi
 fi
 
 # ---------- 2. 停旧容器（幂等） ----------
@@ -67,10 +83,11 @@ ${RUNTIME} run -d \
   --restart unless-stopped \
   -p "${DOCKER_PORT}:8000" \
   --env-file "$ENV_FILE" \
-  -e HOST=0.0.0.0 -e PORT=8000 -e ENV_ROLE=production \
+  -e HOST=0.0.0.0 -e PORT=8000 -e ENV_ROLE="$ENV_ROLE_VAL" \
   -e SECURETRANS_DATA=/data -e NAS_ROOT=/nas \
   -v "${DATA_DIR}:/data" \
   -v "${NAS_DIR}:/nas" \
+  ${HOST_UID:+--user ${HOST_UID}:${HOST_GID}} \
   "$IMAGE_TAG"
 echo "[OK] 容器已启动"
 
