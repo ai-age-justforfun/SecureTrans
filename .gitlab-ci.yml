@@ -126,8 +126,8 @@ deploy:
       mkdir -p /opt/securetrans-gitlab/data /opt/securetrans-gitlab/nas
       # 卷属主对齐容器内 uid 1000（Dockerfile.run USER securetrans）；root 经卷写宿主
       chown -R 1000:1000 /opt/securetrans-gitlab
-      # 生成干净 .env（去注释去空行；prod 模板 + 实验线覆盖）
-      sed -e 's/^[[:space:]]*#.*//' -e '/^[[:space:]]*$/d' env/prod.env.template > /tmp/gitlab.env
+      # 生成干净 .env（去行首/行尾注释与空行；prod 模板 + 实验线覆盖）
+      sed -e 's/^[[:space:]]*#.*//' -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' env/prod.env.template > /tmp/gitlab.env
       printf 'HOST=0.0.0.0\nPORT=8000\nDEPLOY_MODE=production\nENV_ROLE=prod\nSECURETRANS_DATA=/data\nNAS_ROOT=/nas\n' >> /tmp/gitlab.env
       docker run -d --name securetrans-gitlab \
         -p 18080:8000 \
