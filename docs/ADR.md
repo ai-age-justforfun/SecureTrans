@@ -556,6 +556,13 @@
   6. **RC 启动（v2.7.0，ADR-039 修订为 RC 而非 RTM）**：Gitea release.yml 加镜像构建（kaniko→ADR-039 改容器内 docker CLI + 宿主 sock）；GitHub release.yml 加 GHCR push（GITHUB_TOKEN 认证，permissions packages:write）；**原生裸机发布/release 形态不变**；**Gitea 保留 image.tar.gz，GitHub 不传 img 只用 GHCR**；从 v2.7.0 起进入 RC。
 - **与既有 ADR 不重叠**：ADR-037 管双仓 flow 职责对齐（本 ADR 在其上新增镜像资产与 registry 通道）；ADR-016 管 12-Factor 配置（复用 env 抽象做卷/端口映射）；ADR-008 单网卡方案不变（容器内单端口 + 网络面白名单）；ADR-020/021 容器隔离与生产边界（蓝绿共享数据是**有意的受控风险**，beta 期 2 用户，非生产常规）。
 - **已落点**：v2.7.0 RTM 启动（kaniko 构建 + GHCR push + 第 5 资产 + 生产 18000 蓝绿验证，实施见 Gitea/GitHub workflow 与验证记录）。
+- **实证落点（2026-09-15，v2.7.0 RC 蓝绿全链路验证）**：
+  1. **本地 WSL（rocky10-ci）docker 全量 TDD 403/403 通过**：镜像 `securetrans:v2.7.0` 容器 18000:8000 + 卷映射（`.data/.nas` 宿主目录）+ mock AD，`BASE_URL=http://127.0.0.1:18000` 全量回归 100%；测试数据挂载到宿主目录（test_api.py 需直接 `os.utime` staging 文件）——**TDD 对容器版要求卷映射，不能只跑容器内 API 形态**。
+  2. **生产蓝绿部署成功（10.10.30.8）**：`bash infra/docker-deploy.sh /opt/securetrans-release/securetrans-2.7.0-image.tar.gz 18000` → podman load（tag `securetrans:v2.7.0`）→ 容器 `securetrans-docker` 18000:8000 → health `v2.7.0/rc/ok/production` → 容器内可见共享数据（external=34/staging=21）；原生 systemd 8000 不受影响（蓝绿隔离）。
+  3. **实测发现 1——env 内联注释 vs docker env-file**：`env/test.env`（及 dev 模板）含 `KEY=value  # 注释`，docker `--env-file` 不支持内联注释（bash source 支持），导致 `int(os.environ[...])` 解析失败。**生产 .env 已验证干净（0 内联，37 行首注释）不受影响**；dev/test 模板用于 docker 时需清洗（`sed -E 's/[[:space:]]+#.*$//'`）。
+  4. **实测发现 2——容器 uid 与宿主数据属主不匹配**：镜像内用户固定 uid 1000（Dockerfile useradd -u 1000），生产 `securetrans` 用户 uid=973、NAS 数据属主 973 → 容器 uid1000 无法写。**决策：docker-deploy.sh 自动检测宿主数据目录属主并以 `--user uid:gid` 运行容器**（非 root、不 chown 生产数据、不重建镜像）；实测 `--user 973:972` 全量 TDD 与写权限通过。
+  5. **实测发现 3——镜像 tag 与默认值不匹配**：image.tar.gz 包内 tag 为 `securetrans:v2.7.0`（非 `securetrans:latest`），脚本默认 `securetrans:latest` 导致 run 失败。**决策：docker-deploy.sh 从 load 输出自动解析实际 tag**（`SECURETRANS_IMAGE_TAG` 可显式覆盖）。
+  6. **并发写提醒（ADR-038-3 既定策略）**：18000 容器与 8000 原生共享 SQLite DB + NAS——验收期低并发可接受（beta 期 2 用户），**验收通过后必须停其一**（切 Docker 正式形态则停 systemd 原生，或回退则停容器），避免 SQLite 并发写锁。
 ---
 ### ADR-039：kaniko 废弃 → 容器内 docker CLI + 宿主 docker.sock / WSL 环境重建 / v2.7.0 定为 RC（v2.7.0，架构决策修订）
 - **背景（问题与实证）**：ADR-038 决策 2 选定 kaniko 无特权构建，实施时实证失败：
