@@ -124,6 +124,8 @@ deploy:
       V=$(grep -m1 '^APP_VERSION = "v' src/app.py | sed -E 's/.*"v([^"]+)".*/\1/')
       docker rm -f securetrans-gitlab 2>/dev/null || true
       mkdir -p /opt/securetrans-gitlab/data /opt/securetrans-gitlab/nas
+      # 卷属主对齐容器内 uid 1000（Dockerfile.run USER securetrans）；root 经卷写宿主
+      chown -R 1000:1000 /opt/securetrans-gitlab
       # 生成干净 .env（去注释去空行；prod 模板 + 实验线覆盖）
       sed -e 's/^[[:space:]]*#.*//' -e '/^[[:space:]]*$/d' env/prod.env.template > /tmp/gitlab.env
       printf 'HOST=0.0.0.0\nPORT=8000\nDEPLOY_MODE=production\nENV_ROLE=prod\nSECURETRANS_DATA=/data\nNAS_ROOT=/nas\n' >> /tmp/gitlab.env
@@ -135,12 +137,15 @@ deploy:
         securetrans-gitlab:v${V}
       sleep 4
       echo "容器已启动"
-    # 3. 只读冒烟（health + 登录页 + 版本）
+    # 3. 只读冒烟（容器 IP——job 容器内 localhost 非宿主；容器发布在宿主 18080）
     - |
       set -euo pipefail
-      H=$(curl -sf http://localhost:18080/api/health)
+      sleep 3
+      CIP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' securetrans-gitlab)
+      echo "容器 IP: ${CIP}"
+      H=$(curl -sf --retry 6 --retry-delay 2 http://${CIP}:8000/api/health)
       echo "health: $H"
       echo "$H" | grep -q '"status":"ok"' || { echo "health 非 ok FAIL"; exit 1; }
       echo "$H" | grep -q "v${V}" || { echo "版本不匹配 FAIL"; exit 1; }
-      curl -sf -o /dev/null -w "login_page: %{http_code}\n" http://localhost:18080/login
-      echo "CD 独立部署冒烟 PASS（gitlabcicotest:18080）"
+      curl -sf -o /dev/null -w "login_page: %{http_code}\n" http://${CIP}:8000/login
+      echo "CD 独立部署冒烟 PASS（容器 ${CIP}:8000；宿主 18080 对外）"
