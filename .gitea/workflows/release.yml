@@ -1,0 +1,109 @@
+name: Release
+
+# SecureTrans 发布构建（ADR-020 单容器归一化 · ADR-037 与 GitHub release.yml 职责对齐）
+# 职责（与 GitHub .github/workflows/release.yml 完全一致）：本 workflow 只做发布——
+#   生成 offline-deps → package.sh 打包 → 产物完整性校验 → Gitea Release 创建+上传。
+#   完整质量门禁（preflight + 静态检查 + 全量 TDD + mock 数据）由 ci.yml（CI-TDD）独立承担，
+#   tag push 时 ci.yml 与 release.yml 并行运行：CI 负责"验证"，Release 负责"发布"，CD 负责"部署"。
+# 触发：push tag v*（Gitea），在 WSL rocky10-st 的 act_runner 执行
+# 链路：CI（ci.yml，push/tag 常驻完整门禁）→ Release（本文件，tag）→ CD（cd.yml，release published 部署生产）
+# 运行模式（ADR-019/020，与 Docker Desktop/Gitea 完全独立）：
+#   - securetrans-ci = 唯一容器 label（docker://securetrans-ci:3.12，WSL 内独立 docker daemon）
+#     → 每次全新容器 + 新配置 + 新数据，零宿主污染
+# 安全：RELEASETOKEN 仅本 job 注入（repo secret 最小作用域）；生产部署凭据（CD_SSH_KEY）仅在 cd.yml（ADR-024）
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+jobs:
+  # ============================================================
+  # release：打包 → 校验 → Gitea Release 上传（不做验证，验证归 CI）
+  # ============================================================
+  release:
+    runs-on: securetrans-ci
+    steps:
+      - name: Clone 代码（经 WSL 网关访问 Gitea）
+        run: |
+          set -euo pipefail
+          CI_GW="${CI_GATEWAY:-172.17.0.1}"
+          CI_GITEA_URL="${CI_GITEA_URL:-http://${CI_GW}:3000}"
+          echo "CI_GITEA_URL=${CI_GITEA_URL}" >> "$GITHUB_ENV"
+          WS="${GITHUB_WORKSPACE:-/workspace}"
+          rm -rf "$WS"/* "$WS"/.[!.]* 2>/dev/null || true
+          # --depth 30：Release body 需生成近版变更摘要（git log changelog），浅克隆 1 层不足
+          git clone --depth 30 "${CI_GITEA_URL}/openwrtadmin/SecureTrans.git" "$WS"
+          cd "$WS"
+
+      - name: 生成 offline-deps（镜像 wheelhouse 自包含；旧镜像 fallback Gitea Release）
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE:-/workspace}"
+          mkdir -p packages
+          if [ -d /wheelhouse ] && ls /wheelhouse/*.whl >/dev/null 2>&1; then
+            tar -czf packages/securetrans-offline-deps.tar.gz -C / wheelhouse
+            echo "offline-deps 来自镜像 wheelhouse（自包含构建工具链）"
+          else
+            V=$(grep -m1 '^APP_VERSION = "v' src/app.py | sed -E 's/.*"v([^"]+)".*/\1/')
+            curl -sL -o packages/securetrans-offline-deps.tar.gz \
+              "${CI_GITEA_URL}/openwrtadmin/SecureTrans/releases/download/v${V}/securetrans-offline-deps.tar.gz" || true
+            [ -s packages/securetrans-offline-deps.tar.gz ] || { echo "offline-deps 不可用（镜像无 wheelhouse 且 Release 无资产）"; exit 1; }
+            echo "offline-deps 来自 Gitea Release v${V}"
+          fi
+          ls -la packages/securetrans-offline-deps.tar.gz
+
+      - name: Build release package (package.sh)
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE:-/workspace}"
+          bash infra/package.sh
+          ls -la packages/securetrans-*.tar.gz*
+
+      - name: 产物完整性校验（md5 / sha256 / 解压结构）
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE:-/workspace}/packages"
+          PKG=$(ls securetrans-*.tar.gz | head -1)
+          V=$(basename "$PKG" | sed 's/securetrans-//;s/.tar.gz//')
+          md5sum -c "securetrans-${V}.tar.gz.md5"
+          sha256sum -c "securetrans-${V}.tar.gz.sha256"
+          echo "--- 发布包结构（前 12 项）---"
+          tar -tzf "$PKG" | head -12 || true  # 修复：head 提前退出致 tar SIGPIPE(141)，pipefail 下误报失败
+          [ -f "securetrans-${V}.tar.gz" ] || { echo "发布包缺失"; exit 1; }
+          echo "package 完整性: PASS (v${V})"
+
+      - name: 上传 Gitea Release（RELEASETOKEN secret；无 token 跳过上传，构建校验照常）
+        env:
+          RELEASETOKEN: ${{ secrets.RELEASETOKEN }}
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE:-/workspace}"
+          if [ -z "${RELEASETOKEN:-}" ]; then
+            echo "无 RELEASETOKEN，跳过 Release 上传（package 构建与校验已通过；发布可走 infra/release.ps1）"
+            exit 0
+          fi
+          PKG=$(ls packages/securetrans-*.tar.gz | head -1)
+          V=$(basename "$PKG" | sed 's/securetrans-//;s/.tar.gz//')
+          API="${CI_GITEA_URL}/api/v1/repos/openwrtadmin/SecureTrans"
+          # v2.6.1（ADR-030）：Release body 自动生成近版变更摘要（conventional commits 前 15 条），
+          # 保留"新功能/性能需求/Bug修复"可审计说明，不再只写一句"自动发布"
+          CHANGES=$(git log --oneline -15 --no-merges 2>/dev/null | sed 's/"/\\"/g' | awk '{printf "\\n- %s", $0}' || true)
+          RID=$(curl -s -H "Authorization: token ${RELEASETOKEN}" "${API}/releases?limit=50" \
+            | python3 -c "import sys,json; rs=json.load(sys.stdin); print(next((str(r['id']) for r in rs if r.get('tag_name')=='v${V}'), ''))" 2>/dev/null || true)
+          if [ -z "$RID" ]; then
+            RID=$(curl -s -X POST -H "Authorization: token ${RELEASETOKEN}" -H "Content-Type: application/json" \
+              -d "{\"tag_name\":\"v${V}\",\"name\":\"v${V}\",\"body\":\"SecureTrans v${V}（CI 容器构建自动发布）本版变更：${CHANGES}\",\"draft\":false,\"prerelease\":false}" \
+              "${API}/releases" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+          fi
+          [ -n "$RID" ] || { echo "Release 创建失败"; exit 1; }
+          EXISTING=$(curl -s -H "Authorization: token ${RELEASETOKEN}" "${API}/releases/${RID}/assets" \
+            | python3 -c "import sys,json; print('\n'.join(a['name'] for a in json.load(sys.stdin)))" 2>/dev/null || true)
+          for f in "${PKG}" "packages/securetrans-${V}.tar.gz.md5" "packages/securetrans-${V}.tar.gz.sha256" packages/securetrans-offline-deps.tar.gz; do
+            FNAME=$(basename "$f")
+            if echo "${EXISTING}" | grep -qx "${FNAME}"; then
+              echo "资产已存在，跳过: ${FNAME}"
+              continue
+            fi
+            curl -s -X POST -H "Authorization: token ${RELEASETOKEN}" -F "attachment=@${f}" "${API}/releases/${RID}/assets" >/dev/null || true
+          done
+          echo "Release v${V} 资产上传完成（${PKG} + md5 + sha256 + offline-deps，同名已存在自动跳过）"

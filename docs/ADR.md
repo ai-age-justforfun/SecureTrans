@@ -505,5 +505,29 @@
   6. **切换权威的触发条件**（与主矛盾一致）：公开开源 / 团队主要协作点移到 GitHub / 本地数据中心不可用——任一发生即评估切换；切换是配置与镜像方向的变更，不涉及代码改造。
 - **与既有 ADR 不重叠**：docs/14 为执行手册（具体命令、凭据、首验记录），本 ADR 为架构原则（权威/备份/主矛盾/动态平衡）；ADR-021 管生产 CD 安全边界；ADR-032 管文档体系单源化（本决策本身遵循"ADR 唯一权威 + README/AGENTS 引用"）。
 - **已落点**：v2.6.6（Gitea 权威：CI #124/#125 success → Release v2.6.6 4 资产 → CD #126 → 生产 v2.6.6/beta/ok；GitHub 备份：CI-TDD #3/#4/#5 success + CD-SIM #2 success → 仿真 v2.6.6/sim/ok，生产零影响；双向推送脚本化）。
+
+---
+
+### ADR-037：环境职责分层 + 双仓 CI/CD/Release 职责对齐（v2.6.7，架构决策）
+- **背景**：用户澄清并确认三件事：① 本地 WSL 测试环境与 CI 环境是否应合一（都做全量 TDD + mock 数据）；② 独立的发布环境 / 独立 CD 环境是否有必要、与 CI 隔离到什么程度；③ GitHub 与 Gitea 是否"一个 docker 跑 3 个 flow"、权限如何隔离。并据此要求：本地 Gitea 的 package job 改名 release、独立出 CI（对齐 GitHub 命名与职责），全程跑通验证后发布新版本作为验证。
+- **决策（环境职责分层，不加第四类物理环境）**：
+  1. **测试层合一**：本地 WSL 测试环境 ≈ CI 环境（都做全量 TDD + mock），合一合理——WSL 本机不再单独全量跑（ADR-026），CI 每次全新容器承接全量回归；两者不再拆开。
+  2. **发布层"逻辑/权限隔离"而非"物理独立"**：发布是动作不是环境——打包产物（md5/sha256、版本绑定）与测试共享同一 runner 池，业界（GitHub Actions / GitLab CI / semantic-release）均为"同一池子、独立 job、最小权限"；小团队 + 副业项目不新增发布专用物理环境（避免过度工程）。
+  3. **CD 层目标环境物理隔离**：两个 CD 目标都必须是独立环境——① 生产 10.10.30.8（真实部署，只读冒烟 ADR-017/024）；② GitHub CD-SIM（云端一次性仿真，备份仓永不触生产 ADR-021/036）。
+- **决策（CI / Release / CD 职责分离，与 GitHub 完全一致）**：
+  1. **CI = 完整质量门禁**：preflight + 静态检查 + 全量 TDD + mock 数据（ci.yml / CI-TDD）。
+  2. **Release = 只做发布**：生成 offline-deps → package.sh 打包 → 产物完整性校验 → 创建/上传 Release（不含任何验证步骤，验证归 CI）。
+  3. **CD = 只做部署**：Gitea cd.yml（release published → SSH 生产部署）；GitHub cd-sim.yml（release published → 云端 Docker 仿真）。
+  4. **Gitea 拆分落地**：`.gitea/workflows/ci.yml` 只留 ci-check（完整门禁）；原 package job 独立为 `.gitea/workflows/release.yml`（job 名 release，触发 push tag v*，仅打包+校验+上传）；`.gitea/workflows/cd.yml` 不变（release published 触发）。触发链：CI（push/tag 并行完整门禁）→ Release（tag）→ CD（release published）。
+- **决策（权限隔离机制，双仓一致）**：
+  1. **Secret 最小作用域**：RELEASETOKEN 仅注入 release job；CD_SSH_KEY 仅注入 cd job；ci job 无任何写凭据。
+  2. **令牌最小权限**：GitHub release.yml 显式 `permissions: contents: write`（仅该 workflow 生效）；Gitea 用 repo secret + API token 作用域。
+  3. **每 job 全新执行环境**：GitHub 每 job 一个临时 ubuntu VM（自带 docker，job 结束销毁）；Gitea 每 job 从 securetrans-ci:3.12 镜像拉起全新容器实例——前 job 的环境变量/文件/凭据零残留。
+  4. **事件触发链权限上下文**：push（CI，只读）→ tag（Release，写 Release）→ release published（CD，生产凭据）——不同事件不同权限上下文，天然逐级收敛。
+  5. **澄清"一个 docker 跑 3 个 flow"不成立**：双仓均为"每 job 独立执行环境"，非常驻容器依次跑 3 个 workflow；容器/VM 生命周期即隔离边界。
+- **决策（环境即代码）**：CI/CD 的 Python 3.12 由官方基础镜像 `FROM python:3.12-slim` 提供（GitHub .github/docker/Dockerfile.sim 在线装依赖；Gitea infra/docker/Dockerfile 离线 wheelhouse + /venv），**免手工安装 Python**；唯一例外是生产裸机（Rocky 8.10 systemd，deploy.sh + offline-python RPM）。升级 Python/依赖 = 改 FROM 行 + 重建镜像 + 重新生成 wheelhouse（pip download --python-version NNN）+ 同步生产 RPM——环境即代码，升级是改一行 + 重建。
+- **决策（Dockerfile 位置保持 infra/docker/）**：Gitea 对 Dockerfile 位置无默认约定（workflow 目录 .gitea/workflows/ 有约定，Dockerfile 是构建时 -f 指定）；移动 .github/docker 与 infra/docker 无收益且破坏既有引用（ci.yml 构建命令、release.yml -r 路径），保持原样。
+- **与既有 ADR 不重叠**：ADR-016/017/018/019/020/021（CI 分层/容器隔离/环境角色）为运行机制，本 ADR 为职责划分与对齐决策；ADR-036 管仓库权威/备份，本 ADR 管环境职责与 flow 命名对齐；ADR-007 管发布策略。
+- **已落点**：v2.6.7（Gitea：ci.yml 仅 CI + release.yml 独立发布 + cd.yml 部署全链验证；GitHub：CI-TDD → RELEASE → CD-SIM 云仿真验证；见验证记录）。
 ---
 *文档结束 | SecureTrans ADR 全录 | 2026-09-15*
