@@ -15,6 +15,11 @@ on:
   release:
     types: [ published ]
   workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 v2.6.7，用于 dispatch 时版本断言；留空仅验证可部署可运行）'
+        required: false
+        default: ''
 
 jobs:
   deploy-sim:
@@ -51,15 +56,21 @@ jobs:
             exit 1
           fi
           echo "SIM HEALTH: $H"
-          # release 事件：断言 容器内版本 == release tag（workflow_dispatch 仅验证可运行）
+          # 版本断言：release 事件用 release tag；workflow_dispatch 用 inputs.version（若提供）
+          VER_EXPECTED=""
           if [ "$GITHUB_EVENT_NAME" = "release" ]; then
             VER_EXPECTED="${GITHUB_REF_NAME#v}"
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            VER_EXPECTED="${{ github.event.inputs.version }}"
+            VER_EXPECTED="${VER_EXPECTED#v}"
+          fi
+          if [ -n "$VER_EXPECTED" ]; then
             VER_ACTUAL=$(printf '%s' "$H" | python3 -c 'import sys,json; print(json.load(sys.stdin)["version"].lstrip("v"))')
             echo "VERSION ASSERT: expected=$VER_EXPECTED actual=$VER_ACTUAL"
             [ "$VER_EXPECTED" = "$VER_ACTUAL" ] || { echo "::error::版本断言失败"; docker logs --tail 30 securetrans-sim; exit 1; }
             echo "VERSION ASSERT: OK"
           else
-            echo "manual dispatch: 仅验证可部署可运行（版本随分支）"
+            echo "manual dispatch 未带版本：仅验证可部署可运行"
           fi
 
       - name: Data cleanliness assert (fresh container, no history/test data)
