@@ -2328,7 +2328,7 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     # 1) health 返回 stage + resetPassword（前端登录页/品牌副标题同源显示）
     code, data = request('GET', '/api/health')
     test("版本: health 返回 stage 与 resetPassword（与凭据同源）",
-         code == 200 and isinstance(data, dict) and data.get('stage') in ('alpha', 'beta', 'rtm', 'release')
+         code == 200 and isinstance(data, dict) and data.get('stage') in ('alpha', 'beta', 'rc', 'rtm', 'release')
          and data.get('resetPassword') == RESET_PWD, f"code={code}, data={data}")
     # 2) 登录页提示不再硬编码 Admin@123（login.html 动态取 health）
     _login_html = ''

@@ -524,7 +524,7 @@ function switchLang() {
 }
 function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
-    // 品牌副标题 = 文案 + 版本号（版本号唯一来源 APP_VERSION）+ 发布阶段（APP_STAGE: alpha/beta/rtm/release）
+    // 品牌副标题 = 文案 + 版本号（版本号唯一来源 APP_VERSION）+ 发布阶段（APP_STAGE: alpha/beta/rc/rtm/release）
     el.textContent = el.dataset.i18n === 'brand.subtitle'
       ? t(el.dataset.i18n) + ' ' + APP_VERSION + (window._APP_STAGE ? '-' + window._APP_STAGE : '')
       : t(el.dataset.i18n);
