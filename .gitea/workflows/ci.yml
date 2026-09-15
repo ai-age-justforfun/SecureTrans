@@ -48,6 +48,8 @@ jobs:
             git clone --depth 1 "${CI_GITEA_URL}/openwrtadmin/SecureTrans.git" "$WS"
             cd "$WS"
           fi
+          # ADR-035 preflight：环境前置检查（依赖/版本双源/端口/残留清理），FAIL 即阻断
+          PORT=18000 CLEAN_DIR=/data bash infra/preflight.sh
           python -m py_compile src/app.py tests/test_api.py infra/static_check.py
           python infra/static_check.py src/app.py tests/test_api.py
           echo "静态检查: PASS"

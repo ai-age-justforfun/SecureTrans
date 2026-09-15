@@ -58,7 +58,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.6.5"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.6.6"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -1893,6 +1893,50 @@ def api_download_file(sub_id, filename):
                   f"下载文件: {filename}" + (f"（MD5: {md5}）" if md5 else ""), get_client_ip())
 
     resp = send_file(str(file_path), as_attachment=True, download_name=filename)
+    if md5:
+        resp.headers["X-File-MD5"] = md5
+    return resp
+
+# ============================================================
+# 路由：管理员附件审查下载（仅内网）
+# ============================================================
+@app.route("/api/admin/submissions/<sub_id>/download/<path:filename>")
+@login_required
+@role_required("admin")
+def api_admin_download_file(sub_id, filename):
+    """管理员审查附件下载（v2.6.6，ADR-035）。
+    用途：'所有提交记录'详情中对任意状态提交单的附件做查看/下载审查
+          （pending→staging / approved·downloaded→external / rejected·archived→archive）。
+    安全：外网面白名单不含 /api/admin/ → before_request 已 403（外网绝不允许，ADR-008 网络面隔离）；
+          仅 admin 角色可调（role_required）；文件名取 basename 防路径穿越。
+    留痕：audit_log 记 admin_download（管理员审查下载），下载记录不入 download_records（非接收方下载）。"""
+    db = get_db()
+    sub = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
+    if not sub:
+        return jsonify({"error": "提交单不存在"}), 404
+    if ".." in filename or "/" in filename.replace("\\", "/"):
+        return jsonify({"error": "非法文件名"}), 400
+    fname = os.path.basename(filename)
+    if not fname or fname in (".", ".."):
+        return jsonify({"error": "非法文件名"}), 400
+    # 定位文件：优先 current_path（已 resolve），fallback staging/external/archive
+    candidates = []
+    cp = sub["current_path"]
+    if cp:
+        candidates.append(Path(cp) / "files" / fname)
+    for d in (STAGING_DIR, EXTERNAL_DIR, ARCHIVE_DIR):
+        candidates.append(d / sub_id / "files" / fname)
+    file_path = next((p for p in candidates if p.exists()), None)
+    if not file_path:
+        return jsonify({"error": "文件不存在"}), 404
+    md5 = None
+    frow = db.execute("SELECT md5 FROM submission_files WHERE submission_id=? AND name=?", (sub_id, fname)).fetchone()
+    if frow:
+        md5 = frow["md5"] or None
+    add_audit_log(current_user.username, "admin_download", sub_id,
+                  f"管理员审查下载附件: {fname}" + (f"（MD5: {md5}）" if md5 else ""), get_client_ip())
+    db.commit()
+    resp = send_file(str(file_path), as_attachment=True, download_name=fname)
     if md5:
         resp.headers["X-File-MD5"] = md5
     return resp

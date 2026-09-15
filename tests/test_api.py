@@ -898,6 +898,91 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     test("内部一级审批详情不含二级记录", approval_levels == [(1, 'approve')],
          f"approvals={approval_levels}")
 
+    # 22e. v2.6.6 管理员附件审查下载（ADR-035）：仅内网 / 仅admin / 任意状态可审 / 审计留痕
+    print("\n--- 10h2. 管理员附件审查下载（v2.6.6 ADR-035） ---")
+    _set_group("10h2. 管理员附件审查下载（v2.6.6 ADR-035）")
+    import hashlib as _hashlib
+    b_adm = os.path.join(test_dir, "admin_review.bin")
+    with open(b_adm, 'wb') as f:
+        f.write(b"\x00\x01\x02\x03" + b"\x00" * 500)
+    _adm_local_md5 = _hashlib.md5(open(b_adm, 'rb').read()).hexdigest()
+    code, data = upload_file(b_adm, "admin_review.bin")
+    adm_temp_id = data.get('tempId')
+    code, data = request('POST', '/api/submissions', json_data={
+        "tempIds": [adm_temp_id],
+        "receiverName": "审查对象",
+        "receiverEmail": "review@test.local",
+        "receiverType": "internal",
+        "securityLevel": "internal",
+        "reason": "v2.6.6管理员附件审查下载测试",
+        "expiryDays": 7
+    })
+    adm_sub_id = data.get('id')
+    test("创建提交单(pending, 文件在staging)", code == 200 and data.get('status') == 'pending',
+         f"code={code}, status={data.get('status')}")
+
+    # admin（内网）下载他人 pending 附件：200 + X-File-MD5 与本地一致
+    try:
+        _adm_dl_req = urllib.request.Request(BASE_URL + f'/api/admin/submissions/{adm_sub_id}/download/admin_review.bin')
+        _adm_dl_resp = opener.open(_adm_dl_req)
+        _adm_dl_body = _adm_dl_resp.read()
+        _adm_dl_md5 = _adm_dl_resp.headers.get('X-File-MD5')
+        _adm_dl_code = _adm_dl_resp.status
+    except Exception as _e:
+        _adm_dl_code, _adm_dl_md5 = 0, None
+    test("admin可下载他人pending附件(200)", _adm_dl_code == 200, f"code={_adm_dl_code}")
+    test("admin下载附件MD5与本地一致", _adm_dl_md5 == _adm_local_md5,
+         f"header={str(_adm_dl_md5)[:16] if _adm_dl_md5 else None}... local={_adm_local_md5[:16]}...")
+
+    # 外网（X-Network-Zone: external）调用管理员审查下载 → 403（外网绝不允许）
+    code, data = request('GET', f'/api/admin/submissions/{adm_sub_id}/download/admin_review.bin',
+                         headers={"X-Network-Zone": "external"})
+    test("外网调用管理员审查下载被拒(403)", code == 403, f"code={code}, err={str(data)[:40] if isinstance(data, dict) else data}")
+
+    # 普通用户调用管理员审查下载 → 403
+    request('POST', '/api/auth/login', json_data={"username": "plainuser1", "password": "Test@123456"})
+    code, data = request('GET', f'/api/admin/submissions/{adm_sub_id}/download/admin_review.bin')
+    test("普通用户调管理员审查下载被拒(403)", code == 403, f"code={code}")
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+
+    # 任意状态可审：驳回 → archived（current_path=archive）→ admin 仍可下载
+    code, data = request('POST', f'/api/submissions/{adm_sub_id}/approve', json_data={
+        "action": "reject", "comment": "审查下载测试-驳回"
+    })
+    test("驳回提交单(archived)", code == 200 and data.get('status') == 'rejected',
+         f"code={code}, status={data.get('status')}")
+    try:
+        _adm_dl_req2 = urllib.request.Request(BASE_URL + f'/api/admin/submissions/{adm_sub_id}/download/admin_review.bin')
+        _adm_dl_resp2 = opener.open(_adm_dl_req2)
+        _adm_dl2 = _adm_dl_resp2.read()
+        _adm_dl2_md5 = _adm_dl_resp2.headers.get('X-File-MD5')
+        _adm_dl2_code = _adm_dl_resp2.status
+    except Exception as _e:
+        _adm_dl2_code, _adm_dl2_md5 = 0, None
+    test("admin可下载已归档附件(archive, 200+MD5一致)", _adm_dl2_code == 200 and _adm_dl2_md5 == _adm_local_md5,
+         f"code={_adm_dl2_code}, md5={str(_adm_dl2_md5)[:16] if _adm_dl2_md5 else None}")
+
+    # 审计留痕：admin_download（管理员审查下载动作，含文件名）
+    code, data = request('GET', '/api/audit-logs')
+    _adm_audit = [a for a in (data if isinstance(data, list) else [])
+                  if a.get('action') == 'admin_download' and a.get('target') == adm_sub_id]
+    test("审计留痕: admin_download 含文件名", len(_adm_audit) >= 2 and 'admin_review.bin' in str(_adm_audit[0].get('detail', '')),
+         f"count={len(_adm_audit)}")
+
+    # 路径穿越防护：文件名含 ../ 拒绝（Flask path 转换器归一化后 404 或后端显式 400，均不泄漏）
+    code, data = request('GET', f'/api/admin/submissions/{adm_sub_id}/download/..%2Fapp.py')
+    test("路径穿越文件名被拒(400/404)", code in (400, 404), f"code={code}")
+
+    # 前端：所有提交记录详情含管理员下载按钮 + adminDownloadFile 函数
+    _html_adm = open(os.path.join(os.path.dirname(__file__), '..', 'src', 'static', 'index.html'), encoding='utf-8').read()
+    test("前端: 详情含管理员下载按钮+函数+i18n",
+         'adminDownloadFile(' in _html_adm and 'function adminDownloadFile' in _html_adm and 'common.download' in _html_adm,
+         "adminDownloadFile 按钮/函数存在")
+
+    # 清理测试数据（删除需确认码 DEL）
+    code, data = request('DELETE', f'/api/admin/submissions/{adm_sub_id}', json_data={"confirm": "DEL"})
+    test("清理管理员审查测试提交单", code == 200, f"code={code}")
+
     # 22d. v2.5.1 前端提交页取消/清空按钮（文件选错可重置）
     print("\n--- 10g4. 前端提交取消/清空按钮（v2.5.1） ---")
     _set_group("10g4. 前端提交取消/清空按钮（v2.5.1）")

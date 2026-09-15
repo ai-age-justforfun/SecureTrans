@@ -207,7 +207,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.6.5';
+const APP_VERSION = 'v2.6.6';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -1116,6 +1116,30 @@ async function renderMySubmissions() {
 }
 
 // 所有提交文件记录（仅 admin）：只读历史视图，无删除按钮
+function isAdmin() {
+  return !!(window._cu && window._cu.role === 'admin');
+}
+
+// 管理员附件审查下载（仅内网：/api/admin/ 不在外网白名单，外网面 403）
+async function adminDownloadFile(subId, encName) {
+  try {
+    const name = decodeURIComponent(encName);
+    const resp = await fetch(`/api/admin/submissions/${subId}/download/${encName}`, { credentials: 'same-origin' });
+    if (resp.status === 401) { window.location.href = '/login'; return; }
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      const msg = currentLang === 'zh' ? (data.error || `HTTP ${resp.status}`) : (data.error_en || data.error || `HTTP ${resp.status}`);
+      throw new Error(msg);
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) { toast(t('toast.loadFail', e.message), 'error'); }
+}
+
 async function renderAllSubmissions() {
   try {
     const list = await api('/api/admin/submissions/all');
@@ -1175,7 +1199,7 @@ async function showSubmissionDetail(id) {
       <div class="detail-section">
         <h4><span data-i18n="detail.files">文件清单</span> (${t('detail.fileCount', sub.files.length)})</h4>
         <table>
-          <thead><tr><th data-i18n="file.name">文件名</th><th data-i18n="list.size">大小</th><th data-i18n="config.ruleType">类型</th><th>MD5</th><th data-i18n="config.pattern">特征码</th></tr></thead>
+          <thead><tr><th data-i18n="file.name">文件名</th><th data-i18n="list.size">大小</th><th data-i18n="config.ruleType">类型</th><th>MD5</th><th data-i18n="config.pattern">特征码</th>${isAdmin() ? '<th data-i18n="common.actions">操作</th>' : ''}</tr></thead>
           <tbody>
             ${sub.files.map(f => `<tr>
               <td class="text-sm">${f.name}</td>
@@ -1183,6 +1207,7 @@ async function showSubmissionDetail(id) {
               <td>${f.type || '-'}</td>
               <td class="text-sm text-muted" style="word-break:break-all;max-width:280px;" title="${f.md5 || ''}">${f.md5 || '-'}</td>
               <td>${f.matched ? `<span class="badge badge-approved" data-i18n="detail.matched">匹配</span>` : `<span class="badge badge-rejected" data-i18n="detail.unmatched">不匹配</span>`}</td>
+              ${isAdmin() ? `<td><button class="btn btn-sm btn-secondary" onclick="adminDownloadFile('${sub.id}','${encodeURIComponent(f.name)}')" data-i18n="common.download">下载</button></td>` : ''}
             </tr>`).join('')}
           </tbody>
         </table>

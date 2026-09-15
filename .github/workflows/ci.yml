@@ -27,6 +27,10 @@ jobs:
           pip install -r infra/docker/requirements.txt
           echo "依赖安装 PASS"
 
+      - name: Preflight 环境检查（依赖/版本双源/端口/残留，ADR-035）
+        run: |
+          PORT=18000 bash infra/preflight.sh
+
       - name: Static check (py_compile + static_check)
         run: |
           python -m py_compile src/app.py tests/test_api.py infra/static_check.py

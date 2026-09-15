@@ -1,3 +1,14 @@
+## ◎ v2.6.6-beta 回归（2026-09-15）
+**总计 403 项测试（Windows dev）全部通过，通过率 100%。**
+
+**本轮变更（ADR-035 · 管理员附件审查下载 + 环境前置检查 preflight）：**
+1. **管理员附件审查下载 API**（`GET /api/admin/submissions/<id>/download/<filename>`，仅 admin）：任意状态提交单附件可审（pending→staging / approved→external / rejected·archived→archive），外网面白名单不含 /api/admin/ → 外网 403（ADR-008），文件名防路径穿越（显式 ".." 拒绝 + basename），审计留痕 admin_download（含文件名+MD5）。
+2. **前端**："所有提交记录"详情文件清单新增"下载"列（仅 admin 可见），adminDownloadFile 下载并返回 MD5。
+3. **preflight 环境前置检查**（infra/preflight.sh）：核心文件/脚本完整性、Python 3.12、依赖可导入、版本双源一致、端口占用、残留数据清理；已接入 Gitea CI 与 GitHub CI 第一步。
+4. **TDD +11 项**：admin 下载他人 pending 附件（200+MD5 一致）、外网 403、普通用户 403、驳回后 archive 附件仍可下载、审计留痕、路径穿越拒绝、前端按钮/函数存在、清理确认码。
+
+---
+
 ## ◎ v2.6.5-beta 回归（2026-09-15）
 **总计 392 项测试（Windows dev）全部通过，通过率 100%。**
 

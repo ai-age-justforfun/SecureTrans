@@ -477,4 +477,20 @@
 - **已落点**：v2.6.5（Windows dev 全量 TDD 392/392 通过；pending 超时归档 +5 项断言（状态 archived/文件入 archive/审计留痕/detail 区分/恢复默认）；定时 2:00 统一处理 pending+approved+downloaded）。
 
 ---
+
+### ADR-035：管理员附件审查下载 + 环境前置检查 preflight（v2.6.6，强制）
+- **背景**：① 用户（管理员）需要在"所有历史提单"中审查附件（查看/下载），此前提交记录/日志只有元数据没有附件访问能力；要求仅内网可用，外网绝对不允许。② 用户反馈多轮迭代中 Windows dev / WSL test / CI 三环境频繁出现"依赖缺失 / 数据残留 / 服务未启动 / 版本不一致"，希望运行前统一检查环境并清理残留。
+- **决策（附件审查）**：
+  1. **新增 API** `GET /api/admin/submissions/<id>/download/<filename>`：仅 admin（role_required），任意状态提交单附件可审（pending→staging / approved·downloaded→external / rejected·archived→archive，current_path 优先 + 三目录 fallback）。
+  2. **外网隔离复用现成机制**：外网面白名单（EXTERNAL_ALLOW_PREFIXES）不含 /api/admin/ → before_request 直接 403，无需新增外网判断代码（ADR-008 网络面隔离的既有保证）。
+  3. **路径穿越防护**：显式拒绝含 ".." / "/" 的文件名 + basename 归一化。
+  4. **审计留痕**：action=admin_download（含文件名+MD5）；不入 download_records（非接收方下载，避免污染下载统计）。
+  5. **前端**："所有提交记录"详情文件清单新增"下载"列（仅 admin 可见），adminDownloadFile 用 fetch blob 下载。
+- **决策（preflight）**：
+  1. 新增 `infra/preflight.sh`：核心文件/脚本完整性 → Python 3.12 → 核心依赖可导入（flask/gunicorn/apscheduler/ldap3）→ 版本双源一致 → 端口占用（PORT 可配）→ 残留数据目录清理（仅显式 CLEAN_DIR 传入才删，防误删生产/开发数据）；任一 FAIL 退出 1 阻断。
+  2. **接入位置**：Gitea CI（ci-check job 第一步）与 GitHub CI（依赖安装后第一步）都先跑 preflight，FAIL 即阻断；本地 WSL/Windows 可手动调用。
+- **与既有 ADR 不重叠**：ADR-008（网络面隔离）为机制，本 ADR 复用其白名单实现"仅内网"；ADR-033/034（审计/超时）不涉及管理员审查动作。
+- **已落点**：v2.6.6（Windows dev 全量 TDD 403/403 通过；+11 项：admin 下载 pending/archive 附件 MD5 一致、外网 403、普通用户 403、审计留痕、路径穿越、前端按钮、清理确认码；preflight 接入 Gitea/GitHub CI）。
+
+---
 *文档结束 | SecureTrans ADR 全录 | 2026-09-14*
