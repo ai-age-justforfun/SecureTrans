@@ -10,3 +10,4 @@
 
 # .env 模板强制 LF（CRLF 会污染 NAS_ROOT 值，造成异形目录 + 226/NAMESPACE）
 env/* text eol=lf
+.gitlab-ci.yml text eol=lf
