@@ -659,3 +659,21 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   5. **GitLab Release 资产**：GitLab 自动为 tag 生成 4 个 sources（zip/tar.gz/tar.bz2/tar）即"发布成功"；文件资产另走 Generic Package Registry。
 - **与既有 ADR 不重复**：ADR-036 管权威/备份仓库（Gitea+GitHub）；ADR-042 管认证方法论（本 ADR 落点 GitLab PAT）；**本 ADR 管第三条平台线（GitLab）的 CICD 实验打通与环境隔离纪律**，沉淀跨平台 CI/CD 迁移的共同坑（CRLF/pull_policy/卷属主/env 注释/容器冒烟视角）。
 - **已落点**：2026-09-15 v2.7.1 rc——GitLab 项目 `root/securetrans`（id=209，私有，默认分支 gitlabcicotest）；Runner id=19；CI 镜像 488MB；流水线 686/688 全绿（CI 全量 TDD + Release v2.7.1 四资产 + CD 独立部署）；18080 独立部署冒烟 OK（health v2.7.1/prod/ok）+ admin 登录成功；生产 Rocky 未触碰（数据全在 /opt/securetrans-gitlab）。
+
+### ADR-046：Git 服务器选型——Gitea / GitHub / GitLab 优劣势对比与场景选型建议（方法论，未来项目可复用）
+- **背景**：本项目先后打通三条 git 平台线并全链路验证——Gitea（权威仓，生产 CD）、GitHub（备份仓，云端 CI/Release/CD-SIM 独立闭环）、GitLab（实验线，独立 WSL+docker 隔离部署，ADR-036/042/045），沉淀了三平台第一手经验（操作细节见 docs/CICD.md，对比+带注释模板）。未来项目（尤其 AI 辅助人机协同、小团队/副业、封闭数据中心、以及需要公网分发的场景）都会面临"选哪个 git 服务器"决策；若无沉淀，每个项目都要重新调研。本 ADR = **三平台通用优劣势归纳 + 场景选型建议**，是可复用方法论，不绑定本项目实例。
+- **决策（三平台优劣势）**：
+  1. **Gitea（自托管轻量）**——优势：本地部署、完全掌控数据（封闭数据中心可用）、免费轻量（单二进制/小内存）、act_runner 容器 label + docker.sock 构建镜像天然自包含、Release API 资产灵活（7 资产含离线包/镜像）、离线依赖（wheelhouse）友好；劣势：Actions 生态与文档少于 GitHub、无内置镜像 registry（需外挂 GHCR/自建）、act_runner 已知 bug（needs 解析假绿、大产物清理误报，ADR-021/041 教训）、无公网托管需自建出网。**适用：封闭数据中心、私有代码、小团队/副业、离线环境、需要权威仓掌控生产 CD。**
+  2. **GitHub（公有云托管）**——优势：public 仓库 CI/CD/存储免费、托管 runner 零运维（ubuntu-latest 云 VM 自带 docker）、云端闭环（CI+Release+GHCR+CD-SIM 全在云）、GHCR 免费 registry（GITHUB_TOKEN 零注册）、生态最大（marketplace action）、PR 协作成熟、天然公网分发；劣势：private 仓库有额度限制、**无法直连封闭数据中心（CD 只能仿真 CD-SIM，真实生产 CD 必须本地权威仓）**、代码在第三方云（合规敏感不可用）、大 artifact/大仓库限制。**适用：开源/公网项目、需要公网分发与协作、备份/容灾仓、云原生。**
+  3. **GitLab（自托管全家桶）**——优势：单文件 .gitlab-ci.yml 多阶段（stages/rules）、内置 registry+package+Release 一体化（CE 免费）、权限模型细（group/role）、docker executor 灵活、Issue/Wiki 全家桶；劣势：CE 功能受限（部分需 EE）、资源占用重于 Gitea、runner 配置需手工改 config.toml（pull_policy 等）、Release 文件资产需 API（Generic Package）、无公网托管。**适用：公司级多项目多团队统一平台、需要全家桶（CI+registry+package）、GitLab 已是组织标准。**
+- **决策（场景选型建议矩阵）**：
+  | 场景 | 推荐 | 理由 |
+  |---|---|---|
+  | 封闭数据中心 + 小团队/副业 | **Gitea**（权威）+ GitHub（备份/分发，若能出网） | 数据掌控 + 生产 CD 本地闭环 |
+  | 开源/公网 + 社区协作 | **GitHub** | 托管免费、生态最大、天然分发 |
+  | 公司多项目多团队统一 | **GitLab** | 全家桶 + 细权限 + 集团标准 |
+  | 需要容器镜像分发 | GitHub（GHCR）或自建 registry | GHCR 免费零注册；Gitea 侧用 image.tar.gz 离线兜底 |
+  | 多平台并存（本项目模式） | 权威 Gitea + 备份 GitHub + 实验（GitLab 或 GitHub） | 权威仓永不漂移、备份仓独立验证、实验线零风险 |
+  - **选型原则（跨平台沉淀）**：① **一个权威仓库 + 一个备份仓库**（权威=所有 git 操作与生产 CD 唯一；备份=容灾/分发/独立验证，永不接触生产，ADR-036）；② **认证 token > SSH >> 账号密码**，本地 credential 文件不入库（ADR-042）；③ **CI 门禁逻辑平台无关**（放 infra/*.sh，三平台 workflow 只是"壳"，迁移平台零重写门禁）；④ **环境即代码**（FROM python:3.12-slim 官方镜像 + 离线 wheelhouse，CI/CD 免手工装依赖）；⑤ 每个阶段聚焦主要矛盾、跟随调整形成动态平衡（ADR-027）。
+- **与既有 ADR 不重复**：ADR-036 管本项目权威/备份仓库体系实例（Gitea+GitHub）；ADR-042 管认证方法论；ADR-045 管 GitLab 实验线打通实例；docs/CICD.md 管三平台操作手册（对比表/模板/入门）。**本 ADR 管三平台通用优劣势归纳与未来项目选型方法论**（决策可复用、不绑定本项目），三者互补不重叠。
+- **已落点**：2026-09-15——三平台全链路实证（Gitea CI/Release/CD 生产全绿；GitHub CI-TDD/RELEASE/CD-SIM 云闭环全绿；GitLab ci-check/release/deploy 实验线全绿）；docs/CICD.md（操作手册）+ 本 ADR（选型方法论）同步入库。
