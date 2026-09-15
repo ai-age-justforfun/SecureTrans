@@ -10,6 +10,8 @@
 > ① **Gitea（权威仓）**：push → CI（preflight+TDD 403 项）→ tag → Release（4 资产）→ cd.yml SSH 部署生产 10.10.30.8（v2.6.6/beta/ok）。
 > ② **GitHub（备份仓）**：push → CI-TDD（ubuntu-latest 全量）→ tag/手动 → **RELEASE workflow**（ubuntu 云端构建 4 资产：主包+md5+sha256+offline-deps，offline-deps 现场 pip download）→ gh release create/补齐（幂等 --clobber）→ release published 自动触发 **CD-SIM**（ubuntu 云端 Docker 构建镜像+容器+healthz+版本断言，job 结束即销毁，无本地 Docker、无 self-hosted runner、无持久数据）。
 > **验证记录（2026-09-15）**：CI-TDD #10 success；RELEASE #2 success（v2.6.6 云构建 4 资产 28.61MB 已覆盖）；CD-SIM #3 success（云端仿真健康）。release.yml 曾因 --notes 多行续行顶格导致 YAML 解析失败（run #1 无 job 无日志），修复缩进后闭环打通。
+> **数据洁净门禁（2026-09-15 CD-SIM #5）**：CD-SIM 新增 Data cleanliness assert——① 文件系统层：容器内 staging/external/archive 业务文件=0；② 应用层：admin 默认重置密码（Init@123456）登录 → 提交记录总数=0。实测通过：业务文件数 0、提交记录 0、DATA CLEAN OK。证明每次云端容器全新（无 TDD 测试数据、无历史数据），与生产发布级洁净标准一致；本地 127.0.0.1:8000 的历史数据来自已退役的本地持久卷 securetrans-sim-data（命名卷），非 GitHub workflow 行为。首跑曾因登录端点误用 /api/login（正确为 /api/auth/login）失败，已修正。
+> **Actions 版本（2026-09-15）**：actions/checkout@v4→v7、actions/setup-python@v5→v7（Node 24 运行时，消除 "Node.js 20 is deprecated" 告警）。
 > **遗留（已退役）**：本地 self-hosted runner（C:\securetrans-runner）与本地仿真容器 securetrans-sim（18000）在新架构下已无 workflow 引用，可择机清理；历史"手动双传资产"仍可作为对齐手段保留，正常发布以 release.yml 云构建为准。
 
 ---
