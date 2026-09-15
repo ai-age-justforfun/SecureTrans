@@ -12,7 +12,12 @@ FROM python:3.12.11-slim-bookworm
 # 运行时系统依赖：ldap-utils=AD 查询命令行（Debian 包名；RHEL 系对应 openldap-clients，生产必需，
 # ADR 教训：生产缺失此包导致 AD 用户搜索失败）、curl=healthcheck、procps=进程诊断；
 # 不装 ssh/rsync/jq（那是 CI/CD 镜像的职责，运行镜像精简）
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 注（kaniko 构建兼容，ADR-038）：kaniko 快照语义会把 procps 的 /etc/sysctl.d/README.sysctl 判为
+# "被修改"的 conffile → dpkg 交互提示 → 非交互 EOF 失败。故强制 DEBIAN_FRONTEND=noninteractive
+# + --force-confold（默认保留现有配置），docker build 与 kaniko 均稳定。
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" \
         ca-certificates curl procps ldap-utils \
     && rm -rf /var/lib/apt/lists/*
 

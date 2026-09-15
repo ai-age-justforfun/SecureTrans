@@ -532,7 +532,7 @@
 
 ---
 
-### ADR-038：Docker 一站式交付 + 蓝绿部署验证 + Registry 分发策略（v2.7.0 RTM 启动，架构决策）
+### ADR-038：Docker 一站式交付 + 蓝绿部署验证 + Registry 分发策略（v2.7.0 RC 启动，架构决策）【阶段命名与决策 2 已被 ADR-039 修订】
 - **背景（问题与场景）**：进入 RTM 阶段前，用户复盘从零部署生产的完整成本——新建 Rocky 8.10 虚拟机 → 临时开防火墙到 mirror → dnf 下载开发环境 → **手工编译 Python 3.12 venv** → pip 装依赖 → 手工传包解压 → deploy.sh/verify.sh → 手工改 .env（.env 不入包）→ 配置 AD/审批人/密码 → 才进入 alpha/beta。结论：**即使有 AI 指导，很多步骤（网络、防火墙、本地 .env）AI 不能代做，一般运维工程师没有耐心做这种部署**；诉求 = **发布时同时提供 Docker 方案，一条命令部署运行，功能性能一步到位**。同时用户提出三个疑问：① 本地是 Rocky 10 / Ubuntu 24.04 WSL，能否构建目标为 Rocky 8.10 的镜像？② 只提供 Dockerfile（部署环境自建）还是 compose？③ 运行是否必须 Rocky 8.10，还是任何 Linux？担心不同发行版差异导致需要维护多个镜像。
 - **原理澄清（决策依据）**：容器 = **共享宿主内核 + 镜像内完整用户态**。① 构建产物与构建机器/目标发行版解耦——任何有 Docker 的 Linux 都能构建同一个镜像（构建时 apt/dnf 装的是镜像内依赖，不碰宿主）；② 容器只依赖宿主**内核 ABI**（不是宿主 glibc/发行版）——关键兼容参数 = 镜像内 glibc 的最低内核要求 vs 宿主内核版本：`python:3.12.11-slim-bookworm`（Debian 12，glibc 2.36）最低内核 3.2；Ubuntu 24.04 基础镜像（glibc 2.39）最低内核 3.2（x86-64）；**生产 Rocky 8.10 内核 4.18 >> 3.2 完全兼容**；反向（旧 glibc 镜像跑新内核）同样兼容。真正风险仅限容器程序调用新内核专有 syscall（本系统无）。**这就是"一个镜像，处处运行"的依据——Docker 设计上消除了"为每个发行版维护一个镜像"的问题**。
 - **备选方案与对比**：
@@ -541,7 +541,7 @@
   - **GitHub 镜像分发通道**：① GHCR（采纳）——GitHub 原生 OCI registry，账号即 registry 账号（零注册/OAuth 打通），Actions 内 GITHUB_TOKEN 自带 packages:write，public 免费。② Docker Hub（对比——public 免费但限拉取、需单独 Docker 账号、与 GitHub 无 OAuth）。③ Quay.io（对比——Red Hat，public 免费）。④ 阿里云 ACR 个人版（对比——国内加速场景）。**GitHub 生态首选 GHCR**。
   - **交付形态**：① Registry + Release 附件双通道（采纳）——在线 `podman/docker pull`，封闭数据中心 `docker load < image.tar.gz`（第 5 资产离线兜底）。② 仅 Registry（否决——封闭数据中心无外网拉取）。③ 仅 Release 附件（否决——非业界主通道，缺少 OCI 标准分发）。
 - **决策 1（镜像基础：python:3.12.11-slim-bookworm）**：ABI 兼容归一化 + 镜像最小（实测 304MB）；固定 bookworm 防浮动 tag 漂移；后续遇兼容问题切换 `rockylinux:8` 同源。
-- **决策 2（Gitea 自动化镜像构建：kaniko 无特权）**：release job 内 kaniko 静态二进制 `--tar-path` 导出 OCI 镜像 tar → gzip 为 `securetrans-vX.Y.Z-image.tar.gz` 作为 Gitea Release 第 5 资产（+md5/sha256）；不引入 docker.sock、不改 runner 特权、不恢复双 label；用户已授权安装使用 kaniko。
+- **决策 2（Gitea 自动化镜像构建：kaniko 无特权）**：release job 内 kaniko 静态二进制 `--tar-path` 导出 OCI 镜像 tar → gzip 为 `securetrans-vX.Y.Z-image.tar.gz` 作为 Gitea Release 第 5 资产（+md5/sha256）；不引入 docker.sock、不改 runner 特权、不恢复双 label；用户已授权安装使用 kaniko。**【2026-09-15 已被 ADR-039 正式替代**：kaniko 在本地宿主构建 Debian apt postinst 失败（GLIBC_2.38 混入）、--use-new-run 卡死；改为容器内 docker CLI + 宿主 docker.sock，见 ADR-039 决策 1】**
 - **决策 3（蓝绿部署验证：Docker 18000 共享生产数据）**：生产 10.10.30.8 保持原生 systemd 8000 不动；Docker 容器 18000（宿主端口映射 18000→容器 8000），**直接映射当前全部持久化数据/文件路径**（SECURETRANS_DATA=/opt/securetrans/data、NAS_ROOT=/mnt/nas/securetrans）。同网段走通后正式切换 Docker 为唯一部署形态。**为什么 RTM 而非正式 release 做**：当前仅 2 个 beta 用户，风险小可控；最坏情况 = 道歉 + 重置生产与程序（尽量避免）；业务全量上线后共享数据的蓝绿必须更谨慎。**数据丢失/不一致本身视为一次部署验证机会**。
 - **决策 4（数据卷映射宿主目录）**：与裸机路径完全一致，Docker 与原生两条路线**数据可互换、可回退**。
 - **建议 1（直接用当前部署环境）→ 实证结论**：生产检查 = Rocky 8.10（内核 4.18.0-553）/ **podman 4.9.4-rhel 已预装**（Rocky 8.10 原生自带，docker 命令兼容、systemd 集成、无 daemon）/ Docker 未装亦**无需装** / SELinux Disabled / firewalld inactive（数据中心防火墙管控）/ 磁盘 255G 可用 / 内存 7.5G / /mnt/nas/securetrans 三目录就绪 / 原生 gunicorn 8000 运行中。**结论：即插即用，零安装**——比预期（需装 docker）更简单。
@@ -553,8 +553,18 @@
   3. `infra/docker-deploy.sh`（一条命令：load→run→health→只读冒烟；podman/docker 自动识别）。
   4. 本地 WSL docker 构建验证：**镜像 304MB；容器 health v2.6.7/production/ok；admin 登录通过；ldapsearch 已装；gunicorn 非 root 运行**。
   5. 清理历史遗留：Windows Docker Desktop 旧 `securetrans-sim` 容器（占 18000，上轮"待退役"项）已删；WSL 内 securetrans 手工部署进程保留（用户环境）。
-  6. **RTM 启动（v2.7.0）**：Gitea release.yml 加 kaniko 镜像构建（第 5 资产）；GitHub release.yml 加 GHCR push（GITHUB_TOKEN 认证，permissions packages:write）；**原生裸机发布/release 形态不变**；**Gitea 保留 image.tar.gz，GitHub 不传 img 只用 GHCR**；从 v2.7.0 起进入 RTM。
+  6. **RC 启动（v2.7.0，ADR-039 修订为 RC 而非 RTM）**：Gitea release.yml 加镜像构建（kaniko→ADR-039 改容器内 docker CLI + 宿主 sock）；GitHub release.yml 加 GHCR push（GITHUB_TOKEN 认证，permissions packages:write）；**原生裸机发布/release 形态不变**；**Gitea 保留 image.tar.gz，GitHub 不传 img 只用 GHCR**；从 v2.7.0 起进入 RC。
 - **与既有 ADR 不重叠**：ADR-037 管双仓 flow 职责对齐（本 ADR 在其上新增镜像资产与 registry 通道）；ADR-016 管 12-Factor 配置（复用 env 抽象做卷/端口映射）；ADR-008 单网卡方案不变（容器内单端口 + 网络面白名单）；ADR-020/021 容器隔离与生产边界（蓝绿共享数据是**有意的受控风险**，beta 期 2 用户，非生产常规）。
 - **已落点**：v2.7.0 RTM 启动（kaniko 构建 + GHCR push + 第 5 资产 + 生产 18000 蓝绿验证，实施见 Gitea/GitHub workflow 与验证记录）。
+---
+### ADR-039：kaniko 废弃 → 容器内 docker CLI + 宿主 docker.sock / WSL 环境重建 / v2.7.0 定为 RC（v2.7.0，架构决策修订）
+- **背景（问题与实证）**：ADR-038 决策 2 选定 kaniko 无特权构建，实施时实证失败：
+  1. **kaniko 双版本失败**（v1.23.2 / v1.24.0）：在本地 WSL 宿主（真实身份 = Debian bookworm，glibc 2.36）上构建 `python:3.12.11-slim-bookworm` 的 apt postinst 时，`ca-certificates`（rehash）与 `procps`（update-alternatives）报 `GLIBC_2.38 not found`——kaniko 默认 RUN 实现把宿主要求 2.38 的库（libacl 等）混入镜像 rootfs 执行环境；`--use-new-run`（experimental）实测卡死 10+ 分钟无产物；同一 Dockerfile 用 `docker build`（runc 完整隔离）成功——**缺陷在 kaniko 的 run 隔离，与 Dockerfile 无关**。kaniko GitHub release 无二进制资产（v1.23.2/v1.24.0 均仅容器分发），固化 executor 到 CI 镜像亦不解决。
+  2. **宿主工具链污染诊断**（决定性）：rocky10-st 表面叫 "rocky10"，实为 **Debian bookworm + 混入 Rocky EL10 库**：`systemctl` 链接 `/usr/lib64/systemd/libsystemd-shared-257-13.el10.rocky.0.1.so`（要求 GLIBC_2.38/2.39 + OPENSSL_3.4.0）；`git` 为手工放置的要求 GLIBC_2.38 二进制；`iptables` 缺 libxtables.so.12 / libmnl.so.0；dpkg 残留 half-configured（ca-certificates/procps）。**连锁后果**：docker daemon 无法创建容器网络（iptables DROP 规则失败）→ 连 docker build / CI 容器 job 都不可用 → 环境不可逆损坏。
+- **决策 1（Gitea 镜像构建：放弃 kaniko → 容器内 docker CLI + 宿主 docker.sock）**：release job 仍用 `securetrans-ci` 容器 label（单 label 归一化不变），但 CI 镜像内置 **docker-ce-cli**（Docker 官方 bookworm 源，静态 CLI，轻量），act_runner `container.options: -v /var/run/docker.sock:/var/run/docker.sock` 挂载宿主 socket → 容器内 `docker build` 调 **本地 WSL docker daemon** 执行（runc 完整隔离，与 `docker build` 语义完全一致，无 kaniko 快照/glibc 缺陷）。**docker.sock 逃逸风险按"可信代码模型"接受**：CI 容器代码 = 本仓库代码（非第三方不可信内容），与 GitHub Actions 挂 docker 的业界实践一致；生产 CD 凭据仍在 cd.yml 最小作用域，不经此路径。
+- **决策 2（WSL 环境重建：rocky10-ci 新 distro）**：授权重建——用 `D:\iso\Rocky-10-WSL-Base-10.1-20251116.0.x86_64.wsl` 导入新 distro `rocky10-ci`（真实 Rocky Linux 10.1，glibc 2.39，干净环境），承载 docker daemon + act_runner + securetrans-ci 镜像；旧 `rocky10-st` 保留作回滚（不删除）。重建后重配：dnf 装 docker-ce / 拷贝 act_runner（v3.4.2）+ `.runner` + `config.yaml`（含 sock 挂载）/ 构建 `securetrans-ci:3.12`（wheelhouse 自 packages 解压）。
+- **决策 3（阶段命名：v2.7.0 = RC，非 RTM）**：用户明确"本次不能叫 RTM，改为 rc（Release Candidate）"——生产 `.env` 的 `APP_STAGE=rc`；Release body 标注 RC；RTM 延后至 RC 验证通过后另行发布。
+- **与既有 ADR 不重叠**：ADR-020（双 label / 容器 CI）——本次明确 release 亦走容器 label + sock（宿主 label 因环境损坏不可用，且更干净）；ADR-037（flow 职责对齐）不变；ADR-038 决策 2 被本 ADR **正式替代**（kaniko 路径废弃）。
+- **已落点**：2026-09-15 v2.7.0（RC）：act_runner config.yaml 增 `container.options` 挂 sock 并重启生效（v3.4.2 已 declare labels: [securetrans-wsl securetrans-ci]）；CI 镜像 Dockerfile 改 docker-ce-cli（去 kaniko COPY）；release.yml 改容器内 docker build + docker save；rocky10-ci 新 distro 导入（Rocky 10.1 glibc 2.39）；双端 workflow 同步。详见 Gitea/GitHub Actions runs 与部署记录。
 ---
 *文档结束 | SecureTrans ADR 全录 | 2026-09-15*

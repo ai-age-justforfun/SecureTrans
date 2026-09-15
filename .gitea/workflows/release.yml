@@ -10,6 +10,8 @@ name: Release
 # 运行模式（ADR-019/020，与 Docker Desktop/Gitea 完全独立）：
 #   - securetrans-ci = 唯一容器 label（docker://securetrans-ci:3.12，WSL 内独立 docker daemon）
 #     → 每次全新容器 + 新配置 + 新数据，零宿主污染
+#   - ADR-038-2（2026-09-15）：release job 容器内 docker CLI + act_runner container.options 挂载
+#     宿主 docker.sock → 本地 WSL daemon 构建运行镜像（kaniko 已废弃，见 Build Docker 步骤注释）
 # 安全：RELEASETOKEN 仅本 job 注入（repo secret 最小作用域）；生产部署凭据（CD_SSH_KEY）仅在 cd.yml（ADR-024）
 
 on:
@@ -59,23 +61,21 @@ jobs:
           bash infra/package.sh
           ls -la packages/securetrans-*.tar.gz*
 
-      - name: Build Docker 运行镜像（kaniko 无特权 → image.tar.gz，RTM 第 5 资产 ADR-038）
+      - name: Build Docker 运行镜像（容器内 docker CLI → 宿主 docker.sock → image.tar.gz，RC 第 5 资产 ADR-038）
         run: |
           set -euo pipefail
           cd "${GITHUB_WORKSPACE:-/workspace}"
-          # kaniko executor 已固化在 CI 镜像（infra/docker/Dockerfile COPY 自官方镜像 v1.24.0，
-          # 无特权、无 daemon、不挂 docker.sock；ADR-037/038-2 单 label 归一化。
-          # 注：v1.24.0 无 --version 参数（打印帮助且 exit 1），不做版本校验）
-          # 构建上下文=workspace 根（.dockerignore 已在仓库内，排除 tests/docs/venv/主包等）
-          /usr/local/bin/executor --context dir:///workspace \
-            --dockerfile infra/docker/Dockerfile.run \
-            --destination=securetrans:unused --no-push \
-            --tar-path=/workspace/packages/securetrans-image.tar \
-            --image-name-with-digest-file=/workspace/packages/image-digest.txt
-          # OCI tar（docker load / podman load 兼容）→ gzip + 版本命名 + 校验
+          # ADR-038-2 修订（2026-09-15）：kaniko 方案废弃——v1.23.2/v1.24.0 在本地 Debian bookworm 宿主
+          # （glibc 2.36，工具链被升级污染至要求 GLIBC_2.38）上构建 apt postinst 失败
+          # （ca-certificates/procps 报 GLIBC_2.38 not found；--use-new-run 亦卡死）。
+          # 改为：容器内 docker CLI（CI 镜像已装 docker-ce-cli）+ act_runner container.options 挂载宿主
+          # docker.sock → 调用本地 WSL docker daemon 构建（runc 完整隔离，与 docker build 语义一致）。
+          # sock 逃逸风险按"可信代码模型"接受（CI 容器代码 = 本仓库代码，ADR-038-2）。
+          # 构建上下文=workspace 根（.dockerignore 排除 tests/docs/venv/主包等；offline-deps 已在上步生成）
+          V=$(grep -m1 '^APP_VERSION = "v' src/app.py | sed -E 's/.*"v([^"]+)".*/\1/')
+          docker build -f infra/docker/Dockerfile.run -t "securetrans:v${V}" .
           cd packages
-          V=$(ls securetrans-*.tar.gz | head -1 | sed 's/securetrans-//;s/.tar.gz//')
-          mv securetrans-image.tar.gz "securetrans-${V}-image.tar.gz"
+          docker save "securetrans:v${V}" | gzip > "securetrans-${V}-image.tar.gz"
           md5sum "securetrans-${V}-image.tar.gz" > "securetrans-${V}-image.tar.gz.md5"
           sha256sum "securetrans-${V}-image.tar.gz" > "securetrans-${V}-image.tar.gz.sha256"
           echo "镜像资产: securetrans-${V}-image.tar.gz（$(du -h securetrans-${V}-image.tar.gz | cut -f1)）"

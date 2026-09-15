@@ -1,9 +1,9 @@
 # SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.6.3 | 阶段：PSF→Beta（问题-方案匹配验证）— Beta 内部测试（运行收集问题中）
+> 版本：v2.7.0 | 阶段：PSF→RC（Release Candidate）— 发布候选，beta 验收通过后进入正式 release
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main + AI 辅助人机协同（AGENTS v2.0）
-> 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv
+> 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv；Docker 蓝绿（18000，ADR-038/039）
 
 ---
 
@@ -186,16 +186,17 @@ SecureTrans/
 ## 发布与版本
 
 - **版本号单一来源**：`src/app.py` 的 `APP_VERSION`（前端 index.html 同步），文档内版本号统一
-- **发布阶段（.env APP_STAGE，显示 vX.Y.Z-stage）**：alpha=自测 → beta=内部测试 → rtm=内部使用 → release=正式发布；`/api/health` 返回 `stage`，登录页/品牌副标题/页面显示 `vX.Y.Z-stage`，运维期可随时改 .env 切换阶段
+- **发布阶段（.env APP_STAGE，显示 vX.Y.Z-stage）**：alpha=自测 → beta=内部测试 → rc=发布候选（Release Candidate）→ release=正式发布；`/api/health` 返回 `stage`，登录页/品牌副标题/页面显示 `vX.Y.Z-stage`，运维期可随时改 .env 切换阶段。**v2.7.0 定为 rc**（ADR-039）
 - **打包**：`bash infra/package.sh <版本>` → `packages/securetrans-<版本>.tar.gz`（含 offline-deps 离线 wheel）
 - **发布**：`powershell -File infra/release.ps1 -Version v<版本>` → Gitea Release（源码包 + 离线依赖包）
-- **版本记录**：Git tag（`v2.2.x`）+ Gitea Release 资产 + SHA256 校验
+- **Docker 双通道（v2.7.0 起，ADR-038/039）**：Gitea Release 第 5 资产 `securetrans-vX.Y.Z-image.tar.gz`（离线 `docker load` / `podman load`）；GitHub 走 GHCR（`ghcr.io/ai-age-justforfun/SecureTrans`，在线 pull）
+- **版本记录**：Git tag（`v2.7.0`）+ Gitea Release 资产 + SHA256 校验
 - **变更记录**：文档内部版本号（如 PRD v2.2）独立演进，关键需求变更用 Git tag
 - **发布触发规则**：
   - **文档-only 变更**（README/AGENTS/docs/*.md）：commit + push main 即可，**不 bump 版本、不打包、不建 Release**——文档随仓库持续演进，代码发布时包内自动带入最新
   - **代码/脚本/配置模板变更**（影响可部署产物）：bump APP_VERSION + 全量回归 + package + release + git tag
   - 版本号是发布产物属性，APP_VERSION 只在代码发布时递增；文档内部版本号（如 PRD v2.2、AGENTS v1.6）独立演进
-  - **RTM 后**（Alpha/Beta 完成）：默认不逐次发布，关键里程碑手工发布
+  - **RC/Release 后**（Alpha/Beta 完成）：默认不逐次发布，关键里程碑手工发布
 
 ---
 
@@ -220,10 +221,10 @@ main ────●────●────●────●────  �
 - **Commit 规范**：`<type>(<scope>): <描述>`，不强制带 Sprint 编号，可关联 Story 编号
 
 ### 当前阶段
-**PSF（问题-方案匹配验证）— Beta 内部测试运行中**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，
-deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WSL test）+ 800MB 性能压力测试 + 3-5 用户并发测试通过
-（MD5 端到端一致）+ CD 全自动部署打通（Release 发布 → 生产自动升级，run #136）；**清库后启动内部
-同事 beta 测试，运行收集问题，持续迭代**。全项目复盘见 [项目复盘总结](docs/12-project-retrospective.md)。
+**PSF → RC（v2.7.0 发布候选）**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，
+403 项自动化测试 100%（Windows dev）+ CI 容器全量 TDD + 800MB 性能压力测试 + 3-5 用户并发测试通过
+（MD5 端到端一致）+ CD 全自动部署打通（Release 发布 → 生产自动升级）+ **Docker 双通道发布（Gitea image.tar.gz + GitHub GHCR，ADR-038/039）**；
+beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署验证），通过后正式 release。全项目复盘见 [项目复盘总结](docs/12-project-retrospective.md)。
 
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
@@ -286,7 +287,8 @@ deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WS
 | 035 | 管理员附件审查下载（仅内网）+ 环境前置检查 preflight | v2.6.6 |
 | 036 | 单一权威仓库 + 备份仓库体系（架构决策，docs/14 为执行手册） | v2.6.6 |
 | 037 | 环境职责分层 + 双仓 CI/CD/Release 职责对齐（测试合一/发布权限隔离/CD 目标隔离） | v2.6.7 |
-| 038 | Docker 一站式交付 + 蓝绿部署验证 + Registry 分发策略（RTM 启动） | v2.7.0 |
+| 038 | Docker 一站式交付 + 蓝绿部署验证 + Registry 分发策略（RC 启动，ADR-039 修订决策 2） | v2.7.0 |
+| 039 | kaniko 废弃 → 容器内 docker CLI + 宿主 docker.sock / WSL 环境重建 / v2.7.0=RC | v2.7.0 |
 
 > **使用方式**：决策冲突时以 docs/ADR.md 对应条目为准；新增决策只追加编号（ADR-0xx），不修改历史条目。
 > 最新落点摘要（ADR-031/032/033/034 核心）：合作方全量编辑+联系人必填；WSL 测试收敛为 dev+CI 两环境；生产只读冒烟=业界标准；
@@ -295,6 +297,7 @@ deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WS
 > 有效期统一：提交未审批+审批未下载统一按"文件有效期"（default_expiry_days）超时归档，审计区分超时原因（ADR-034）。
 > 仓库治理（ADR-036 架构）：单一权威仓库（本地 Gitea，承载全部 git 操作与生产 CD）+ 备份仓库（GitHub 等，容灾/分发/独立验证）；每阶段聚焦主要矛盾、其余跟随调整形成动态平衡；备份仓永不接触生产；切换权威的触发条件见 docs/14。
 > GitHub 独立 CI/CD/Release 闭环（2026-09-15）：两条链路完全独立——Gitea（权威仓）CI→Release→CD→生产；GitHub（备份仓）CI-TDD→RELEASE（ubuntu 云端构建 4 资产）→CD-SIM（ubuntu 云端 Docker 仿真，无本地 Docker/self-hosted runner）；历史手动双传保留为对齐手段，正常发布以 release.yml 云构建为准（docs/14）。CD-SIM 含数据洁净门禁（业务文件=0+提交记录=0，验证全新容器）；actions 已升级 v7（Node24 消除弃用告警）。
+> Docker 镜像构建路径（ADR-039 修订，2026-09-15）：kaniko 废弃（本地 Debian bookworm 宿主工具链污染导致 kaniko 构建 apt postinst 报 GLIBC_2.38 失败）；改为 Gitea release job 容器内 docker-ce-cli + act_runner container.options 挂载宿主 docker.sock → 本地 WSL docker daemon 构建（runc 完整隔离）；WSL 测试宿主重建为真实 Rocky 10.1（rocky10-ci，glibc 2.39 干净环境）；v2.7.0 阶段定为 rc（Release Candidate）。
 
 ## 许可证
 
@@ -304,4 +307,4 @@ deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WS
 
 ---
 
-*SecureTrans v2.7.0（RTM）| 2026-09-15*
+*SecureTrans v2.7.0（RC）| 2026-09-15*
