@@ -582,3 +582,15 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
 - **与既有 ADR 不重复**：ADR-021 为 rocky10-st 时代"WSL 空闲终止→保活计划任务（因弹窗删除）"记录；本 ADR 为 rocky10-ci 新环境落地：无窗口 VBS 保活 + nohup 脱离 systemd（双保险），并补充"WSL systemd 非 PID 1、被 init 空闲关闭"的新诊断。
 - **已落点**：2026-09-15 v2.7.0 RC；计划任务 WSL-Rocky10-CI-KeepAlive + C:\Users\jinta\.securetrans\wsl-keepalive-rocky10-ci.vbs + nohup 启动 act_runner；release #156 在修复后 rerun 执行中。
 ---
+
+### ADR-041：v2.7.0 双通道发布回归修复（release.yml 版本提取 + cd.yml MD5 资产歧义，v2.7.0 RC）
+- **背景**：v2.7.0 首次双通道发布（原生包 + docker 镜像第 5 资产）暴露两个回归，均源于**新资产改变了原有单值假设**：
+  1. **release.yml 通配歧义**：上传/校验步骤用 `PKG=$(ls packages/securetrans-*.tar.gz | head -1)` 选主包——镜像步骤新增 `securetrans-2.7.0-image.tar.gz` 后，ls 字母序 i<t 使 head -1 选中镜像包 → V=2.7.0-image → Release 被创建为错误 tag `v2.7.0-image` 且主包（+其 md5/sha256）完全丢失。线上实证：Gitea 出现错误 Release `v2.7.0-image`（仅 4 镜像资产）。
+  2. **cd.yml MD5 选择器歧义**：`select(.name|endswith(".tar.gz.md5"))` 同时匹配主包 md5 与 `-image.tar.gz.md5` → jq 输出两行 → curl URL malformed（exit 3）→ CD 部署失败。
+- **决策**：
+  1. **版本号单一来源**：所有步骤 V 一律从 src/app.py 的 APP_VERSION 精确提取（与 Docker 镜像构建步骤一致），禁止从文件名通配反推（文件名非权威源，且随资产演进不可靠）。
+  2. **资产精确匹配**：主包用 `securetrans-${V}.tar.gz`（精确等于），md5 用 `securetrans-${V}.tar.gz.md5`（精确等于），不再用 endswith 宽松匹配。
+  3. **回归教训固化**：发布链路任何"新增同前缀资产/文件"改动，必须同步审计所有通配/前缀匹配（grep head -1 / endswith / *.tar.gz），并跑通一次端到端 Release→CD 验证。
+- **与既有 ADR 不重复**：ADR-039/040 管环境与运行机制；本 ADR 管发布链路数据流正确性（版本提取与资产选择）。
+- **已落点**：2026-09-15 v2.7.0 RC：commit 16cab42（release.yml 修复，Gitea run #241 success → 7 资产齐全：主包+md5+sha256+offline-deps+image.tar.gz+md5+sha256）；commit 5dc748a（cd.yml 修复，Gitea CD run #244 success → 生产 10.10.30.8 v2.7.0 部署+只读冒烟通过）；GitHub 平行 RELEASE+CI-TDD+CD-SIM 全绿；错误 Release/tag（v2.7.0-image）已清理。
+---
