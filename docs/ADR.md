@@ -601,3 +601,15 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
 - **与既有 ADR 不重复**：ADR-039/040 管环境与运行机制；本 ADR 管发布链路数据流正确性（版本提取与资产选择）。
 - **已落点**：2026-09-15 v2.7.0 RC：commit 16cab42（release.yml 修复，Gitea run #241 success → 7 资产齐全：主包+md5+sha256+offline-deps+image.tar.gz+md5+sha256）；commit 5dc748a（cd.yml 修复，Gitea CD run #244 success → 生产 10.10.30.8 v2.7.0 部署+只读冒烟通过）；GitHub 平行 RELEASE+CI-TDD+CD-SIM 全绿；错误 Release/tag（v2.7.0-image）已清理。
 ---
+
+### ADR-042：AI 访问外部系统认证——token 优先（token > ssh >> 账号密码）+ 本地 credential 文件不入库（强制，方法论）
+- **背景（问题与实证）**：AI Agent 频繁认证访问外部系统（Gitea / GitHub / GitLab / registry 等）做 push、API、Release、镜像分发。早期直接使用账号密码认证引发实际问题：① **Git Credential Manager 账户选择弹窗**——本机凭据管理器同时存在 `x-access-token` 与 `ai-age-justforfun` 两个 GitHub 账户凭据，git push 时不确定选谁而弹窗阻塞（用户多次被"Select an account"打断，git 命令挂起等待）；② **账号密码明文本地保存**风险高于最小权限 token；③ 凭据分散、无统一目录与命名规范，AI 换环境后找不到凭据。
+- **决策（认证优先级与凭据管理规范）**：
+  1. **优先级：token（PAT）> SSH key >> 账号密码**。首次访问某系统时，用账号密码登录系统**一次性创建** PAT 或 SSH key；创建完成后**后续一律不再使用账号密码**认证（账号密码不出现在任何脚本/URL/配置中）。
+  2. **本地 credential 文件**：token/密钥存放于**版本管理目录（git/svn 仓库）之外**的专用目录（本项目 `~/.securetrans/`，即 `C:\Users\jinta\.securetrans\`），命名按业界惯例 `gitea-token.txt` / `github-token.txt` / `gitlab-token.txt` / `github-token-clean.txt` 等；**严禁将凭据文件或内容合入版本管理**（.gitignore 保护，仓库内只允许引用"从本地 credential 文件读取"的过程说明，不存值）。
+  3. **token 权限最小化**：按用途创建最小 scope（如 GitHub `contents:write`+`packages:write` 用于 Release/镜像、只读 scope 用于查询），不用全部权限 token 做只读操作；**不使用账号密码生成硬编码 URL 认证**（如 `https://user:pass@host`）。
+  4. **避免弹窗/多账户歧义**：本机 git 固定 `git config --global credential.https://<host>.username <账号>`，凭据管理器按用户名直接匹配已存 token 凭据，不再弹账户选择；多账户凭据（如 Actions 的 `x-access-token`）清理或忽略。
+  5. **与 CI/CD secret 分离**：服务端凭据（CD_SSH_KEY、RELEASETOKEN 等 repo secret）只注入 CI/CD job 容器，**本地 credential 文件与 repo secret 两套体系互不混用**（本地=AI 开发侧，secret=流水线侧）。
+- **与既有 ADR 不重复**：ADR-009 管业务系统内 admin 密码（RESET_PASSWORD 全链路）；ADR-024 管 CD 的 SSH 认证（ed25519 密钥走 repo secret）；ADR-037 管 CI/CD secret 最小作用域。**本 ADR 管 AI 开发侧的本地凭据管理**（外部系统认证的创建/存放/优先级/防弹窗），是方法论层规范，可复用于后续项目。
+- **已落点**：2026-09-15（v2.7.0 RC 期间）——GitHub PAT 存 `C:\Users\jinta\.securetrans\github-token.txt`（带标题注释行，使用时 regex 提取 `ghp_...`）；Gitea API token 存 `~/.securetrans/`（origin remote URL 引用）；v2.7.0 draft Release 发布/阶段调整（alpha/beta/rc）全部通过 token API 完成（无账号密码）；git 固定 `credential.https://github.com.username = ai-age-justforfun` 消除弹窗；后续新系统（GitLab 等）按本 ADR 执行。
+---

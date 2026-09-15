@@ -291,6 +291,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 039 | kaniko 废弃 → 容器内 docker CLI + 宿主 docker.sock / WSL 环境重建 / v2.7.0=RC | v2.7.0 |
 | 040 | act_runner 脱离 systemd → nohup 直跑 + 无窗口保活（WSL systemd 非 PID1 周期性重置修复） | v2.7.0 |
 | 041 | v2.7.0 双通道发布回归修复（release.yml 版本提取 + cd.yml MD5 资产歧义） | v2.7.0 |
+| 042 | AI 访问外部系统认证：token > ssh >> 账号密码 + 本地 credential 文件不入库（方法论） | v2.7.0 |
 
 > **使用方式**：决策冲突时以 docs/ADR.md 对应条目为准；新增决策只追加编号（ADR-0xx），不修改历史条目。
 > 最新落点摘要（ADR-031/032/033/034 核心）：合作方全量编辑+联系人必填；WSL 测试收敛为 dev+CI 两环境；生产只读冒烟=业界标准；
