@@ -146,7 +146,7 @@
 | 迭代小结 | docs/07-psf-sprintN-retrospective.md | 每个 Sprint 结束 |
 | 部署指南（唯一） | docs/DEPLOY.md | 部署流程变更时 |
 | 复盘总结 | docs/12-project-retrospective.md | 阶段里程碑 |
-| GitHub 迁移方案（Active，v2.6.5 首验落地） | docs/14-github-migration.md | GitHub 端到端已打通：CI-TDD（GitHub-hosted）+ CD-SIM（self-hosted runner + 本地 Docker 18000） |
+| GitHub 迁移方案（Active，v2.6.6 首验落地） | docs/14-github-migration.md | GitHub 端到端已打通：CI-TDD（GitHub-hosted）+ CD-SIM（self-hosted runner + 本地 Docker 18000） |
 
 **文档原则**：聚焦关键内容；文件名不含版本号（版本写文档内，关键变更用 git tag）；
 ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
@@ -174,6 +174,7 @@ ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
 - **ADR-030 v2.6.1 落点**：.ltx 特征码改文本 `"ltx_root"`（真实 Vivado 为格式化 JSON `{\n    "ltx_root":`，旧紧凑 hex 不命中；迁移精确更新内置模板，10b3 回归：格式化+紧凑+负向）；性能门禁入 CI（ci_test.sh [3.5/4] 每次跑 100MB 全链路+3 用户并发，秒级断言）；Release body 自动生成近版变更摘要（clone depth 30 + git log，不再只写"自动发布"）；admin 默认审批人仅首次播种（approvers_initialized 标记，置位后永不补回，无审批人提交失败提醒已有）；审计留痕口径（TDD 报告/CI run/Release body/CD 日志/生产只读冒烟各环节留痕）；WSL 测试=CI 容器合一（同一镜像同一全量 TDD，差异仅数据持久性）
 - **ADR-031 v2.6.2 落点**：合作方全量编辑（PUT /api/admin/partners/<id>：名称/联系人/邮箱，去重排除自身 COLLATE NOCASE，前端编辑按钮+弹窗，TDD 6 项）；WSL 常驻测试环境退居二线（测试执行收敛 dev+CI 两环境，WSL 仅作 CI 容器宿主与 Linux 排查入口，ADR-026 修订）；生产只读冒烟=业界标准（healthz+版本+目录校验为 CD 门禁，smoke.sh 只读 11 项，写测试数据只在测试环境）
 - **ADR-032 v2.6.3 落点**：合作方联系人必填（创建/编辑 400"联系人不能为空"，前端 * 标记+强制检查，自动加入路径天然非空不受影响）；无状态上传明示（未提交刷新即弃，写入 PRD）+ 未提交临时文件系统级回收（cleanup_abandoned_temp：staging 无提交记录目录超时 TEMP_FILE_HOURS 默认 24h 直接删除不归档不审计；每天 2:10 定时 + /api/admin/cleanup-expired 手动合并，双语返回）；文档体系单源化（docs/ADR.md 唯一权威，README 索引表+落点摘要，AGENTS B4 摘要+引用）
+- **ADR-036 v2.6.6 落点（架构）**：单一权威仓库（Gitea=所有 git 操作与生产 CD 的唯一权威）+ 备份仓库（GitHub=容灾/分发/独立验证 CI-TDD+CD-SIM）；每个阶段聚焦主要矛盾、其余跟随调整形成动态平衡；备份仓永不接触生产；切换权威的触发条件=开源/协作主点迁移/本地不可用（docs/14 为执行手册）
 - **ADR-035 v2.6.6 落点**：管理员附件审查下载（GET /api/admin/submissions/<id>/download/<filename>，仅 admin、仅内网（外网白名单 403）、任意状态可审、路径穿越防护、审计 admin_download）+ 环境前置检查 preflight（infra/preflight.sh：文件/脚本完整性、Python3.12、依赖可导入、版本双源一致、端口占用、残留目录清理；已接入 Gitea/GitHub CI 第一步，FAIL 即阻断）
 - **ADR-034 v2.6.5 落点**：有效期口径统一——提交未审批（pending，从提交时间起算）与审批未下载（approved/downloaded，从审批时间起算）统一按系统配置"文件有效期"（default_expiry_days）超时自动归档（os.rename 0拷贝，终态）；上传未提交临时清理保持独立（TEMP_FILE_HOURS=24h，ADR-033 不审计）；system_archive_expired detail 区分"提交后 N 天未审批" / "审批通过后 N 天未下载/处理"；审批人测试组幂等清理历史 approvers 残留
 - **ADR-033 v2.6.4 落点**：审计策略——系统动作审计边界。已审批未下载超时归档逐单写审计（action=system_archive_expired，user=system，detail 明示"超时归档：审批通过后 N 天未下载，达到有效期 M 天"）；管理员手动清理写审计（admin_cleanup_manual，user=操作者）；未提交临时文件清理**不写审计**（从未入库无业务动作，纯存储清理，TDD 反向断言 system_cleanup_temp=0）。统一原则：审计覆盖"用户/管理员动作 + 涉及业务数据的定时系统动作"，纯垃圾清理只记运行日志。
