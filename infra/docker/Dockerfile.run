@@ -27,7 +27,8 @@ RUN useradd -m -u 1000 -s /bin/bash securetrans
 WORKDIR /opt/securetrans/src
 
 # 离线依赖（wheelhouse 来自 securetrans-offline-deps.tar.gz，解压后 /tmp/wheelhouse）
-COPY requirements.txt /tmp/requirements.txt
+# requirements 单一来源 = src/requirements.txt（与 CI 镜像 infra/docker/requirements.txt 同源，fast-check 校验）
+COPY src/requirements.txt /tmp/requirements.txt
 COPY packages/securetrans-offline-deps.tar.gz /tmp/offline-deps.tar.gz
 RUN mkdir -p /tmp/wheelhouse \
     && tar xzf /tmp/offline-deps.tar.gz -C /tmp/ \
