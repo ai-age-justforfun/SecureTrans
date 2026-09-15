@@ -1,0 +1,87 @@
+# GitHub 独立发布（RELEASE）：push tag 或手动 → 云端构建 4 资产 → 创建/补齐 GitHub Release
+# 用途：让 GitHub 侧 CI/CD/Release 完全独立闭环（与 Gitea 权威仓平行）：
+#   push main → CI-TDD（ubuntu 全量）→ 打 tag push GitHub → 本 workflow 云端构建
+#   主包+md5+sha256+offline-deps 4 资产 → gh release create → release published 触发 CD-SIM（云端仿真）。
+# 特点（2026-09-15 新增）：
+#   - 完全在 GitHub 云环境构建（ubuntu-latest），不依赖本地环境/本地 Docker
+#   - 幂等：release 已存在则补齐/覆盖资产（--clobber），不存在则创建
+#   - 资产与 Gitea 对齐：securetrans-<v>.tar.gz + .md5 + .sha256 + securetrans-offline-deps.tar.gz
+#   - offline-deps 现场 pip download（linux x86_64 manylinux wheel，与生产部署兼容）
+# 约束：备份仓永不接触生产（ADR-021/036）；生产 CD 仍由 Gitea 权威仓负责。
+
+name: RELEASE
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '目标 tag（手动触发用，如 v2.6.6）'
+        required: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            V="${{ github.event.inputs.tag }}"
+          else
+            V="${GITHUB_REF_NAME}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "RESOLVED VERSION: $V"
+
+      - name: Build offline-deps (linux x86_64 wheels, online)
+        run: |
+          mkdir -p /tmp/deps
+          pip download --only-binary=:all: \
+            --platform manylinux2014_x86_64 \
+            --python-version 312 --implementation cp --abi cp312 \
+            -r infra/docker/requirements.txt -d /tmp/deps
+          tar -czf securetrans-offline-deps.tar.gz -C /tmp/deps .
+          ls -lh securetrans-offline-deps.tar.gz
+
+      - name: Build package tarball (src+tests+infra+docs+env+offline-python)
+        run: |
+          V="${{ steps.ver.outputs.version }}"; V="${V#v}"
+          tar -czf "securetrans-${V}.tar.gz" \
+            --exclude='.git' --exclude='venv' --exclude='.venv' \
+            --exclude='packages/*.tar.gz' --exclude='*.pyc' --exclude='__pycache__' \
+            src tests infra docs env offline-python README.md AGENTS.md LICENSE .github
+          md5sum "securetrans-${V}.tar.gz" > "securetrans-${V}.tar.gz.md5"
+          sha256sum "securetrans-${V}.tar.gz" > "securetrans-${V}.tar.gz.sha256"
+          ls -lh "securetrans-${V}.tar.gz"*
+
+      - name: Create/Update GitHub Release + upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.ver.outputs.version }}"
+          VN="${V#v}"
+          FILES=("securetrans-${VN}.tar.gz" "securetrans-${VN}.tar.gz.md5" "securetrans-${VN}.tar.gz.sha256" "securetrans-offline-deps.tar.gz")
+          if gh release view "$V" >/dev/null 2>&1; then
+            echo "Release $V 已存在，补齐/覆盖资产"
+            gh release upload "$V" "${FILES[@]}" --clobber
+          else
+            echo "创建 Release $V"
+            gh release create "$V" "${FILES[@]}" \
+              --title "$V" \
+              --notes "SecureTrans 独立发布（GitHub 云构建）
+- CI: push 全量 TDD（preflight + 静态 + TDD）
+- Release: 云端构建 4 资产（主包 + md5 + sha256 + offline-deps）
+- CD-SIM: ubuntu 云端 Docker 仿真验证（release published 自动触发）"
+          fi
+          echo "RELEASE $V: DONE"
