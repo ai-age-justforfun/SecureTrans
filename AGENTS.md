@@ -148,6 +148,7 @@
 | 复盘总结 | docs/12-project-retrospective.md | 阶段里程碑 |
 | GitHub 迁移方案（Active，v2.6.6 首验落地） | docs/14-github-migration.md | GitHub 独立闭环已打通：CI-TDD（GitHub-hosted）+ RELEASE（云端构建 4 资产）+ CD-SIM（ubuntu 云端 Docker 仿真+数据洁净门禁，无本地 Docker/self-hosted runner） |
 | GitLab CICD 实验线（Active，v2.7.1 首验落地） | docs/15-gitlab-cicd.md | GitLab（10.10.30.9）第三条平台线：gitlabcicotest 分支 + 独立 WSL+docker+数据 18080，CI/Release/CD 全绿（ADR-045） |
+| 跨平台 CICD 指南（对比+模板+入门） | docs/CICD.md | 三平台 CICD 对比总表、服务器配置、带注释 workflow 模板、宿主 docker 与 Git 服务器 workflow 关系图、快速入门路径 |
 
 **文档原则**：聚焦关键内容；文件名不含版本号（版本写文档内，关键变更用 git tag）；
 ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
