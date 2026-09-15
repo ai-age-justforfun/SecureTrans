@@ -625,3 +625,20 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
 - **与既有 ADR 不重复**：ADR-038 管 docker 交付方案与蓝绿部署形态；**本 ADR 管形态正式切换的决策、顺序纪律与运维视角**（Docker 默认、原生退役、切换顺序、ENV_ROLE 尊重 .env、冒烟内网 IP、WSL 原生路径），是 ADR-038 的落点深化。
 - **已落点**：2026-09-15 v2.7.0 RC——生产正式切换：原生 `systemctl stop && disable`（inactive）；容器 `securetrans-docker` 8000（--user 973:972，envRole=prod，health OK）；内网 IP 冒烟 **11/11 100%**；18000 验收容器已清除；docker-deploy.sh ENV_ROLE 修复（尊重 .env，SECURETRANS_ENV_ROLE 显式覆盖）已同步仓库。
 ---
+
+### ADR-044：审计统计口径重构（四维独立计数）+ CD 正式切换 Docker 通道（v2.7.1，首个验证）
+- **背景（问题与实证）**：用户报告"审计日志-统计"页面统计错误：① alpha 完成后清理过生产环境，admin 数据有误；② 其他人的文件数"感觉多计算了"；③ 普通用户本无管理操作却有统计。根因（`src/app.py` `/api/audit-logs/stats` 旧逻辑）：
+  - **粗分类误判**：把所有审计行按"detail 里能否正则提取 `.ext`"分类，提取不到一律归"管理操作"——`create_submission`（detail="提交N个文件，待审批"）、`approval_*`（detail="通过，级别N"）均无文件名 → 普通用户大量业务动作被误标"管理操作"；`login/logout/改密`也计入管理操作。
+  - **宽正则误吞**：`[\w.\-]+\.\w{1,8}` 会把 IP（10.10.30.8）吞成"其他文件"。
+  - **文件数虚高**：同一文件全链路（upload + download + admin_download）各 +1；admin 的登录/配置/清理/测试动作全部累加为"管理操作"。
+- **决策（用户明确拍板的口径）**：**四维独立计数**，每维口径单一、互不混淆——
+  1. **提交文件数**：按 `upload` 动作从 detail 提取**白名单后缀**文件名（ext_map：pdf/doc/docx/xls/xlsx/ppt/pptx/zip/rar/7z/tar/gz/bz2/xz/zst/bin/bit/ltx 等；正则按后缀长度倒序，杜绝 IP/日期误匹配），按 **(user, 文件名, 日期)** 去重（同一文件同一天重传不重复 +1）；类型列顺序固定 STAT_TYPES，无则不出列。
+  2. **审批次数**：`approval_*` 动作数（一级/二级审批各计）。
+  3. **下载次数**：`download` + `admin_download` 动作数。
+  4. **管理操作**：仅 `user in (admin, system)` 且**排除** login/login_failed/logout/change_password/create_submission 的动作；**普通用户永不出现"管理操作"列**（无该列）。
+  - 前端仅更新统计标题"人员 × 类型 × 每日"（中英 + 默认文本 3 处），渲染矩阵结构不变（types 由后端自动填充），避免前端与后端口径二次漂移。
+- **TDD（只增不减，ADR-018）**：tests/test_api.py 组 11 追加 5 项断言（普通用户无管理操作 / 上传 2 个新 pdf → admin PDF文档 +2 / 同名同日再传不 +1 / 审批独立计数存在 / 下载独立计数存在）；测试基线 403 → 407。
+- **CD 正式切换 Docker 通道（ADR-043 首个执行版本）**：`infra/cd-deploy.sh` 重写为**形态自动检测**（存在容器 `securetrans-docker` 或原生 systemd inactive → docker 模式；否则原生回退）——docker 模式 = 校验/备份/同步程序文件与 infra/tests → 调 `docker-deploy.sh <镜像包> <port>`（内部先 rm 旧容器再起，天然满足 ADR-043 切换顺序纪律）→ 从 `hostname -I` 取内网 IP 跑完整只读冒烟（127.0.0.1 属外网面 403，只能内网 IP）；原生模式保留原 systemd 升级逻辑作为回退。`.gitea/workflows/cd.yml` 资产下载按 ADR-041 教训**精确 == 匹配**（主包 tar.gz + 主包 md5 + `-image.tar.gz` + 镜像 md5 四资产），MD5 双校验，scp 主包+镜像包两文件，汇总改查 podman ps + 内网 IP health。
+- **与既有 ADR 不重复**：ADR-034 管有效期口径；ADR-035 管管理员附件审查；**本 ADR 管审计统计的可视化口径正确性**（业务动作分类 + 去重 + 白名单后缀），并承载 CD docker 通道改造的落点。ADR-040 的 act_runner 空闲终止问题在 v2.7.1 CI 期**复发实证**（WSL 空闲后 act_runner 无进程、队列积压 4 个 queued run），按 ADR-040 方式 nohup 直跑重启即恢复；后续纳入 WSL 保活监控（Windows 计划任务 VBS 已在位）。
+- **已落点**：2026-09-15 v2.7.1（rc 阶段，首个 docker 通道 CD）——commit 813851d 推 Gitea main + GitHub 备份仓；WSL 容器化全量 TDD（复刻 CI：ci_test.sh 干净数据）通过（100MB 全链路 0.82s、MD5 四方一致、3 用户并发 0.68s 全过）；Gitea CI run 251（v2.7.1）→ Release → CD docker 通道 → 生产 10.10.30.8 容器 8000 内网冒烟；统计正确性由用户在内网页面人工复核（生产不跑全量 TDD，ADR-017）。
+---
