@@ -82,7 +82,9 @@ jobs:
           [ -n "${REL:-}" ] || { echo "[错误] Release 元数据获取失败"; exit 1; }
           # Gitea 返回的 browser_download_url 为 localhost，容器内不可达，替换 host 为 GITEA
           PKG_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name=="securetrans-'${VNO}'.tar.gz") | .browser_download_url' | sed "s|^http://[^/]*|${GITEA}|")
-          MD5_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name|endswith(".tar.gz.md5")) | .browser_download_url' | sed "s|^http://[^/]*|${GITEA}|")
+          # MD5_URL 必须精确匹配主包（v2.7.0 回归：endswith(".tar.gz.md5") 同时命中
+          # 主包与 -image 包的 md5 → jq 输出两行 → curl URL malformed exit 3）
+          MD5_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name=="securetrans-'${VNO}'.tar.gz.md5") | .browser_download_url' | sed "s|^http://[^/]*|${GITEA}|")
           [ -n "${PKG_URL}" ] && [ -n "${MD5_URL}" ] || { echo "[错误] Release 资产缺失"; exit 1; }
           curl -sfL -o pkg.tar.gz "${PKG_URL}"
           curl -sfL -o pkg.tar.gz.md5 "${MD5_URL}"
