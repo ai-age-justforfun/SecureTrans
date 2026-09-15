@@ -4,8 +4,13 @@
 > **首验结果**：GitHub Actions CI-TDD #1/#2 success（等效本地测试环境全量门禁+TDD 392 项）；CD-SIM #1 success（self-hosted runner → 本地 Docker 仿真 18000，独立数据）；生产 10.10.30.8 零影响（v2.6.5/beta/ok 保持不变）。
 > **发布资产双传（2026-09-15 补规）**：GitHub Release 资产与 Gitea 完全对齐（4 项：主包 tar.gz + md5 + sha256 + offline-deps），容灾完整（Gitea 丢失可恢复部署资产）。发布流程：Gitea Release 上传后，下载 4 资产 → 上传同 tag 的 GitHub Release（脚本化，见 §6 发布清单）。
 > **v2.6.6 首验**：CI-TDD #3/#4/#5 success（403 项 TDD + preflight 前置检查）；CD-SIM #2 success（仿真 v2.6.6/sim/ok）；生产 10.10.30.8 部署 v2.6.6/beta/ok 零影响；preflight（ADR-035）已接入 Gitea CI 与 GitHub CI 第一步。
-> **落地形态**：`ai-age-justforfun/SecureTrans`（private 镜像仓）；`.github/workflows/ci.yml`（CI）+ `.github/workflows/cd-sim.yml`（CD 仿真）+ `.github/docker/Dockerfile.sim`。
-> **关联**：ADR-007（发布策略：代码变更才发布 / 文档-only 不 bump）、ADR-021（CICD 单 job 规避）、08-cicd-gitops-architecture.md（现有 Gitea CI/CD 架构）。
+> **落地形态**：`ai-age-justforfun/SecureTrans`（private 镜像仓）；`.github/workflows/ci.yml`（CI）+ `.github/workflows/cd-sim.yml`（CD 仿真）+ `.github/workflows/release.yml`（独立发布）+ `.github/docker/Dockerfile.sim`。
+> **关联**：ADR-007（发布策略：代码变更才发布 / 文档-only 不 bump）、ADR-021（CICD 单 job 规避）、ADR-036（单一权威仓库 Gitea + 备份仓 GitHub 独立闭环）、08-cicd-gitops-architecture.md（现有 Gitea CI/CD 架构）。
+> **GitHub 云端独立 CI/CD/Release 闭环（2026-09-15 升级）**：两条 CI/CD 完全独立、互不依赖——
+> ① **Gitea（权威仓）**：push → CI（preflight+TDD 403 项）→ tag → Release（4 资产）→ cd.yml SSH 部署生产 10.10.30.8（v2.6.6/beta/ok）。
+> ② **GitHub（备份仓）**：push → CI-TDD（ubuntu-latest 全量）→ tag/手动 → **RELEASE workflow**（ubuntu 云端构建 4 资产：主包+md5+sha256+offline-deps，offline-deps 现场 pip download）→ gh release create/补齐（幂等 --clobber）→ release published 自动触发 **CD-SIM**（ubuntu 云端 Docker 构建镜像+容器+healthz+版本断言，job 结束即销毁，无本地 Docker、无 self-hosted runner、无持久数据）。
+> **验证记录（2026-09-15）**：CI-TDD #10 success；RELEASE #2 success（v2.6.6 云构建 4 资产 28.61MB 已覆盖）；CD-SIM #3 success（云端仿真健康）。release.yml 曾因 --notes 多行续行顶格导致 YAML 解析失败（run #1 无 job 无日志），修复缩进后闭环打通。
+> **遗留（已退役）**：本地 self-hosted runner（C:\securetrans-runner）与本地仿真容器 securetrans-sim（18000）在新架构下已无 workflow 引用，可择机清理；历史"手动双传资产"仍可作为对齐手段保留，正常发布以 release.yml 云构建为准。
 
 ---
 

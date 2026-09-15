@@ -292,7 +292,7 @@ deploy.sh/verify.sh 全部通过，361项自动化测试 100%（Windows dev + WS
 > 审计闭环：已审批未下载超时归档逐单审计（system_archive_expired）、手动清理留痕（admin_cleanup_manual）、临时清理不审计（ADR-033）；
 > 有效期统一：提交未审批+审批未下载统一按"文件有效期"（default_expiry_days）超时归档，审计区分超时原因（ADR-034）。
 > 仓库治理（ADR-036 架构）：单一权威仓库（本地 Gitea，承载全部 git 操作与生产 CD）+ 备份仓库（GitHub 等，容灾/分发/独立验证）；每阶段聚焦主要矛盾、其余跟随调整形成动态平衡；备份仓永不接触生产；切换权威的触发条件见 docs/14。
-> 发布资产双传（2026-09-15）：GitHub Release 资产与 Gitea 对齐（主包+md5+sha256+offline-deps 4 项），容灾完整；脚本化双传见 docs/14。
+> GitHub 独立 CI/CD/Release 闭环（2026-09-15）：两条链路完全独立——Gitea（权威仓）CI→Release→CD→生产；GitHub（备份仓）CI-TDD→RELEASE（ubuntu 云端构建 4 资产）→CD-SIM（ubuntu 云端 Docker 仿真，无本地 Docker/self-hosted runner）；历史手动双传保留为对齐手段，正常发布以 release.yml 云构建为准（docs/14）。
 
 ## 许可证
 
