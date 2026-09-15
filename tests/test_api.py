@@ -1265,6 +1265,38 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     code, data = request('GET', '/api/audit-logs/stats?from=bad-date&to=2026-08-28')
     test("审计统计非法日期拒绝(400)", code == 400, f"code={code}")
 
+    # 审计统计口径（v2.7.1）：提交文件数=上传按文件名去重；审批/下载独立计数；管理操作仅 admin/system
+    code, data = request('GET', '/api/audit-logs/stats')
+    _st_ok = code == 200 and isinstance(data, dict) and 'byType' in data and 'byDay' in data
+    # 普通用户不得出现"管理操作"（管理操作仅限 admin/system）
+    _bad_ops = [u for u in (data.get('users') or []) if u not in ('admin', 'system')
+                and (data.get('byType', {}).get(u, {}) or {}).get('管理操作', 0) or 0 > 0]
+    test("审计统计-普通用户无管理操作", _st_ok and not _bad_ops,
+         f"code={code}, bad={_bad_ops}")
+    # 上传 2 个不同 pdf → admin 的 PDF文档 +2（文件数=真实文件数，非动作条数）
+    _base_pdf = (data.get('byType', {}).get('admin', {}) or {}).get('PDF文档', 0)
+    _st_f1 = os.path.join(test_dir, "stat_check_a.pdf")
+    _st_f2 = os.path.join(test_dir, "stat_check_b.pdf")
+    with open(_st_f1, "wb") as _f: _f.write(b"%PDF-1.4\n" + b"STAT" * 300)
+    with open(_st_f2, "wb") as _f: _f.write(b"%PDF-1.4\n" + b"STAT" * 300)
+    _c1, _ = upload_file(_st_f1, "stat_check_a.pdf")
+    _c2, _ = upload_file(_st_f2, "stat_check_b.pdf")
+    code, data = request('GET', '/api/audit-logs/stats')
+    _after_pdf = (data.get('byType', {}).get('admin', {}) or {}).get('PDF文档', 0)
+    test("审计统计-上传文件数按真实文件计数", _c1 == 200 and _c2 == 200 and _after_pdf == _base_pdf + 2,
+         f"base={_base_pdf}, after={_after_pdf}, c1={_c1}, c2={_c2}")
+    # 同名文件同日再次上传 → 去重，PDF文档 不 +1
+    _c3, _ = upload_file(_st_f1, "stat_check_a.pdf")
+    code, data = request('GET', '/api/audit-logs/stats')
+    _after2_pdf = (data.get('byType', {}).get('admin', {}) or {}).get('PDF文档', 0)
+    test("审计统计-同名文件同日上传去重", _after2_pdf == _base_pdf + 2,
+         f"after={_after2_pdf}, expect={_base_pdf + 2}, c3={_c3}")
+    # 审批/下载独立计数（前面全流程已产生审批与下载动作）
+    _has_apr = any((data.get('byType', {}).get(u, {}) or {}).get('审批', 0) > 0 for u in data.get('users', []))
+    _has_dl = any((data.get('byType', {}).get(u, {}) or {}).get('下载', 0) > 0 for u in data.get('users', []))
+    test("审计统计-审批次数独立计数", _has_apr, f"users={data.get('users')}")
+    test("审计统计-下载次数独立计数", _has_dl, f"users={data.get('users')}")
+
     # 20. 手动触发过期清理
     code, data = request('POST', '/api/admin/cleanup-expired')
     test("手动触发过期清理（无过期文件）", code == 200 and 'cleaned' in data, f"code={code}, data={data}")

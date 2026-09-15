@@ -207,7 +207,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.7.0';
+const APP_VERSION = 'v2.7.1';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -334,7 +334,7 @@ const I18N = {
     'overview.key': '配置项', 'overview.value': '值', 'overview.source': '来源', 'overview.env': 'env', 'overview.db': 'db', 'overview.updated': '更新时间',
     'audit.titleDetail': '📋 明细', 'audit.titleStats': '📊 统计',
     'audit.detailTitle': '审计日志明细 (最近 {0} 条)', 'audit.user': '用户', 'audit.action': '操作', 'audit.target': '目标', 'audit.detail': '详情',
-    'audit.statsTitle': '审计统计（人员 × 文件类型 × 每日）',
+    'audit.statsTitle': '审计统计（人员 × 类型 × 每日）',
     'audit.from': '起始日期', 'audit.to': '结束日期', 'audit.query': '查询',
     'audit.byType': '按文件类型', 'audit.byDay': '按每日',
     'audit.personType': '人员 / 文件类型', 'audit.personDay': '人员 / 日期', 'audit.range': '统计范围：{0} 至 {1}', 'audit.days': '（{0} 天）',
@@ -476,7 +476,7 @@ const I18N = {
     'overview.key': 'Key', 'overview.value': 'Value', 'overview.source': 'Source', 'overview.env': 'env', 'overview.db': 'db', 'overview.updated': 'Updated',
     'audit.titleDetail': '📋 Details', 'audit.titleStats': '📊 Statistics',
     'audit.detailTitle': 'Audit Log Details (last {0})', 'audit.user': 'User', 'audit.action': 'Action', 'audit.target': 'Target', 'audit.detail': 'Detail',
-    'audit.statsTitle': 'Audit Statistics (User × File Type × Daily)',
+    'audit.statsTitle': 'Audit Statistics (User × Type × Daily)',
     'audit.from': 'Start Date', 'audit.to': 'End Date', 'audit.query': 'Query',
     'audit.byType': 'By File Type', 'audit.byDay': 'By Day',
     'audit.personType': 'User / File Type', 'audit.personDay': 'User / Date', 'audit.range': 'Range: {0} to {1}', 'audit.days': ' ({0} days)',
@@ -2280,7 +2280,7 @@ async function renderAuditStats() {
   const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   document.getElementById('auditTabContent').innerHTML = `
     <div class="card">
-      <div class="card-title" data-i18n="audit.statsTitle">审计统计（人员 × 文件类型 × 每日）</div>
+      <div class="card-title" data-i18n="audit.statsTitle">审计统计（人员 × 类型 × 每日）</div>
       <div class="form-row" style="align-items:end;">
         <div class="form-group"><label data-i18n="audit.from">起始日期</label><input type="date" id="statFrom" value="${fmt(from)}"></div>
         <div class="form-group"><label data-i18n="audit.to">结束日期</label><input type="date" id="statTo" value="${fmt(today)}"></div>

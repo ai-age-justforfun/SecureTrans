@@ -81,26 +81,35 @@ jobs:
           [ -n "${REL:-}" ] || REL=$(curl -sf "${GITEA}/api/v1/repos/openwrtadmin/SecureTrans/releases/tags/${VER}")
           [ -n "${REL:-}" ] || { echo "[错误] Release 元数据获取失败"; exit 1; }
           # Gitea 返回的 browser_download_url 为 localhost，容器内不可达，替换 host 为 GITEA
+          # 资产精确匹配（==），禁止通配/前缀反推（ADR-041 教训：-image 包与主包同名前缀）
           PKG_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name=="securetrans-'${VNO}'.tar.gz") | .browser_download_url' | sed "s|^http://[^/]*|${GITEA}|")
-          # MD5_URL 必须精确匹配主包（v2.7.0 回归：endswith(".tar.gz.md5") 同时命中
-          # 主包与 -image 包的 md5 → jq 输出两行 → curl URL malformed exit 3）
           MD5_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name=="securetrans-'${VNO}'.tar.gz.md5") | .browser_download_url' | sed "s|^http://[^/]*|${GITEA}|")
-          [ -n "${PKG_URL}" ] && [ -n "${MD5_URL}" ] || { echo "[错误] Release 资产缺失"; exit 1; }
+          IMG_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name=="securetrans-'${VNO}'-image.tar.gz") | .browser_download_url' | sed "s|^http://[^/]*|${GITEA}|")
+          IMG_MD5_URL=$(echo "${REL}" | jq -r '.assets[] | select(.name=="securetrans-'${VNO}'-image.tar.gz.md5") | .browser_download_url' | sed "s|^http://[^/]*|${GITEA}|")
+          [ -n "${PKG_URL}" ] && [ -n "${MD5_URL}" ] && [ -n "${IMG_URL}" ] && [ -n "${IMG_MD5_URL}" ] \
+            || { echo "[错误] Release 资产缺失（主包/镜像/md5）"; exit 1; }
           curl -sfL -o pkg.tar.gz "${PKG_URL}"
           curl -sfL -o pkg.tar.gz.md5 "${MD5_URL}"
+          curl -sfL -o img.tar.gz "${IMG_URL}"
+          curl -sfL -o img.tar.gz.md5 "${IMG_MD5_URL}"
           EXPECT=$(awk '{print $1}' pkg.tar.gz.md5)
           ACTUAL=$(md5sum pkg.tar.gz | awk '{print $1}')
-          echo "MD5: expect=${EXPECT} actual=${ACTUAL}"
-          [ "${EXPECT}" = "${ACTUAL}" ] || { echo "[错误] MD5 校验失败"; exit 1; }
+          echo "主包 MD5: expect=${EXPECT} actual=${ACTUAL}"
+          [ "${EXPECT}" = "${ACTUAL}" ] || { echo "[错误] 主包 MD5 校验失败"; exit 1; }
+          EXPECT_IMG=$(awk '{print $1}' img.tar.gz.md5)
+          ACTUAL_IMG=$(md5sum img.tar.gz | awk '{print $1}')
+          echo "镜像 MD5: expect=${EXPECT_IMG} actual=${ACTUAL_IMG}"
+          [ "${EXPECT_IMG}" = "${ACTUAL_IMG}" ] || { echo "[错误] 镜像 MD5 校验失败"; exit 1; }
           echo "MD5 校验通过，资产就绪"
 
-      - name: 传输发布包到服务器
+      - name: 传输发布包与镜像包到服务器
         run: |
           set -euo pipefail
           VNO="${DEPLOY_VERSION#v}"
           ssh -o BatchMode=yes securetrans-prod 'mkdir -p /opt/securetrans-release'
           scp -q -o BatchMode=yes pkg.tar.gz "securetrans-prod:/opt/securetrans-release/securetrans-${VNO}.tar.gz"
-          ssh -o BatchMode=yes securetrans-prod "ls -la /opt/securetrans-release/securetrans-${VNO}.tar.gz"
+          scp -q -o BatchMode=yes img.tar.gz "securetrans-prod:/opt/securetrans-release/securetrans-${VNO}-image.tar.gz"
+          ssh -o BatchMode=yes securetrans-prod "ls -la /opt/securetrans-release/securetrans-${VNO}.tar.gz /opt/securetrans-release/securetrans-${VNO}-image.tar.gz"
 
       - name: 远程执行部署（轻量升级 + 只读冒烟）
         run: |
@@ -111,6 +120,6 @@ jobs:
         run: |
           echo "============================================================"
           echo "  CD 部署完成 | 版本: ${DEPLOY_VERSION} | 目标: 10.10.30.8"
-          echo "  服务状态:"
-          ssh -o BatchMode=yes securetrans-prod 'systemctl is-active securetrans; curl -sf http://127.0.0.1:8000/api/health -o /dev/null && echo "HEALTH-OK" || echo "HEALTH-CHECK-FAIL"'
+          echo "  服务状态（docker 形态，ADR-043）:"
+          ssh -o BatchMode=yes securetrans-prod 'podman ps --format "{{.Names}} | {{.Status}} | {{.Ports}}" | grep securetrans; curl -sf http://10.10.30.8:8000/api/health -o /dev/null && echo "HEALTH-OK(内网)" || echo "HEALTH-CHECK-FAIL"'
           echo "============================================================"

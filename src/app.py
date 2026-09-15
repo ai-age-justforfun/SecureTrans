@@ -58,7 +58,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.7.0"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.7.1"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -2574,7 +2574,7 @@ def api_audit_logs():
 @login_required
 @role_required("admin")
 def api_audit_stats():
-    """审计统计：人员×文件类型×每日 汇总（默认近30天到当日）"""
+    """审计统计：人员 × 类型 × 每日。类型 = 提交文件类型（upload 按文件名去重）+ 审批 + 下载 + 管理操作"""
     import re
     from_d = request.args.get("from", "")
     to_d = request.args.get("to", "")
@@ -2595,6 +2595,7 @@ def api_audit_stats():
         "SELECT time,user,action,detail FROM audit_logs WHERE time>=? AND time<=?",
         (from_ts, to_ts)
     ).fetchall()
+    # 文件类型映射（与特征码规则类型一致，含 FPGA bit/bin/ltx）
     ext_map = {
         "pdf": "PDF文档", "doc": "Word文档", "docx": "Word文档",
         "xls": "Excel表格", "xlsx": "Excel表格", "csv": "Excel表格",
@@ -2602,23 +2603,57 @@ def api_audit_stats():
         "png": "图片", "jpg": "图片", "jpeg": "图片", "gif": "图片", "bmp": "图片", "svg": "图片",
         "zip": "压缩包", "tar": "压缩包", "gz": "压缩包", "tgz": "压缩包",
         "bz2": "压缩包", "tbz2": "压缩包", "xz": "压缩包", "txz": "压缩包", "zst": "压缩包",
-        "bit": "FPGA文件",
+        "bit": "FPGA文件", "bin": "FPGA文件", "ltx": "FPGA文件",
     }
+    # 白名单后缀正则（仅认已知扩展名，防 IP/日期等误匹配；长后缀优先）
+    exts = sorted(ext_map.keys(), key=len, reverse=True)
+    file_re = re.compile(r'([\w\u4e00-\u9fff.\-]+\.(?:' + '|'.join(re.escape(e) for e in exts) + r'))\b', re.I)
+    # 上传=文件数（按 用户+文件名+日 去重，重传/重复动作只计 1）；下载/管理审查下载=下载次数
+    # 审批=approval_* 动作数；管理操作=admin/system 的非文件/非登录/非审批/非提交动作
+    excl_actions = {"login", "login_failed", "logout", "change_password", "create_submission"}
+    FILE_TYPES_ORDER = ["PDF文档", "Word文档", "Excel表格", "PPT演示", "图片", "压缩包", "FPGA文件", "其他文件"]
+    STAT_TYPES = FILE_TYPES_ORDER + ["审批", "下载", "管理操作"]
     users, ftypes, by_type, by_day = set(), set(), {}, {}
+    seen_file = set()  # (user, fname_lower, day) 上传去重
     for r in rows:
         u = r["user"] or "unknown"
         day = r["time"][:10] if r["time"] else ""
-        # 文件类型：从 detail 提取文件名扩展名归类，无法提取的归为"管理操作"
-        m = re.search(r'([\w\u4e00-\u9fff.\-]+\.\w{1,8})', r["detail"] or "")
-        if m:
-            ext = m.group(1).lower().rsplit(".", 1)[-1]
+        action = r["action"] or ""
+        detail = r["detail"] or ""
+        if action == "upload":
+            m = file_re.search(detail)
+            if not m:
+                continue
+            fname = m.group(1).lower()
+            key = (u, fname, day)
+            if key in seen_file:
+                continue
+            seen_file.add(key)
+            ext = fname.rsplit(".", 1)[-1]
             ftype = ext_map.get(ext, "其他文件")
-        else:
+            users.add(u); ftypes.add(ftype)
+            by_type[(u, ftype)] = by_type.get((u, ftype), 0) + 1
+            if day:
+                by_day[(u, day)] = by_day.get((u, day), 0) + 1
+        elif action in ("download", "admin_download"):
+            ftype = "下载"
+            users.add(u); ftypes.add(ftype)
+            by_type[(u, ftype)] = by_type.get((u, ftype), 0) + 1
+            if day:
+                by_day[(u, day)] = by_day.get((u, day), 0) + 1
+        elif action.startswith("approval_"):
+            ftype = "审批"
+            users.add(u); ftypes.add(ftype)
+            by_type[(u, ftype)] = by_type.get((u, ftype), 0) + 1
+            if day:
+                by_day[(u, day)] = by_day.get((u, day), 0) + 1
+        elif u in ("admin", "system") and action not in excl_actions:
+            # 管理/系统动作（admin 配置、清理、system 归档等）；普通用户的非文件动作不计入统计
             ftype = "管理操作"
-        users.add(u); ftypes.add(ftype)
-        by_type[(u, ftype)] = by_type.get((u, ftype), 0) + 1
-        if day:
-            by_day[(u, day)] = by_day.get((u, day), 0) + 1
+            users.add(u); ftypes.add(ftype)
+            by_type[(u, ftype)] = by_type.get((u, ftype), 0) + 1
+            if day:
+                by_day[(u, day)] = by_day.get((u, day), 0) + 1
     # 日期连续填充（含0值），默认近30天
     day_list = []
     d = datetime.datetime.strptime(from_d, "%Y-%m-%d").date()
@@ -2627,7 +2662,7 @@ def api_audit_stats():
         day_list.append(d.isoformat())
         d += datetime.timedelta(days=1)
     users = sorted(users)
-    ftypes = sorted(ftypes)
+    ftypes = [t for t in STAT_TYPES if t in ftypes]
     return jsonify({
         "from": from_d, "to": to_d,
         "users": users, "types": ftypes, "days": day_list,
