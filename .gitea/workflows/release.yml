@@ -59,6 +59,29 @@ jobs:
           bash infra/package.sh
           ls -la packages/securetrans-*.tar.gz*
 
+      - name: Build Docker 运行镜像（kaniko 无特权 → image.tar.gz，RTM 第 5 资产 ADR-038）
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE:-/workspace}"
+          # kaniko 静态二进制（无特权、无 daemon、不挂 docker.sock，符合单 label 归一化 ADR-037/038-2）
+          curl -sL -o /tmp/kaniko.tar.gz \
+            https://github.com/GoogleContainerTools/kaniko/releases/download/v1.23.2/kaniko-linux-amd64.tar.gz
+          mkdir -p /usr/local/bin && tar xzf /tmp/kaniko.tar.gz -C /usr/local/bin executor
+          # 构建上下文=workspace 根（.dockerignore 已在仓库内，排除 tests/docs/venv/主包等）
+          /usr/local/bin/executor --context dir:///workspace \
+            --dockerfile infra/docker/Dockerfile.run \
+            --destination=securetrans:unused --no-push \
+            --tar-path=/workspace/packages/securetrans-image.tar \
+            --image-name-with-digest-file=/workspace/packages/image-digest.txt
+          # OCI tar（docker load / podman load 兼容）→ gzip + 版本命名 + 校验
+          cd packages
+          V=$(ls securetrans-*.tar.gz | head -1 | sed 's/securetrans-//;s/.tar.gz//')
+          mv securetrans-image.tar.gz "securetrans-${V}-image.tar.gz"
+          md5sum "securetrans-${V}-image.tar.gz" > "securetrans-${V}-image.tar.gz.md5"
+          sha256sum "securetrans-${V}-image.tar.gz" > "securetrans-${V}-image.tar.gz.sha256"
+          echo "镜像资产: securetrans-${V}-image.tar.gz（$(du -h securetrans-${V}-image.tar.gz | cut -f1)）"
+          ls -la securetrans-${V}-image.tar.gz*
+
       - name: 产物完整性校验（md5 / sha256 / 解压结构）
         run: |
           set -euo pipefail
@@ -98,7 +121,11 @@ jobs:
           [ -n "$RID" ] || { echo "Release 创建失败"; exit 1; }
           EXISTING=$(curl -s -H "Authorization: token ${RELEASETOKEN}" "${API}/releases/${RID}/assets" \
             | python3 -c "import sys,json; print('\n'.join(a['name'] for a in json.load(sys.stdin)))" 2>/dev/null || true)
-          for f in "${PKG}" "packages/securetrans-${V}.tar.gz.md5" "packages/securetrans-${V}.tar.gz.sha256" packages/securetrans-offline-deps.tar.gz; do
+          for f in "${PKG}" "packages/securetrans-${V}.tar.gz.md5" "packages/securetrans-${V}.tar.gz.sha256" \
+                   packages/securetrans-offline-deps.tar.gz \
+                   "packages/securetrans-${V}-image.tar.gz" \
+                   "packages/securetrans-${V}-image.tar.gz.md5" \
+                   "packages/securetrans-${V}-image.tar.gz.sha256"; do
             FNAME=$(basename "$f")
             if echo "${EXISTING}" | grep -qx "${FNAME}"; then
               echo "资产已存在，跳过: ${FNAME}"

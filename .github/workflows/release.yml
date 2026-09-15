@@ -1,11 +1,14 @@
-# GitHub 独立发布（RELEASE）：push tag 或手动 → 云端构建 4 资产 → 创建/补齐 GitHub Release
+# GitHub 独立发布（RELEASE）：push tag 或手动 → 云端构建 4 资产 → 创建/补齐 GitHub Release → GHCR push 镜像 → 触发 CD-SIM
 # 用途：让 GitHub 侧 CI/CD/Release 完全独立闭环（与 Gitea 权威仓平行）：
 #   push main → CI-TDD（ubuntu 全量）→ 打 tag push GitHub → 本 workflow 云端构建
-#   主包+md5+sha256+offline-deps 4 资产 → gh release create → release published 触发 CD-SIM（云端仿真）。
-# 特点（2026-09-15 新增）：
+#   主包+md5+sha256+offline-deps 4 资产 → gh release create → Docker 镜像 push GHCR（RTM 起，ADR-038）
+#   → release published 触发 CD-SIM（云端仿真）。
+# 特点（2026-09-15 RTM 扩展）：
 #   - 完全在 GitHub 云环境构建（ubuntu-latest），不依赖本地环境/本地 Docker
 #   - 幂等：release 已存在则补齐/覆盖资产（--clobber），不存在则创建
 #   - 资产与 Gitea 对齐：securetrans-<v>.tar.gz + .md5 + .sha256 + securetrans-offline-deps.tar.gz
+#   - **RTM（v2.7.0）起：镜像分发走 GHCR**（ghcr.io/ai-age-justforfun/SecureTrans:<v>，
+#     GITHUB_TOKEN 认证零注册；GitHub 侧不传 image.tar.gz 资产——与 Gitea 第 5 资产（离线兜底）分工，ADR-038）
 #   - offline-deps 现场 pip download（linux x86_64 manylinux wheel，与生产部署兼容）
 # 约束：备份仓永不接触生产（ADR-021/036）；生产 CD 仍由 Gitea 权威仓负责。
 
@@ -26,6 +29,7 @@ jobs:
     permissions:
       contents: write
       actions: write
+      packages: write
     steps:
       - uses: actions/checkout@v7
 
@@ -86,6 +90,21 @@ jobs:
               - CD-SIM: ubuntu 云端 Docker 仿真验证（release published 自动触发）"
           fi
           echo "RELEASE $V: DONE"
+
+      - name: Build & Push Docker image to GHCR（RTM 起镜像分发走 registry，ADR-038）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.ver.outputs.version }}"; VN="${V#v}"
+          # GHCR 与 GitHub 账号天然打通：Actions 内 GITHUB_TOKEN 自带 packages:write，零注册
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          IMG="ghcr.io/${GITHUB_REPOSITORY}"
+          docker build -f infra/docker/Dockerfile.run -t "${IMG}:${VN}" .
+          docker tag "${IMG}:${VN}" "${IMG}:latest"
+          docker push "${IMG}:${VN}"
+          docker push "${IMG}:latest"
+          echo "GHCR push OK: ${IMG}:${VN} (+latest)"
 
       - name: Trigger CD-SIM (explicit dispatch, bypass GITHUB_TOKEN release-event limit)
         env:

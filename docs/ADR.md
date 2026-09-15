@@ -532,16 +532,29 @@
 
 ---
 
-### ADR-038：Docker 一站式交付 + 蓝绿部署验证 + Registry 分发策略（v2.7.0 前决策，架构决策）
-- **背景**：进入 RTM 阶段前，用户复盘了从零部署的完整成本（手工装 Python3.12 / 编译 venv / 开防火墙 / 传包 / 改 .env / 适配 prod，一周起步），明确诉求：**发布时同时提供 Docker 方案，一条命令部署运行，功能性能一步到位**。并澄清对 Docker 构建/运行与宿主发行版关系的疑问（容器共享宿主内核 + 镜像内用户态；构建产物与构建机器/目标发行版解耦；容器只依赖宿主内核 ABI）。
-- **决策 1（镜像基础：python:3.12-slim）**：默认基于 `python:3.12-slim`（Debian 12，glibc 2.36，最低内核要求 3.2；生产 Rocky 8.10 内核 4.18 >> 3.2 完全兼容；Ubuntu 24.04 / Rocky 10 / 其他发行版同样兼容——**一个镜像处处运行，无需多发行版变体**）。理由：目标未来可能是不同 Linux 不同版本，只保证 ABI 兼容归一化即可；镜像越小越好。**若后续遇到兼容问题再切换 `rockylinux:8` 同源镜像**（与生产 glibc 2.28 完全同源，代价是镜像更大、维护更重）。
-- **决策 2（Gitea 自动化镜像构建：kaniko 无特权）**：Gitea release job 运行在容器 label（docker://securetrans-ci）内，**不引入 docker.sock / 不改 runner 特权配置、不恢复双 label**；用 **kaniko 无特权构建**（/kaniko/executor --tar-path 导出镜像 tar，无需 docker daemon），产物 gzip 后作为 release 第 5 资产。用户已授权直接安装使用 kaniko。
-- **决策 3（蓝绿部署验证：Docker 18000 端口共享生产数据）**：当前生产 10.10.30.8 保持原生 systemd 部署不动；Docker 容器运行在 **18000 端口**（与原生 8000 完全分离），**直接映射当前全部持久化数据和文件系统路径**（SECURETRANS_DATA / NAS_ROOT 同一宿主目录）。同网段走通后正式切换 Docker 为唯一部署形态，后续版本全部 Docker 部署。**为什么 RTM 而非正式 release 做**：当前仅 2 个 beta 用户，风险小可控；即使数据丢失/不一致，最坏情况道歉 + 重置生产环境与程序（尽量避免）；一旦公司业务全部上线后，共享数据的蓝绿必须更加谨慎。**数据丢失/不一致本身视为一次部署验证机会**。
-- **决策 4（数据卷映射宿主目录）**：数据卷默认映射宿主目录，与当前裸机部署路径完全一致（/opt/securetrans/data、/mnt/nas/securetrans 布局沿用），保证 Docker 与原生两条路线**数据可互换、可回退**。
-- **建议 1（直接用当前部署环境）**：直接在生产环境检查/安装 Docker（此前未确认 docker 及依赖是否 ready）；dnf mirror 防火墙仍开放可在线安装；若系统已内置容器运行时则更简单，做到即插即用。
-- **建议 2（端口分离 + 逐步切换）**：Docker 跑 18000，与原生 8000 分开；同网段验证通过后正式切换，用几次迭代验证"一站式部署运维"目标是否达成。
-- **建议 3（Registry 分发策略：GHCR 为标准，tar.gz 为离线兜底）**：GitHub 侧业界最佳实践 = **推送到 OCI Registry（GHCR，ghcr.io）** 而非仅 Release 附件——`docker pull ghcr.io/<owner>/securetrans:<tag>` 即用；**GHCR 与 GitHub 账号天然打通**（PAT 或 GITHUB_TOKEN 认证，无需单独注册，Actions 内 GITHUB_TOKEN 自带 packages: write 权限，`docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}`）；**public 镜像免费**（存储+带宽），private 有额度（RTM 阶段可 public 或 private 视发布策略）。Release 的 image.tar.gz 保留为**封闭数据中心离线兜底**（docker load），两者并存：在线=registry pull，离线=release 附件。备选 registry 对比：Docker Hub（public 免费但限拉取、需单独账号、与 GitHub 无 OAuth）、Quay.io（Red Hat，public 免费）、阿里云 ACR 个人版（国内加速）——GitHub 生态首选 GHCR。
-- **与既有 ADR 不重叠**：ADR-037 管双仓 flow 职责对齐（本 ADR 在其基础上新增镜像资产与 registry 通道）；ADR-016 管 12-Factor 配置（本 ADR 复用 env 抽象做卷/端口映射）；ADR-008 单网卡方案不变（容器内同样单端口 + 网络面白名单）；ADR-020/021 容器隔离与生产边界（蓝绿共享数据是**有意的受控风险**，beta 期 2 用户，非生产常规）。
-- **已落点**：v2.7.0 前决策记录（实施中：Dockerfile.run + compose.yaml + docker-deploy.sh + Gitea kaniko 构建 + GitHub GHCR push + 生产 18000 蓝绿验证）。
+### ADR-038：Docker 一站式交付 + 蓝绿部署验证 + Registry 分发策略（v2.7.0 RTM 启动，架构决策）
+- **背景（问题与场景）**：进入 RTM 阶段前，用户复盘从零部署生产的完整成本——新建 Rocky 8.10 虚拟机 → 临时开防火墙到 mirror → dnf 下载开发环境 → **手工编译 Python 3.12 venv** → pip 装依赖 → 手工传包解压 → deploy.sh/verify.sh → 手工改 .env（.env 不入包）→ 配置 AD/审批人/密码 → 才进入 alpha/beta。结论：**即使有 AI 指导，很多步骤（网络、防火墙、本地 .env）AI 不能代做，一般运维工程师没有耐心做这种部署**；诉求 = **发布时同时提供 Docker 方案，一条命令部署运行，功能性能一步到位**。同时用户提出三个疑问：① 本地是 Rocky 10 / Ubuntu 24.04 WSL，能否构建目标为 Rocky 8.10 的镜像？② 只提供 Dockerfile（部署环境自建）还是 compose？③ 运行是否必须 Rocky 8.10，还是任何 Linux？担心不同发行版差异导致需要维护多个镜像。
+- **原理澄清（决策依据）**：容器 = **共享宿主内核 + 镜像内完整用户态**。① 构建产物与构建机器/目标发行版解耦——任何有 Docker 的 Linux 都能构建同一个镜像（构建时 apt/dnf 装的是镜像内依赖，不碰宿主）；② 容器只依赖宿主**内核 ABI**（不是宿主 glibc/发行版）——关键兼容参数 = 镜像内 glibc 的最低内核要求 vs 宿主内核版本：`python:3.12.11-slim-bookworm`（Debian 12，glibc 2.36）最低内核 3.2；Ubuntu 24.04 基础镜像（glibc 2.39）最低内核 3.2（x86-64）；**生产 Rocky 8.10 内核 4.18 >> 3.2 完全兼容**；反向（旧 glibc 镜像跑新内核）同样兼容。真正风险仅限容器程序调用新内核专有 syscall（本系统无）。**这就是"一个镜像，处处运行"的依据——Docker 设计上消除了"为每个发行版维护一个镜像"的问题**。
+- **备选方案与对比**：
+  - **镜像基础**：① `python:3.12.11-slim-bookworm`（采纳）——官方预编译 3.12、镜像小、glibc 2.36 与 CI 镜像同源；构建时实测 `python:3.12-slim` 浮动 tag 已漂移到 trixie/Debian13（glibc 升级有内核要求不确定性）→ **固定 bookworm 防漂移**。② `rockylinux:8` + dnf python3.12（备选，与生产 glibc 2.28 完全同源，最"原生"，但镜像大、维护重、需 EPEL/AppStream 处理）。③ trixie/Debian13（否决，glibc 升级引入不必要不确定性）。**当前采纳 ①，若后续遇兼容问题切 ②**（决策 1）。
+  - **Gitea 镜像构建路径**：① kaniko 无特权（采纳）——release job 在容器 label 内，kaniko 静态二进制可直接构建+导出 tar，无需 docker daemon/特权/双 label。② 挂 docker.sock（否决——引入宿主逃逸面、需改 runner 配置、违背单 label 归一化）。③ 宿主 label 构建（否决——双 label 回归）。④ 手工本地构建传资产（过渡可用，不自动化，否决为长期方案）。
+  - **GitHub 镜像分发通道**：① GHCR（采纳）——GitHub 原生 OCI registry，账号即 registry 账号（零注册/OAuth 打通），Actions 内 GITHUB_TOKEN 自带 packages:write，public 免费。② Docker Hub（对比——public 免费但限拉取、需单独 Docker 账号、与 GitHub 无 OAuth）。③ Quay.io（对比——Red Hat，public 免费）。④ 阿里云 ACR 个人版（对比——国内加速场景）。**GitHub 生态首选 GHCR**。
+  - **交付形态**：① Registry + Release 附件双通道（采纳）——在线 `podman/docker pull`，封闭数据中心 `docker load < image.tar.gz`（第 5 资产离线兜底）。② 仅 Registry（否决——封闭数据中心无外网拉取）。③ 仅 Release 附件（否决——非业界主通道，缺少 OCI 标准分发）。
+- **决策 1（镜像基础：python:3.12.11-slim-bookworm）**：ABI 兼容归一化 + 镜像最小（实测 304MB）；固定 bookworm 防浮动 tag 漂移；后续遇兼容问题切换 `rockylinux:8` 同源。
+- **决策 2（Gitea 自动化镜像构建：kaniko 无特权）**：release job 内 kaniko 静态二进制 `--tar-path` 导出 OCI 镜像 tar → gzip 为 `securetrans-vX.Y.Z-image.tar.gz` 作为 Gitea Release 第 5 资产（+md5/sha256）；不引入 docker.sock、不改 runner 特权、不恢复双 label；用户已授权安装使用 kaniko。
+- **决策 3（蓝绿部署验证：Docker 18000 共享生产数据）**：生产 10.10.30.8 保持原生 systemd 8000 不动；Docker 容器 18000（宿主端口映射 18000→容器 8000），**直接映射当前全部持久化数据/文件路径**（SECURETRANS_DATA=/opt/securetrans/data、NAS_ROOT=/mnt/nas/securetrans）。同网段走通后正式切换 Docker 为唯一部署形态。**为什么 RTM 而非正式 release 做**：当前仅 2 个 beta 用户，风险小可控；最坏情况 = 道歉 + 重置生产与程序（尽量避免）；业务全量上线后共享数据的蓝绿必须更谨慎。**数据丢失/不一致本身视为一次部署验证机会**。
+- **决策 4（数据卷映射宿主目录）**：与裸机路径完全一致，Docker 与原生两条路线**数据可互换、可回退**。
+- **建议 1（直接用当前部署环境）→ 实证结论**：生产检查 = Rocky 8.10（内核 4.18.0-553）/ **podman 4.9.4-rhel 已预装**（Rocky 8.10 原生自带，docker 命令兼容、systemd 集成、无 daemon）/ Docker 未装亦**无需装** / SELinux Disabled / firewalld inactive（数据中心防火墙管控）/ 磁盘 255G 可用 / 内存 7.5G / /mnt/nas/securetrans 三目录就绪 / 原生 gunicorn 8000 运行中。**结论：即插即用，零安装**——比预期（需装 docker）更简单。
+- **建议 2（端口分离 + 逐步切换）**：18000 与 8000 分离；同网段验证通过后切换；用几次迭代验证"一站式部署运维"目标。
+- **建议 3（Registry 分发：GHCR 为标准，image.tar.gz 为离线兜底）**：详见"GitHub 镜像分发通道"对比；本 ADR 落地 = Gitea Release 保留第 5 资产（封闭内网离线 load），GitHub 走 GHCR push（在线 pull），两者并存。
+- **实施与验证实证（本 ADR 决策已落）**：
+  1. `infra/docker/Dockerfile.run`（FROM python:3.12.11-slim-bookworm；ldap-utils=AD 查询命令行，Debian 包名对应 RHEL 系 openldap-clients；curl/procps；离线 wheelhouse 装依赖；非 root uid 1000；/data /nas 卷）。
+  2. `infra/docker/compose.yaml`（蓝绿 18000→8000；env_file=/opt/securetrans/.env；卷映射与裸机一致）。
+  3. `infra/docker-deploy.sh`（一条命令：load→run→health→只读冒烟；podman/docker 自动识别）。
+  4. 本地 WSL docker 构建验证：**镜像 304MB；容器 health v2.6.7/production/ok；admin 登录通过；ldapsearch 已装；gunicorn 非 root 运行**。
+  5. 清理历史遗留：Windows Docker Desktop 旧 `securetrans-sim` 容器（占 18000，上轮"待退役"项）已删；WSL 内 securetrans 手工部署进程保留（用户环境）。
+  6. **RTM 启动（v2.7.0）**：Gitea release.yml 加 kaniko 镜像构建（第 5 资产）；GitHub release.yml 加 GHCR push（GITHUB_TOKEN 认证，permissions packages:write）；**原生裸机发布/release 形态不变**；**Gitea 保留 image.tar.gz，GitHub 不传 img 只用 GHCR**；从 v2.7.0 起进入 RTM。
+- **与既有 ADR 不重叠**：ADR-037 管双仓 flow 职责对齐（本 ADR 在其上新增镜像资产与 registry 通道）；ADR-016 管 12-Factor 配置（复用 env 抽象做卷/端口映射）；ADR-008 单网卡方案不变（容器内单端口 + 网络面白名单）；ADR-020/021 容器隔离与生产边界（蓝绿共享数据是**有意的受控风险**，beta 期 2 用户，非生产常规）。
+- **已落点**：v2.7.0 RTM 启动（kaniko 构建 + GHCR push + 第 5 资产 + 生产 18000 蓝绿验证，实施见 Gitea/GitHub workflow 与验证记录）。
 ---
 *文档结束 | SecureTrans ADR 全录 | 2026-09-15*
