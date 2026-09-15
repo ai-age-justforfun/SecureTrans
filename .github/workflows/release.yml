@@ -80,8 +80,8 @@ jobs:
             gh release create "$V" "${FILES[@]}" \
               --title "$V" \
               --notes "SecureTrans 独立发布（GitHub 云构建）
-- CI: push 全量 TDD（preflight + 静态 + TDD）
-- Release: 云端构建 4 资产（主包 + md5 + sha256 + offline-deps）
-- CD-SIM: ubuntu 云端 Docker 仿真验证（release published 自动触发）"
+              - CI: push 全量 TDD（preflight + 静态 + TDD）
+              - Release: 云端构建 4 资产（主包 + md5 + sha256 + offline-deps）
+              - CD-SIM: ubuntu 云端 Docker 仿真验证（release published 自动触发）"
           fi
           echo "RELEASE $V: DONE"
