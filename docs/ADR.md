@@ -1,4 +1,4 @@
-# SecureTrans 技术决策记录（ADR）
+﻿# SecureTrans 技术决策记录（ADR）
 
 > 定位：全部架构/流程/安全/运维关键决策的唯一权威文档，与 PRD（docs/02）并列。
 > README 与 AGENTS 仅保留最新落点摘要与索引，全文以本文件为准（ADR-032 文档体系决策）。
@@ -568,3 +568,17 @@
 - **已落点**：2026-09-15 v2.7.0（RC）：act_runner config.yaml 增 `container.options` 挂 sock 并重启生效（v3.4.2 已 declare labels: [securetrans-wsl securetrans-ci]）；CI 镜像 Dockerfile 改 docker-ce-cli（去 kaniko COPY）；release.yml 改容器内 docker build + docker save；rocky10-ci 新 distro 导入（Rocky 10.1 glibc 2.39）；双端 workflow 同步。详见 Gitea/GitHub Actions runs 与部署记录。
 ---
 *文档结束 | SecureTrans ADR 全录 | 2026-09-15*
+### ADR-040：act_runner 脱离 systemd → nohup 直跑 + 无窗口保活（v2.7.0 RC，运行稳定性修复）
+- **背景**：rocky10-ci 重建后（ADR-039），act_runner 以 systemd service（Restart=always）常驻，但出现**周期性崩溃**（18:15→18:32→18:38→18:52→19:00→19:07 共 6 次，间隔 6-17 分钟），正在执行的 CI job 中断。诊断三层取证：
+  1. **非内核重启**：/proc/uptime 连续（469133s，VM 未重启）；
+  2. **systemd 整体重置**：journalctl --list-boots 仅 boot 0 且 FIRST ENTRY 随每次重置刷新、/run/systemd/system mtime 更新、journal 显示 systemd[524] Startup finished——**WSL 中 systemd 非 PID 1，是 Microsoft init 的子进程，被 WSL 空闲终止机制周期关闭**；
+  3. **网络核实（Microsoft 官方）**：WSL release notes 明示"实例终止超时 = 最后 WSL 进程退出后 15 秒"；Microsoft Learn 建议"需要一个 Microsoft init 的子进程（如交互 shell）保持 WSL 不被 idle-terminating"，后台 daemon 不算活跃（microsoft/WSL#8854、#13416）。
+- **决策**（双保险，与 ADR-021 互补）：
+  1. **Windows 计划任务无窗口保活**：新建 WSL-Rocky10-CI-KeepAlive（schtasks，每 1 分钟 wscript.exe wsl-keepalive-rocky10-ci.vbs，VBS 内 Wscript.Shell.Run "wsl.exe -d rocky10-ci -- sleep 45", 0, False）——隐藏窗口执行（规避 ADR-021 当年"每 1 分钟弹窗"问题），使 WSL 始终存在活跃进程、不被空闲终止。
+  2. **act_runner 脱离 systemd → nohup 直跑**：systemctl disable --now act_runner 后 
+ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetrans/act_runner_nohup.log 2>&1 &——act_runner 成为 WSL init 直接子进程，systemd 崩溃不再连带；与保活组合：保活防 VM 空闲终止，nohup 防 systemd 崩溃连带。
+  3. **开机自启**：nohup 进程在 VM 生命周期内持续；若 Windows 重启，需手工/登录计划任务拉起（已记录，后续按需补 onlogon 任务）。
+- **实证**：修复前 act_runner 6-17 分钟必崩；修复后（保活 + nohup）连续 5 分钟+ 无重启，systemd 亦未再重置。故障 job 幂等 rerun 即可恢复。
+- **与既有 ADR 不重复**：ADR-021 为 rocky10-st 时代"WSL 空闲终止→保活计划任务（因弹窗删除）"记录；本 ADR 为 rocky10-ci 新环境落地：无窗口 VBS 保活 + nohup 脱离 systemd（双保险），并补充"WSL systemd 非 PID 1、被 init 空闲关闭"的新诊断。
+- **已落点**：2026-09-15 v2.7.0 RC；计划任务 WSL-Rocky10-CI-KeepAlive + C:\Users\jinta\.securetrans\wsl-keepalive-rocky10-ci.vbs + nohup 启动 act_runner；release #156 在修复后 rerun 执行中。
+---
