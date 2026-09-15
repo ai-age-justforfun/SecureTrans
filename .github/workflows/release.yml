@@ -88,6 +88,8 @@ jobs:
           echo "RELEASE $V: DONE"
 
       - name: Trigger CD-SIM (explicit dispatch, bypass GITHUB_TOKEN release-event limit)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # GitHub 保护机制：用 GITHUB_TOKEN 创建的 Release 不会触发 release 事件（防递归）。
           # 故在 RELEASE 成功后显式触发 CD-SIM（workflow_dispatch + 版本参数），实现"Release 完成 → CD 仿真"的自动顺序。
