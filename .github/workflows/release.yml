@@ -50,14 +50,17 @@ jobs:
 
       - name: Build offline-deps (linux x86_64 wheels, online)
         run: |
-          mkdir -p /tmp/deps packages
+          # 打包结构必须与 Gitea 侧一致：含 wheelhouse/ 顶层目录（Dockerfile.run 解压到 /tmp/ 后
+          # pip --find-links /tmp/wheelhouse 才能命中；若平铺打包则 docker build 报 "from versions: none"）
+          mkdir -p /tmp/deps/wheelhouse packages
           pip download --only-binary=:all: \
             --platform manylinux2014_x86_64 \
             --python-version 312 --implementation cp --abi cp312 \
-            -r infra/docker/requirements.txt -d /tmp/deps
+            -r infra/docker/requirements.txt -d /tmp/deps/wheelhouse
           # 输出到 packages/ 下（与 Gitea package.sh 路径一致；Dockerfile.run COPY packages/securetrans-offline-deps.tar.gz）
-          tar -czf packages/securetrans-offline-deps.tar.gz -C /tmp/deps .
+          tar -czf packages/securetrans-offline-deps.tar.gz -C /tmp/deps wheelhouse
           ls -lh packages/securetrans-offline-deps.tar.gz
+          tar -tzf packages/securetrans-offline-deps.tar.gz | head -3
 
       - name: Build package tarball (src+tests+infra+docs+env+offline-python)
         run: |
