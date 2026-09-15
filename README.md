@@ -95,7 +95,7 @@ SecureTrans/
 │   └── test_api.py           # 全量API测试脚本（361项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
 ├── docs/                     # 统一文档（数字前缀排序，持续刷新）
 │   ├── 00-lean-startup-phase-map.md   # Lean Startup三阶段映射与决策门
-│   ├── 01-scrum-io-definition.md      # AI辅助Agile-Scrum流程模板(v2.0，Scrum Guide审计+裁剪)
+│   ├── 01-scrum-io-definition.md      # AI时代人机协同Agile方法论模板(v3.0，SE 3.0+变更分级+三重范式+防眩晕)
 │   ├── 02-prd.md                     # 产品需求文档（内部版本v2.2，文件名不带版本号）
 │   ├── 03-psf-process.md              # PSF阶段标准流程
 │   ├── 04-pmf-process.md              # PMF阶段标准流程（下一阶段准备）
@@ -228,7 +228,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 
 详见：
 - [Lean Startup阶段映射](docs/00-lean-startup-phase-map.md)
-- [AI辅助Agile-Scrum流程模板 v2.0](docs/01-scrum-io-definition.md)
+- [AI 时代人机协同 Agile 方法论模板 v3.0（SE 3.0 + L1/L2/L3 变更分级 + HITL/HOTL/HOOTL + PDCA 微循环 + RTM 缓冲 + 防眩晕）](docs/01-scrum-io-definition.md)
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
@@ -299,6 +299,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 045 | GitLab CICD 实验线打通（gitlabcicotest：独立 WSL+docker+数据，跨平台 CI/CD 迁移教训，docs/15） | v2.7.1 |
 | 046 | Git 服务器选型：Gitea/GitHub/GitLab 优劣势对比 + 场景选型建议（方法论，未来项目可复用） | v2.7.1 |
 | 047 | 发布触发自动化与 AI 边界：触发=git 事件自动（tag→Release→CD 全链自治）；AI 只保留打 tag/发布决策+应急 dispatch | v2.7.1 |
+| 048 | AI 时代人机协同 Agile 方法论采纳（v2.0→v3.0）：SE 3.0 范式 + L1/L2/L3 变更分级 + HITL/HOTL/HOOTL + PDCA 微循环 + RTM 缓冲并入 Agile + 防眩晕 | v2.7.1 |
 
 > **使用方式**：决策冲突时以 docs/ADR.md 对应条目为准；新增决策只追加编号（ADR-0xx），不修改历史条目。
 > 最新落点摘要（ADR-031/032/033/034 核心）：合作方全量编辑+联系人必填；WSL 测试收敛为 dev+CI 两环境；生产只读冒烟=业界标准；

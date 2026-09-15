@@ -692,3 +692,13 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   - **AI 边界（阶段演进）**：孵化期=AI 深度介入（编写 workflow/脚本、配置 runner/secret、试运行与排障）；成熟期=AI 只保留两件事——① 发布决策：执行 `git tag` + push（ADR-007 由人拍板）；② 应急：手动 workflow_dispatch 重跑。**流水线本体（CI 门禁→Release→CD）平台自治，AI 不再深度介入**。
 - **与既有 ADR 不重复**：ADR-007 管发布节奏与门禁（何时发、发不发）；ADR-037 管环境职责分层（CI=门禁/Release=发布/CD=部署）；ADR-046 管平台选型。**本 ADR 管"谁触发流水线 + AI 与平台自治的边界"**，三者互补。
 - **已落点**：2026-09-15——三平台 workflow 触发段逐条审核入库（docs/CICD.md §10）；三平台 main 全同步 57d89bf；已验证推 GitLab main 不触发流水线（rules 过滤）。
+
+### ADR-048：AI 时代人机协同 Agile 方法论采纳（v2.0 → v3.0，方法论+强制）
+- **背景**：2026-09-15 项目进入 PSF 收尾→PMF 准备节点（第一个"客户"完成）。用户与 DeepSeek 深度沟通后获得"AI 时代人机协同 Agile 方法论"原型（share/kg8xxzwitepqj4dt42），核心判断=软件工程从 SE 2.0（AI 辅助）进入 SE 3.0（Agentic Software Engineering），传统敏捷的实现细节被颠覆、概念内核保留。本项目两周实证（AI 辅助开发→测试→CICD→三平台发布）已证明传统敏捷大量形式无收益，需方法论升级以指导本项目与下一项目。
+- **决策**：
+  1. **采纳并融合**：docs/01 升级 v2.0→v3.0（AI 时代人机协同 Agile 方法论模板），保留 Scrum 经验主义内核（透明/检视/适应）与 v2.0 精华（人机分工/事件裁剪/承诺/站会看板模板），新增——SE 3.0 范式说明、循环迭代流程（Design Thinking→Lean Startup→Agile→DevOps/GitOps→Release→回流）、L1/L2/L3 变更分级（影响半径+可逆性，事件触发）、HITL/HOTL/HOOTL 三重范式、超级XP PDCA 微循环、RTM 缓冲并入 Agile 检查/适应环节（会诊：Agent 影响分析→人 Fix/As Designed/Won't Fix/Postpone；RC 序列；L1 无需/L2 轻量/L3 完整）、防眩晕机制（变更预算 ≤2-3 L3/10 L2 + WIP=1 + 漂移检测 + 周报压缩）、极简工件体系（Repo as Memory：PRD/ADR/复盘/AGENTS 唯一事实来源，不用 Jira）、分阶段落地路径、一句话方法论（单 Agent + Repo as Memory + Prompt as Process + Human as Gate + PDCA 微循环 + 分级变更控制 + RTM 缓冲并入 Agile + Release 渐进交付）。
+  2. **AGENTS.md Part A 同步**：A1 补人机协同范式与变更分级；A4 补 RTM 缓冲行；A8 补防眩晕实践（第 10 条）。
+  3. **Commit 规范升级**：commit 携带变更级别标记 `[L1|L2|L3]`（L3 必须已获人确认）；AI 识别到 L3 倾向必须停下请求决策。
+  4. **本项目落点**：RTM 缓冲=现有 rc 阶段（v2.7.x，APP_STAGE=rc，ADR-043）；防眩晕=日常迭代已按变更预算收敛；下一项目直接套用 docs/01 v3.0 模板。
+- **与既有 ADR 不重复**：ADR-025 管 AGENTS Part A 唯一来源（本 ADR 是其内容升级的依据）；ADR-027 管双闭环复盘（PSF/PMF 节奏）；ADR-047 管发布触发自动化。**本 ADR 管 AI 时代人机协同方法论（SE 3.0 范式+变更分级+范式+防眩晕）采纳与模板升级**。
+- **已落点**：2026-09-15——docs/01 v3.0（模板本体）+ AGENTS Part A（协作契约）同步升级入库；commit 携带 [L1|L2|L3] 标记从本 ADR 起执行。
