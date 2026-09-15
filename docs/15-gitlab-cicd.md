@@ -3,6 +3,11 @@
 > 状态：**Active（v2.7.1 rc 首验落地，2026-09-15）**
 > 定位：第三条平台线（Gitea 权威 + GitHub 备份/云端闭环 + GitLab 实验）——验证 GitLab CI/CD 全链路
 > 并沉淀跨平台迁移方法论。**实验线隔离纪律：绝不碰 Rocky 测试/生产环境（ADR-045 强制）**。
+> **可选流程（2026-09-15 起）**：本实验线的全部代码（.gitlab-ci.yml、docs/15、ADR-045/046）已随仓库
+> 合入 Gitea main / GitHub 备份仓，但 **GitLab CI/release/CD 默认不触发**——各平台只执行自己的
+> workflow 文件（Gitea 只跑 .gitea/workflows/*，GitHub 只跑 .github/workflows/*，均不执行 .gitlab-ci.yml），
+> 且默认分支不推送 GitLab remote。**仅当需要再跑 GitLab 实验线时**：手动 `git push gitlab gitlabcicotest`
+> 才会触发 GitLab 流水线（推送后 GitLab Runner 自动执行 ci-check/release/deploy）。
 
 ## 1. 目标与边界
 
