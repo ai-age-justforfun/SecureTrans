@@ -74,7 +74,7 @@ jobs:
           echo "文件系统洁净: OK (staging/external/archive 均为空)"
           # ② 应用层：admin 默认重置密码登录 → 提交记录总数必须为 0
           rm -f /tmp/st_cookies.txt
-          LOGIN=$(curl -sf -c /tmp/st_cookies.txt -X POST http://127.0.0.1:18000/api/login \
+          LOGIN=$(curl -sf -c /tmp/st_cookies.txt -X POST http://127.0.0.1:18000/api/auth/login \
             -H 'Content-Type: application/json' -d '{"username":"admin","password":"Init@123456"}') \
             || { echo "::error::admin 默认重置密码登录失败（RESET_PASSWORD=Init@123456 应可登录）"; exit 1; }
           echo "ADMIN LOGIN: $LOGIN"
