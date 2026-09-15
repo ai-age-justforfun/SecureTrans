@@ -63,10 +63,9 @@ jobs:
         run: |
           set -euo pipefail
           cd "${GITHUB_WORKSPACE:-/workspace}"
-          # kaniko 静态二进制（无特权、无 daemon、不挂 docker.sock，符合单 label 归一化 ADR-037/038-2）
-          curl -sL -o /tmp/kaniko.tar.gz \
-            https://github.com/GoogleContainerTools/kaniko/releases/download/v1.23.2/kaniko-linux-amd64.tar.gz
-          mkdir -p /usr/local/bin && tar xzf /tmp/kaniko.tar.gz -C /usr/local/bin executor
+          # kaniko executor 已固化在 CI 镜像（infra/docker/Dockerfile COPY 自官方镜像 v1.24.0，
+          # 无特权、无 daemon、不挂 docker.sock；ADR-037/038-2 单 label 归一化。
+          # 注：v1.24.0 无 --version 参数（打印帮助且 exit 1），不做版本校验）
           # 构建上下文=workspace 根（.dockerignore 已在仓库内，排除 tests/docs/venv/主包等）
           /usr/local/bin/executor --context dir:///workspace \
             --dockerfile infra/docker/Dockerfile.run \
