@@ -21,7 +21,10 @@ set -euo pipefail
 IMAGE_TAR="${1:?用法: bash infra/docker-deploy.sh <image.tar.gz> [端口]}"
 DOCKER_PORT="${2:-${SECURETRANS_DOCKER_PORT:-18000}}"
 ENV_FILE="${SECURETRANS_ENV_FILE:-/opt/securetrans/.env}"
-ENV_ROLE_VAL="${SECURETRANS_ENV_ROLE:-production}"   # 生产默认 production；本地/测试可覆盖为 test（全量 TDD 形态）
+# ENV_ROLE 默认尊重 .env（如 prod/test）；SECURETRANS_ENV_ROLE 可显式覆盖（本地/测试可传 test）
+ENV_ROLE_FROM_ENV=$(grep -E '^ENV_ROLE=' "$ENV_FILE" 2>/dev/null | cut -d= -f2 | tr -d '\r' | head -1 || true)
+ENV_ROLE_FROM_ENV="${ENV_ROLE_FROM_ENV:-production}"
+ENV_ROLE_VAL="${SECURETRANS_ENV_ROLE:-$ENV_ROLE_FROM_ENV}"
 DATA_DIR="${SECURETRANS_HOST_DATA:-/opt/securetrans/data}"
 NAS_DIR="${SECURETRANS_HOST_NAS:-/mnt/nas/securetrans}"
 CONTAINER_NAME="securetrans-docker"

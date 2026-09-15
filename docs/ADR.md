@@ -613,3 +613,15 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
 - **与既有 ADR 不重复**：ADR-009 管业务系统内 admin 密码（RESET_PASSWORD 全链路）；ADR-024 管 CD 的 SSH 认证（ed25519 密钥走 repo secret）；ADR-037 管 CI/CD secret 最小作用域。**本 ADR 管 AI 开发侧的本地凭据管理**（外部系统认证的创建/存放/优先级/防弹窗），是方法论层规范，可复用于后续项目。
 - **已落点**：2026-09-15（v2.7.0 RC 期间）——GitHub PAT 存 `C:\Users\jinta\.securetrans\github-token.txt`（带标题注释行，使用时 regex 提取 `ghp_...`）；Gitea API token 存 `~/.securetrans/`（origin remote URL 引用）；v2.7.0 draft Release 发布/阶段调整（alpha/beta/rc）全部通过 token API 完成（无账号密码）；git 固定 `credential.https://github.com.username = ai-age-justforfun` 消除弹窗；后续新系统（GitLab 等）按本 ADR 执行。
 ---
+
+### ADR-043：部署形态正式切换——Docker 为默认形态、原生退役为备选 + 蓝绿切换顺序纪律（v2.7.0 RC，强制）
+- **背景**：Docker 蓝绿验收完成（18000 验证 docker 形态：health/只读冒烟通过），用户验收后决策——**后续新版本默认改为 docker 部署，除非强制要求，否则不再推送原生部署**。切换中发现并纠正三处关键问题：① 蓝绿两实例**共享同一 SQLite/NAS**（ADR-038 已记录），曾误以"先起容器、后停原生"顺序执行，存在双实例并发写窗口（虽最终状态正确，但顺序违反数据安全）；② 容器内 ENV_ROLE 被 docker-deploy.sh 默认覆盖为 `production`，与 .env 的 `prod` 不一致，导致冒烟 health 断言失败；③ 冒烟从 127.0.0.1 访问被判外网面（不在 INTERNAL_CIDRS）→ 管理接口 403（安全设计的正确行为，但冒烟需从内网 IP 执行）。
+- **决策**：
+  1. **正式形态 = Docker（podman）容器 `securetrans-docker` 监听 8000**；原生 systemd 退役（stop + disable），`deploy.sh` 保留为回退/首次引导通道；**后续新版本 CD 部署改为 docker 通道**（cd.yml/cd-deploy.sh 指向 docker-deploy.sh，原生部署仅强制要求时使用）。
+  2. **切换顺序纪律（强制）**：蓝绿两实例**严禁同时运行**（共享 SQLite 并发写）；正确顺序 = **先停原生 8000 → 再部署/启动容器**；回滚 = 先停容器 → 再启原生。18000 仅为蓝绿验收临时端口，验收后不保留（正式形态用 8000，用户访问/防火墙/文档地址不变）。
+  3. **ENV_ROLE 尊重 .env**：docker-deploy.sh 默认从 .env 读取 `ENV_ROLE`（如 prod），`SECURETRANS_ENV_ROLE` 仅显式覆盖（本地/测试可传 test）；禁止脚本默认值覆盖生产部署配置。
+  4. **冒烟视角（生产）**：只读冒烟从**内网 IP** 执行（`bash infra/smoke.sh http://<内网IP>:8000`，smoke.sh 支持位置参数 BASE_URL）；127.0.0.1 不在 INTERNAL_CIDRS → 判外网 → 管理接口 403 是安全设计正确行为，不应从 127.0.0.1 验证管理接口。
+  5. **WSL 原生路径（呼应 ADR-026，强制）**：生产操作/WSL 测试/git/docker 构建**全部在 Linux 原生路径独立进行**，禁止 /mnt/c、/mnt/d（9P 转发性能差且环境不独立）；跨 Windows 传内容经 base64 写入 WSL 原生路径。
+- **与既有 ADR 不重复**：ADR-038 管 docker 交付方案与蓝绿部署形态；**本 ADR 管形态正式切换的决策、顺序纪律与运维视角**（Docker 默认、原生退役、切换顺序、ENV_ROLE 尊重 .env、冒烟内网 IP、WSL 原生路径），是 ADR-038 的落点深化。
+- **已落点**：2026-09-15 v2.7.0 RC——生产正式切换：原生 `systemctl stop && disable`（inactive）；容器 `securetrans-docker` 8000（--user 973:972，envRole=prod，health OK）；内网 IP 冒烟 **11/11 100%**；18000 验收容器已清除；docker-deploy.sh ENV_ROLE 修复（尊重 .env，SECURETRANS_ENV_ROLE 显式覆盖）已同步仓库。
+---
