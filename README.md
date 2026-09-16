@@ -299,7 +299,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 044 | 审计统计四维口径重构（提交文件数按名去重+审批+下载+管理操作仅admin）+ CD 正式切换 Docker 通道（v2.7.1 首个验证） | v2.7.1 |
 | 045 | GitLab CICD 实验线打通（gitlabcicotest：独立 WSL+docker+数据，跨平台 CI/CD 迁移教训，docs/15） | v2.7.1 |
 | 046 | Git 服务器选型：Gitea/GitHub/GitLab 优劣势对比 + 场景选型建议（方法论，未来项目可复用） | v2.7.1 |
-| 047 | 发布触发自动化与 AI 边界：触发=git 事件自动（tag→Release→CD 全链自治）；AI 只保留打 tag/发布决策+应急 dispatch | v2.7.1 |
+| 047 | 发布触发自动化与 AI 边界：触发=git 事件自动（tag→Release→CD 全链自治）；AI 只保留打 tag/发布决策+应急 dispatch；执行顺序=GitLab stages 严格顺序 / Gitea-GitHub 事件链（CI+Release 并行、CD 在后）；失败回退=先回滚生产再修代码，生产回滚≠代码回退（docs/CICD §10.4） | v2.7.1 |
 | 048 | AI 时代人机协同 Agile 方法论采纳（v2.0→v3.0）：SE 3.0 范式 + L1/L2/L3 变更分级 + HITL/HOTL/HOOTL + PDCA 微循环 + RTM 缓冲并入 Agile + 防眩晕 | v2.7.1 |
 | 049 | GitLab 隔离——双开发域分离：个人域=本地+Gitea+GitHub，公司域=GitLab（另一 AI 工具）；配置资产全量固化（docs/15 §7）；主仓库不再推送 GitLab；再启用须用户指示 | v2.7.1 |
 | 050 | CICD Workflow 组织方式——总分式（入口+明细）vs 单文件：触发即作用域/权限最小化/失败隔离/跨平台迁移优，传值与配置共享劣；单文件适用纯 CI 单平台线性项目；本项目保持总分式（薄壳+infra/*.sh+secret 最小作用域） | v2.7.1 |

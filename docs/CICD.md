@@ -373,11 +373,12 @@ jobs:
 #    （与 Gitea CI 镜像同源：wheelhouse 来自 Gitea Release offline-deps）
 ```
 
-### 6.2 .gitlab-ci.yml（单文件三阶段：CI → Release → CD）
+### 6.2 .gitlab-ci.yml（入口 include + .gitlab/workflows/ 三文件：CI → Release → CD，ADR-050 总分式）
 
 ```yaml
-# 与 Gitea/GitHub 最大的语法差异：三个"workflow"合并在一个 .gitlab-ci.yml 里，
-# 用 stages 分阶段 + rules 控制每个 job 在什么事件下运行。
+# 与 Gitea/GitHub 最大的语法差异：GitLab 原生是"一个流水线"模型——可用单文件 stages 分阶段，
+# 也可（本仓库现采用，ADR-050 总分式）根 .gitlab-ci.yml 入口 + include .gitlab/workflows/{ci,release,deploy}.yml 明细。
+# 下方为教学模板（单文件写法，三文件拆分 = 把各 job 移到 workflows/*.yml + 根文件 include）。
 
 stages: [ ci-check, release, deploy ]
 
@@ -577,6 +578,26 @@ deploy:
 
 - 门禁逻辑全在 `infra/*.sh`（平台无关），三平台 workflow 只是"壳"——换平台/改门禁不需要 AI 介入流水线本体
 - 应急通道：三平台 CD 均有 `workflow_dispatch`（手动触发），用于 release published 偶发失败时重跑
+
+### 10.4 执行顺序与失败回退（2026-09-16 复盘）
+
+**顺序怎么定**
+
+| 平台 | 顺序机制 | 本项目实际语义 |
+|---|---|---|
+| GitLab（单流水线） | 全局 `stages:`（ci-check → release → deploy）——同一 stage 内 jobs **并行**，stage 间**严格顺序** | 三 job 各占一个 stage → **严格顺序**：ci-check 全绿才 release，release 成功才 deploy（deploy 另 `dependencies: [release]` 强化） |
+| Gitea / GitHub（多 workflow 事件链） | 各 workflow 独立触发：push tag **同时**触发 ci.yml + release.yml；CD 由 release published 触发 | **CI 与 Release 并行**；CD 在 Release 建成后 → 端到端语义"CI+Release 并行，CD 在 Release 后" |
+
+**失败怎么处理**
+
+| 环节 | 失败表现 | 处理 |
+|---|---|---|
+| CI 失败 | job 变红，流水线停在该步 | 看 run 日志定位 → 改代码 push → rerun（幂等，ADR-040） |
+| Release 失败 | tag 已推但 Release 没建成/资产缺失 | 修正后重跑 release job；资产损坏删 Release 重建（ADR-041 资产精确匹配） |
+| CD 失败 | 部署脚本中途退出，生产未变更或半变更 | 先确认生产状态 → 修脚本 rerun 或 `workflow_dispatch` 手动补部署（ADR-024） |
+| 部署后发现问题 | 新版本有 bug | ① 生产回滚（ADR-043：先停容器再起上一版/原生，蓝绿纪律）② 打**新 tag 修复版**（推荐）③ `git revert` 代码后重走全链 |
+
+**回退铁律**：先回滚生产恢复业务，再修代码；**生产回滚 ≠ 代码回退**——`git revert` 只影响代码历史，不影响已部署实例，两件事分开处理。
 
 ---
 

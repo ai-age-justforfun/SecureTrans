@@ -692,6 +692,10 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   - **AI 边界（阶段演进）**：孵化期=AI 深度介入（编写 workflow/脚本、配置 runner/secret、试运行与排障）；成熟期=AI 只保留两件事——① 发布决策：执行 `git tag` + push（ADR-007 由人拍板）；② 应急：手动 workflow_dispatch 重跑。**流水线本体（CI 门禁→Release→CD）平台自治，AI 不再深度介入**。
 - **与既有 ADR 不重复**：ADR-007 管发布节奏与门禁（何时发、发不发）；ADR-037 管环境职责分层（CI=门禁/Release=发布/CD=部署）；ADR-046 管平台选型。**本 ADR 管"谁触发流水线 + AI 与平台自治的边界"**，三者互补。
 - **已落点**：2026-09-15——三平台 workflow 触发段逐条审核入库（docs/CICD.md §10）；三平台 main 全同步 57d89bf；已验证推 GitLab main 不触发流水线（rules 过滤）。
+- **补充（2026-09-16，执行顺序与失败回退，docs/CICD.md §10.4）**：
+  - **顺序机制**：GitLab=单流水线全局 stages（ci-check→release→deploy），同一 stage 内 jobs 并行、stage 间严格顺序——本项目三 job 各占一个 stage，**严格顺序**（deploy 另 `dependencies: [release]` 强化）；Gitea/GitHub=多 workflow 事件链，push tag 时 ci.yml 与 release.yml **并行触发**，CD 由 release published 在 Release 建成后触发（语义="CI+Release 并行，CD 在 Release 后"）。
+  - **失败处理**：CI 失败=看 run 日志→改代码 push→rerun（幂等）；Release 失败=修后重跑 release，资产损坏删 Release 重建（ADR-041）；CD 失败=先确认生产状态→修脚本 rerun 或 workflow_dispatch 手动补部署；部署后发现问题=①生产回滚（ADR-043 蓝绿"先停再起"）②打新 tag 修复版（推荐）③git revert 后重走全链。
+  - **回退铁律**：先回滚生产恢复业务，再修代码；**生产回滚 ≠ 代码回退**（git revert 不影响已部署实例）。
 
 ### ADR-048：AI 时代人机协同 Agile 方法论采纳（v2.0 → v3.0，方法论+强制）
 - **背景**：2026-09-15 项目进入 PSF 收尾→PMF 准备节点（第一个"客户"完成）。用户与 DeepSeek 深度沟通后获得"AI 时代人机协同 Agile 方法论"原型（share/kg8xxzwitepqj4dt42），核心判断=软件工程从 SE 2.0（AI 辅助）进入 SE 3.0（Agentic Software Engineering），传统敏捷的实现细节被颠覆、概念内核保留。本项目两周实证（AI 辅助开发→测试→CICD→三平台发布）已证明传统敏捷大量形式无收益，需方法论升级以指导本项目与下一项目。
