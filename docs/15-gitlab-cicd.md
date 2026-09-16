@@ -1,10 +1,12 @@
-# GitLab CICD 实验线（收尾完成 2026-09-16）
+# GitLab CICD 实验线（隔离终态 2026-09-16）
 
-> 状态：**已隔离归档（2026-09-16 起）+ 收尾完成（v2.7.3 最后一次全链验证）**——配置资产已全部固化到主仓库
-> （Gitea main / GitHub 备份仓），**主仓库不再推送 GitLab remote**。双开发域分离：**个人开发域 = 本地 + Gitea + GitHub；
+> 状态：**已隔离归档（2026-09-16 起）+ 收尾完成（v2.7.3）+ 仓库终态对齐——GitLab 自此隔离，不再使用**。
+> 配置资产已全部固化到主仓库（Gitea main / GitHub 备份仓）。双开发域分离：**个人开发域 = 本地 + Gitea + GitHub；
 > 公司开发域 = GitLab**（由另一 AI 工具独立访问维护，本工具不再访问 GitLab）。如需再启用 GitLab 实验线，须用户明确指示（ADR-049）。
 > **收尾动作（2026-09-16）**：开发分支 `gitlabcicotest` 已合并 main 并删除（分支引用删除，内容全量保留在 main 历史）；
-> CI 触发从分支改为 **main**（push main 触发 ci-check）；v2.7.3 在 main 上完整 CI-release-CD 全链验证通过（仅 GitLab 实验环境 18080，不碰 Rocky/生产）。
+> CI 触发从分支改为 **main**（push main 触发 ci-check）；v2.7.3 在 main 上完整 CI-release-CD 全链验证通过（仅 GitLab 实验环境 18080，不碰 Rocky/生产）；
+> **澄清**：job 的 `tags: [gitlabcicotest]` = runner 选择标签（专用物理 Runner `gitlabcicotest-docker`），**不是分支依赖**，与分支同名纯属巧合；
+> **终态**：GitLab main=4a7ffe6 已与 Gitea/GitHub 对齐（本地=origin=4a7ffe6），此后不再推送 GitLab。
 > 历史：v2.7.1 rc 首验落地（2026-09-15）——第三条平台线（Gitea 权威 + GitHub 备份/云端闭环 + GitLab 实验）
 > 验证 GitLab CI/CD 全链路并沉淀跨平台迁移方法论。**实验线隔离纪律：绝不碰 Rocky 测试/生产环境（ADR-045 强制）**。
 

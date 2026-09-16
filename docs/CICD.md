@@ -427,9 +427,9 @@ deploy:
 | 差异点 | GitLab |
 |---|---|
 | 文件形态 | 单文件 `.gitlab-ci.yml`（stages + rules），不是多 workflow |
-| Runner 选择 | `tags` 匹配（`tags: [gitlabcicotest, docker]`） |
+| Runner 选择 | `tags` 匹配（`tags: [gitlabcicotest, docker]`）——**tags 是 runner 选择标签，不是分支**；实验线专用 Runner 注册名恰好含 gitlabcicotest，job 派发给注册该 tag 的 runner，删改会卡死 |
 | 变量 | `$CI_*` 预置变量（`$CI_COMMIT_TAG`、`$CI_PROJECT_DIR`） |
-| Release 资产 | 自动 4 sources + 手动 Generic Package（需 GITLAB_PAT 调 API） |
+| Release 资产 | 自动 4 sources（官方 tag 机制）+ 手动 Generic Package（需 GITLAB_PAT 调 API）；**实验线有意不带业务部署资产**（主包/md5/offline-deps/镜像），未来正式用补 upload-asset |
 | 作业间传递 | `artifacts`（上传产物 → 下阶段下载） |
 | 特有坑 | `GITHUB_WORKSPACE` 必须显式设 `$CI_PROJECT_DIR` |
 
@@ -439,12 +439,12 @@ deploy:
 
 | 环节 | Gitea Actions | GitHub Actions | GitLab CI/CD |
 |---|---|---|---|
-| 门禁触发 | push main / tag v* | push main / tag v* / PR | 分支 push / tag v* |
+| 门禁触发 | push main / tag v* | push main / tag v* / PR | push main / tag v*（2026-09-16 收尾改 main；原开发分支已删） |
 | 门禁内容 | preflight+静态+版本+env+脚本+TDD（容器） | 同（云 VM） | 同（容器） |
 | 门禁凭据 | 无（代码克隆经网关匿名/内置 token） | GITHUB_TOKEN | 无（runner 自带 clone） |
 | Release 触发 | tag v* | tag v* / 手动 | tag v* |
 | Release 权限 | **RELEASETOKEN**（仅 release job） | **permissions 声明 + GITHUB_TOKEN** | **GITLAB_PAT**（变量，仅 release） |
-| 发布载体 | Gitea Release（7 资产） | GitHub Release（4 资产）+ GHCR | GitLab Release（4 sources）+ Generic Package |
+| 发布载体 | Gitea Release（7 资产） | GitHub Release（4 资产）+ GHCR | GitLab Release（4 sources 源码包，官方 tag 自动生成）+ Generic Package（实验线有意简化） |
 | 镜像构建 | job 容器内 docker CLI → **宿主 docker.sock** | 云 VM docker build → GHCR | job 容器内 docker CLI → **宿主 docker.sock** |
 | CD 触发 | Release published | Release published（→显式 dispatch） | tag（deploy stage） |
 | CD 目标 | 生产 10.10.30.8（SSH + docker） | 云端 CD-SIM 18000 仿真 | 实验 18080 独立部署 |
