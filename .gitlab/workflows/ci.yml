@@ -1,7 +1,7 @@
 # ============================================================
 # GitLab CI job（对标 .gitea/workflows/ci.yml、.github/workflows/ci.yml）
 # 由根 .gitlab-ci.yml include 引入；stages 在根文件定义
-# 触发：push gitlabcicotest / push tag v*
+# 触发：push main / push tag v*（2026-09-16 收尾：开发分支 gitlabcicotest 已合并删除，触发改主分支）
 # ============================================================
 
 # ---------------- CI：静态门禁 + 全量 TDD（每次 push / tag） ----------------
@@ -13,7 +13,7 @@ ci-check:
     GITHUB_WORKSPACE: "$CI_PROJECT_DIR"
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v/'
-    - if: '$CI_COMMIT_BRANCH == "gitlabcicotest"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
   script:
     - set -euo pipefail
     - cd "$CI_PROJECT_DIR"

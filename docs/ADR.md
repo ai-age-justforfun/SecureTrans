@@ -720,6 +720,11 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   3. **再启用条件**：仅当用户明确指示（如公司侧需重跑实验线）才允许推送 GitLab 并触发流水线；默认保持隔离。
 - **与既有 ADR 不重复**：ADR-036 管权威+备份双仓（Gitea/GitHub）；ADR-045 管 GitLab 实验线打通与隔离纪律；ADR-046 管三平台选型。**本 ADR 管 GitLab 从"实验线"转"公司开发域"的隔离与配置资产固化**。
 - **已落点**：2026-09-16——docs/15 更新为"已隔离归档"（§7 配置资产全量清单 + §8 隔离状态）；README/AGENTS 同步；本次 commit 仅推送 Gitea + GitHub（不推送 GitLab）。
+- **补充（2026-09-16，隔离前收尾，v2.7.3 实证）**：
+  - **开发分支终结方式**：Git 分支=指向 commit 的引用（ref），merge 后源分支**不会自动删除**；删除分支引用 ≠ 删除内容——commit 已在 main 历史永久保留，GitLab 流水线/MR/审计记录全保留。收尾动作：`gitlabcicotest` 已合并 main 并 `git push gitlab --delete gitlabcicotest` 删除远端分支（本地分支保留作过程存档）。
+  - **CI 触发改 main**：`.gitlab/workflows/ci.yml` rules 从 `$CI_COMMIT_BRANCH == "gitlabcicotest"` 改为 `"main"`——push main 触发 ci-check（tag 仍触发三阶段）。副作用确认：删分支后"分支推送触发 CI"路径消失，tag 触发时 ci-check 照跑；按本 ADR 隔离（不再推 GitLab）实际无影响。
+  - **GitLab Release 资产口径（有意简化，非异常）**：GitLab 对任何 tag 自动生成 4 种 sources 源码包（zip/tar.gz/tar.bz2/tar），实验线 release 未显式上传业务资产（主部署包/md5/offline-deps/镜像）——与 Gitea 7 资产/GitHub 4+GHCR 不一致是**实验线有意简化**（ADR-045 只验证链路对齐）；未来公司域正式用需在 release.yml 补 `upload-asset`。已记录 docs/15 §3。
+  - **收尾全链实证**：v2.7.3——push main 触发 ci-check ✅（#695）、push tag v2.7.3 触发 ci-check→release→deploy 全绿 ✅（#696，stages 严格顺序），CD 部署容器 `securetrans-gitlab`（18080 对外）+ 只读冒烟 PASS；全程仅 GitLab 实验 WSL（Ubuntu 24.04）+ 独立 docker + `/opt/securetrans-gitlab`，Rocky 测试/生产未触碰，Gitea/GitHub 未推（无 v2.7.3 tag）。
 
 ### ADR-050：CICD Workflow 组织方式——总分式（入口+明细拆分）vs 单文件（2026-09-16 复盘，方法论）
 - **背景**：三平台（Gitea/GitHub/GitLab）CICD 全 workflow 流程的组织方式复盘。本项目现行=总分式多文件（Gitea `.gitea/workflows/{ci,release,cd}.yml`；GitHub `.github/workflows/{ci,release,cd-sim}.yml`；GitLab `.gitlab-ci.yml` 入口 + `.gitlab/workflows/{ci,release,deploy}.yml`），与"全部写在一个 workflow 文件"对比评估优劣势。

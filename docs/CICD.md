@@ -387,7 +387,7 @@ ci-check:
   stage: ci-check
   tags: [ gitlabcicotest, docker ]          # 指定跑在哪个 runner（tag 匹配）
   rules:                                     # 触发条件：分支 push 或 tag push 都跑
-    - if: '$CI_COMMIT_BRANCH == "gitlabcicotest"' || if: '$CI_COMMIT_TAG =~ /^v.*/'
+    - if: '$CI_COMMIT_BRANCH == "main"' || if: '$CI_COMMIT_TAG =~ /^v.*/'
   script:
     - bash infra/preflight.sh                # 同 Gitea：环境前置
     - python -m py_compile src/app.py tests/test_api.py infra/static_check.py
@@ -525,9 +525,9 @@ deploy:
 5. Release 页面发布（alpha/beta/prerelease 按阶段）
 
 **GitLab（实验线）**
-1. 建仓库 + PAT → push gitlabcicotest 分支
+1. 建仓库 + PAT → push main 分支（2026-09-16 起 main 触发；原开发分支 gitlabcicotest 已合并删除）
 2. gitlab-runner 注册（docker executor + if-not-present + docker.sock + 数据卷）
-3. 构建 CI 镜像 → push 分支 → ci-check 全绿
+3. 构建 CI 镜像 → push main → ci-check 全绿
 4. 打 tag → release（4 sources + Generic Package）+ deploy（独立 18080）
 5. 容器 IP 冒烟 + 手工验证 → 完成实验闭环
 
@@ -549,10 +549,10 @@ deploy:
 |---|---|---|---|---|
 | Gitea | push main / push tag v* | push tag v* / release | release published / workflow_dispatch | git 事件（自动） |
 | GitHub | push main / push tag v* / pull_request | push tag v* / release / workflow_dispatch | release published / workflow_dispatch | git 事件（自动） |
-| GitLab | tag ^v / branch gitlabcicotest | tag ^v | tag ^v | git 事件（自动） |
+| GitLab | push main / push tag v* | tag ^v | tag ^v | git 事件（自动） |
 
 - Gitea 无 pull_request（单分支主干开发，不需要）；GitHub 多 pull_request（云端协作预留）
-- GitLab 实验线 ci-check 限定 gitlabcicotest 分支，**推 main 到 GitLab 不触发任何流水线**（2026-09-15 已验证：API 查最近流水线仍为实验线 689/690/691）
+- GitLab 实验线 ci-check 2026-09-16 收尾起限定 **main** 分支（原 gitlabcicotest 已合并删除；push main / push tag v* 均触发，2026-09-16 已验证 #695/#696）
 
 ### 10.2 发布链：tag 推送后全自动
 

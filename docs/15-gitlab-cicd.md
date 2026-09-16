@@ -1,8 +1,10 @@
-# GitLab CICD 实验线（gitlabcicotest）
+# GitLab CICD 实验线（收尾完成 2026-09-16）
 
-> 状态：**已隔离归档（2026-09-16 起）**——配置资产已全部固化到主仓库（Gitea main / GitHub 备份仓），
-> **主仓库不再推送 GitLab remote**。双开发域分离：**个人开发域 = 本地 + Gitea + GitHub；公司开发域 = GitLab**
-> （由另一 AI 工具独立访问维护，本工具不再访问 GitLab）。如需再启用 GitLab 实验线，须用户明确指示（ADR-049）。
+> 状态：**已隔离归档（2026-09-16 起）+ 收尾完成（v2.7.3 最后一次全链验证）**——配置资产已全部固化到主仓库
+> （Gitea main / GitHub 备份仓），**主仓库不再推送 GitLab remote**。双开发域分离：**个人开发域 = 本地 + Gitea + GitHub；
+> 公司开发域 = GitLab**（由另一 AI 工具独立访问维护，本工具不再访问 GitLab）。如需再启用 GitLab 实验线，须用户明确指示（ADR-049）。
+> **收尾动作（2026-09-16）**：开发分支 `gitlabcicotest` 已合并 main 并删除（分支引用删除，内容全量保留在 main 历史）；
+> CI 触发从分支改为 **main**（push main 触发 ci-check）；v2.7.3 在 main 上完整 CI-release-CD 全链验证通过（仅 GitLab 实验环境 18080，不碰 Rocky/生产）。
 > 历史：v2.7.1 rc 首验落地（2026-09-15）——第三条平台线（Gitea 权威 + GitHub 备份/云端闭环 + GitLab 实验）
 > 验证 GitLab CI/CD 全链路并沉淀跨平台迁移方法论。**实验线隔离纪律：绝不碰 Rocky 测试/生产环境（ADR-045 强制）**。
 
@@ -13,8 +15,8 @@
 | 项 | 内容 |
 |----|------|
 | GitLab | 10.10.30.9（HTTP 80 可达、HTTPS 未启用、SSH 22 已放通） |
-| 项目 | `root/securetrans`（id=209，私有，默认分支 gitlabcicotest） |
-| 分支策略 | 开发分支 `gitlabcicotest` 单线（实验），tag `v*` 触发 Release+CD |
+| 项目 | `root/securetrans`（id=209，私有，默认分支 main） |
+| 分支策略 | 单分支 main（开发分支 `gitlabcicotest` 已合并删除，2026-09-16）；tag `v*` 触发 Release+CD |
 | 隔离 | WSL `gitlabcicotest`（Ubuntu 24.04）+ 独立 docker + `/opt/securetrans-gitlab` 数据 + 18080 端口 |
 | 认证 | root PAT（`~/.securetrans/gitlab-token.txt`）+ `GITLAB_PAT` 仓库变量（ADR-042） |
 
@@ -25,23 +27,28 @@
 | GitLab 服务 | 用户自建（Windows docker engine 内或独立部署），本项目只消费其 API |
 | Runner | `gitlabcicotest-docker`（id=19）：gitlab-runner 19.3.3 + docker executor + `pull_policy=if-not-present` + 卷挂 `docker.sock`、`/opt/securetrans-gitlab`；WSL 内 `nohup` 直跑 |
 | CI 镜像 | `securetrans-gitlab-ci:3.12`（488MB）：复用 `infra/docker/Dockerfile`，wheelhouse 来自 Gitea 网关 Release offline-deps |
-| 运行镜像 | `securetrans-gitlab:v2.7.1`：`Dockerfile.run`（python:3.12.11-slim-bookworm，uid 1000） |
+| 运行镜像 | `securetrans-gitlab:v<验证版本>`（v2.7.1/v2.7.3 实证）：`Dockerfile.run`（python:3.12.11-slim-bookworm，uid 1000） |
 | 部署 | 容器 `securetrans-gitlab`：宿主 18080→8000，数据 `/opt/securetrans-gitlab/{data,nas}` |
 
 ## 3. 流水线（.gitlab-ci.yml）
 
 ```
-push gitlabcicotest ──► ci-check（静态+版本+env键+脚本+全量TDD）
-push tag v* ─────────► ci-check → release（打包+Release+资产）→ deploy（独立docker+冒烟）
+push main ──────────► ci-check（静态+版本+env键+脚本+全量TDD）   ← 2026-09-16 改 main 触发
+push tag v* ────────► ci-check → release（打包+Release+资产）→ deploy（独立docker+冒烟）
 ```
 
 - **ci-check**：`py_compile` + `static_check.py` + 版本双源 + env 键一致性 + 脚本完整性 + `bash infra/ci_test.sh`（干净 /data + mock + 性能门禁）
-- **release**：wheelhouse→offline-deps → `package.sh` → md5/sha256 → GitLab Release 创建（4 个自动 sources 资产）+ 主包上传 Generic Package；artifacts 传 deploy
+- **release**：wheelhouse→offline-deps → `package.sh` → md5/sha256 → GitLab Release 创建（**4 个自动 sources 源码包**，无业务资产——实验线有意简化，与 Gitea 7 资产/GitHub 4+GHCR 不一致；未来公司域正式用需补 `upload-asset`）+ 主包上传 Generic Package；artifacts 传 deploy
 - **deploy**：`Dockerfile.run` 构建 → 先停旧容器 → `docker run`（18080 + 独立卷 + 干净 env）→ **容器 IP** 只读冒烟（health 版本 + login 200）
 
-## 4. 本次验证结果（2026-09-15）
+## 4. 验证结果
 
-- 流水线 686/688 全绿（CI：静态+版本+env+脚本+全量 TDD 通过；Release：v2.7.1 四资产；CD：独立部署冒烟通过）
+**2026-09-16 收尾验证（v2.7.3，main 触发，最后一次全链）**
+- 流水线 #695（main push）ci-check ✅ / #696（tag v2.7.3）ci-check → release → deploy 全绿 ✅（stages 严格顺序实证）
+- CD 独立部署：容器 `securetrans-gitlab`（172.17.0.x:8000，宿主 18080 对外）→ 只读冒烟 PASS（health v2.7.3）
+- **隔离确认**：全程仅 GitLab 实验 WSL（Ubuntu 24.04）+ 独立 docker + `/opt/securetrans-gitlab` 数据；Rocky 测试/生产**未触碰**；Gitea/GitHub 未推（main 无 v2.7.3 tag）
+
+**2026-09-15 首验（v2.7.1）**：流水线 686/688 全绿（CI：静态+版本+env+脚本+全量 TDD 通过；Release：v2.7.1 四资产；CD：独立部署冒烟通过）
 - 独立部署验证：`health: {"deployMode":"production","envRole":"prod","status":"ok","version":"v2.7.1"}`；`/api/auth/login` admin 登录成功
 - Windows 浏览器访问：`http://localhost:18080`（WSL localhost 转发）
 - GitLab 页面：`http://10.10.30.9/root/securetrans`（Release v2.7.1 可见）
