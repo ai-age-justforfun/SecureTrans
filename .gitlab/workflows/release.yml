@@ -1,0 +1,48 @@
+# ============================================================
+# GitLab Release job（对标 .gitea/workflows/release.yml、.github/workflows/release.yml）
+# 由根 .gitlab-ci.yml include 引入；stages 在根文件定义
+# 触发：push tag v*
+# ============================================================
+
+# ---------------- Release：tag 触发，打包 + GitLab Release + 包资产 ----------------
+release:
+  stage: release
+  image: securetrans-gitlab-ci:3.12
+  tags: [gitlabcicotest]
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+  variables:
+    GIT_STRATEGY: clone
+  script:
+    - set -euo pipefail
+    - cd "$CI_PROJECT_DIR"
+    # 1. offline-deps（镜像 wheelhouse 自包含）
+    - mkdir -p packages && tar -czf packages/securetrans-offline-deps.tar.gz -C / wheelhouse
+    # 2. 打包（版本号从 src/app.py 精确提取）
+    - bash infra/package.sh
+    # 3. 资产校验（md5/sha256）
+    - |
+      V=$(grep -m1 '^APP_VERSION = "v' src/app.py | sed -E 's/.*"v([^"]+)".*/\1/')
+      PKG="packages/securetrans-${V}.tar.gz"
+      md5sum "$PKG" | awk '{print $1}' > "$PKG.md5"
+      sha256sum "$PKG" | awk '{print $1}' > "$PKG.sha256"
+      echo "V=$V" > /tmp/vars.txt
+      ls -la packages/
+    # 4. GitLab Release 创建 + 主包上传 Generic Package Registry（可下载资产）
+    - |
+      set -euo pipefail
+      V=$(grep -m1 '^APP_VERSION = "v' src/app.py | sed -E 's/.*"v([^"]+)".*/\1/')
+      API="http://10.10.30.9/api/v4/projects/${CI_PROJECT_ID}"
+      AUTH="PRIVATE-TOKEN: ${GITLAB_PAT}"
+      DESC="SecureTrans v${V}（GitLab CICD 实验发布 gitlabcicotest）"
+      DESC="${DESC} — 本版变更摘要：$(git log -1 --format=%s | sed 's/"/\\"/g')"
+      curl -sf -H "$AUTH" -X POST "$API/releases" -H "Content-Type: application/json" \
+        -d "{\"name\":\"v${V}\",\"tag_name\":\"${CI_COMMIT_TAG}\",\"description\":\"${DESC}\"}" || true
+      # 上传主包到 Generic Package（package_name=securetrans, version=v<V>）
+      curl -sf -H "$AUTH" -X POST "$API/packages/generic/securetrans/v${V}/securetrans-${V}.tar.gz" \
+        -F "file=@packages/securetrans-${V}.tar.gz" || echo "（包可能已存在，跳过）"
+      echo "GitLab Release v${V} 已创建"
+  artifacts:
+    paths:
+      - packages/
+    expire_in: 1 week

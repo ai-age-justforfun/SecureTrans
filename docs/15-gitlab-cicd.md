@@ -74,10 +74,15 @@ push tag v* ─────────► ci-check → release（打包+Release
 ### 7.1 仓库内资产（已入库，权威）
 | 资产 | 路径 | 说明 |
 |------|------|------|
-| 流水线配置 | `.gitlab-ci.yml`（仓库根） | **权威配置**：三阶段 ci-check/release/deploy 全文；校验：`git diff gitlab/gitlabcicotest origin/main -- .gitlab-ci.yml` = 0（与 GitLab 分支一致） |
+| 流水线入口 | `.gitlab-ci.yml`（仓库根） | **GitLab 执行入口**：定义 stages + `include: local` 引用 `.gitlab/workflows/*.yml`（对标 .gitea/.github 的 workflows 拆分）；校验：`git diff gitlab/gitlabcicotest origin/main -- .gitlab-ci.yml` = 0（旧单文件版与 GitLab 分支一致，本次仅重构为 include 拆分，job 逐行未变） |
+| CI workflow | `.gitlab/workflows/ci.yml` | ci-check job（静态+版本+env键+脚本+全量 TDD） |
+| Release workflow | `.gitlab/workflows/release.yml` | release job（打包+Release+资产） |
+| Deploy workflow | `.gitlab/workflows/deploy.yml` | deploy job（独立 docker+冒烟） |
 | 本手册 | `docs/15-gitlab-cicd.md` | 环境/流水线/验证/教训/复用（本文件） |
 | CI 镜像 Dockerfile | `infra/docker/Dockerfile` | wheelhouse 同源，构建 `securetrans-gitlab-ci:3.12` |
 | 运行镜像 Dockerfile | `infra/docker/Dockerfile.run` | python:3.12.11-slim-bookworm，uid 1000 |
+
+> 三平台 workflow 目录对标：`.gitea/workflows/{ci,release,cd}.yml` ↔ `.github/workflows/{ci,release,cd-sim}.yml` ↔ `.gitlab-ci.yml`（入口）+ `.gitlab/workflows/{ci,release,deploy}.yml`（明细）。
 
 ### 7.2 服务器侧配置（不入库，仅记录；如需重建按此恢复）
 | 项 | 配置 | 说明 |
