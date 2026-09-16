@@ -730,3 +730,4 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
 - **决策**：本项目保持总分式（现状即正确）。理由：①三平台 workflow 是薄壳（ADR-037 平台无关门禁）；②安全关键——Release/CD 需写凭据，拆开才能 secret 最小作用域；③触发矩阵天然三分，单文件 rules 复杂是 ADR-041 出 bug 的同类复杂度；④GitLab 侧以根入口 + include local 对标（GitLab 官方惯例，全局 stages 留根文件）。
 - **单文件适用边界**（未来项目判断）：纯 CI 单平台、阶段线性无独立发布/部署、无跨平台对齐需求、团队偏好一文件看全流程——可单文件；命中"多平台/有发布部署/安全敏感"任意一条则优先总分式。
 - **落点**：2026-09-16 复盘入库；docs/CICD.md §2.1 结构表更新为入口+明细（原"单文件三阶段"表述过时已修正）；三平台目录对齐清单见 docs/15 §7.1。
+- **补充（2026-09-16，GitLab 根文件=平台硬性机制，非冗余）**：GitLab 流水线配置文件**必须**名为 `.gitlab-ci.yml` 且**必须位于仓库根目录**——GitLab 不扫描 `.gitlab/` 目录（区别于 Gitea/GitHub 扫描 workflows 目录下所有 yml 各为独立 workflow）；删掉根文件则 GitLab 完全不执行流水线。故 GitLab 总分式的实现=**根文件做"总入口"（stages + include: local 引用明细）+ `.gitlab/workflows/*.yml` 做明细**，根文件不是重复文件而是执行链第一环；`include: local` 支持子文件用相对仓库根路径（`'.gitlab/workflows/ci.yml'`），子文件内 stages/needs 照常生效。Gitea/GitHub 无"总入口"概念（目录即集合），GitLab 必须有——这是三平台总分式对标中唯一的机制差异。

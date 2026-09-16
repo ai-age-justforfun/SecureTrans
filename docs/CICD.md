@@ -376,9 +376,10 @@ jobs:
 ### 6.2 .gitlab-ci.yml（入口 include + .gitlab/workflows/ 三文件：CI → Release → CD，ADR-050 总分式）
 
 ```yaml
-# 与 Gitea/GitHub 最大的语法差异：GitLab 原生是"一个流水线"模型——可用单文件 stages 分阶段，
-# 也可（本仓库现采用，ADR-050 总分式）根 .gitlab-ci.yml 入口 + include .gitlab/workflows/{ci,release,deploy}.yml 明细。
-# 下方为教学模板（单文件写法，三文件拆分 = 把各 job 移到 workflows/*.yml + 根文件 include）。
+# 与 Gitea/GitHub 最大的语法差异：GitLab 原生是"一个流水线"模型——配置文件名必须叫 .gitlab-ci.yml
+# 且必须位于仓库根目录（GitLab 不扫描 .gitlab/ 目录，删根文件则完全不执行流水线；这是平台硬性机制，非冗余）。
+# 总分式实现（本仓库现采用，ADR-050）= 根 .gitlab-ci.yml 做"总入口"（stages + include local 引用明细）
+# + .gitlab/workflows/{ci,release,deploy}.yml 做明细；下方为教学模板（单文件写法，三文件拆分 = 把各 job 移到 workflows/*.yml + 根文件 include）。
 
 stages: [ ci-check, release, deploy ]
 
