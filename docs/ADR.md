@@ -693,7 +693,12 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
 - **与既有 ADR 不重复**：ADR-007 管发布节奏与门禁（何时发、发不发）；ADR-037 管环境职责分层（CI=门禁/Release=发布/CD=部署）；ADR-046 管平台选型。**本 ADR 管"谁触发流水线 + AI 与平台自治的边界"**，三者互补。
 - **已落点**：2026-09-15——三平台 workflow 触发段逐条审核入库（docs/CICD.md §10）；三平台 main 全同步 57d89bf；已验证推 GitLab main 不触发流水线（rules 过滤）。
 - **补充（2026-09-16，执行顺序与失败回退，docs/CICD.md §10.4）**：
-  - **顺序机制**：GitLab=单流水线全局 stages（ci-check→release→deploy），同一 stage 内 jobs 并行、stage 间严格顺序——本项目三 job 各占一个 stage，**严格顺序**（deploy 另 `dependencies: [release]` 强化）；Gitea/GitHub=多 workflow 事件链，push tag 时 ci.yml 与 release.yml **并行触发**，CD 由 release published 在 Release 建成后触发（语义="CI+Release 并行，CD 在 Release 后"）。
+  - **顺序机制（三平台对齐，最终语义一致）**：
+    | 平台 | CI → Release | CD |
+    |---|---|---|
+    | GitLab（单流水线） | **顺序**（stages 串行） | 同一流水线内，顺序 |
+    | Gitea/GitHub（事件链） | **并行**（tag 同时触发 ci.yml + release.yml） | Release published 后触发 |
+    GitLab 的 `stages:` 语义=同一 stage 内多个 job 并行、stage 之间严格串行；本项目三 job 各占一个 stage，必须 ci-check 全绿 → release 成功 → deploy 才会跑（deploy 另有 `dependencies: [release]` 依赖 release 制品，双保险）。Gitea/GitHub push tag 时 ci.yml 与 release.yml **同时触发（并行）**，CD 由 release published 在 Release 建成后触发。**两者最终结果一致**（CI 门禁不过→Release 建不出；Release 不发布→CD 不启动），只是编排机制不同。
   - **失败处理**：CI 失败=看 run 日志→改代码 push→rerun（幂等）；Release 失败=修后重跑 release，资产损坏删 Release 重建（ADR-041）；CD 失败=先确认生产状态→修脚本 rerun 或 workflow_dispatch 手动补部署；部署后发现问题=①生产回滚（ADR-043 蓝绿"先停再起"）②打新 tag 修复版（推荐）③git revert 后重走全链。
   - **回退铁律**：先回滚生产恢复业务，再修代码；**生产回滚 ≠ 代码回退**（git revert 不影响已部署实例）。
 

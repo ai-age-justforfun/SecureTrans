@@ -585,8 +585,10 @@ deploy:
 
 | 平台 | 顺序机制 | 本项目实际语义 |
 |---|---|---|
-| GitLab（单流水线） | 全局 `stages:`（ci-check → release → deploy）——同一 stage 内 jobs **并行**，stage 间**严格顺序** | 三 job 各占一个 stage → **严格顺序**：ci-check 全绿才 release，release 成功才 deploy（deploy 另 `dependencies: [release]` 强化） |
+| GitLab（单流水线） | 全局 `stages:`（ci-check → release → deploy）——同一 stage 内 jobs **并行**，stage 间**严格顺序** | 三 job 各占一个 stage → **严格顺序**：ci-check 全绿才 release，release 成功才 deploy（deploy 另 `dependencies: [release]` 强化，双保险） |
 | Gitea / GitHub（多 workflow 事件链） | 各 workflow 独立触发：push tag **同时**触发 ci.yml + release.yml；CD 由 release published 触发 | **CI 与 Release 并行**；CD 在 Release 建成后 → 端到端语义"CI+Release 并行，CD 在 Release 后" |
+
+> **最终结果一致**：两者只是编排机制不同——CI 门禁不过 → Release 建不出；Release 不发布 → CD 不启动，端到端语义等价。
 
 **失败怎么处理**
 
