@@ -613,6 +613,7 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   5. **与 CI/CD secret 分离**：服务端凭据（CD_SSH_KEY、RELEASETOKEN 等 repo secret）只注入 CI/CD job 容器，**本地 credential 文件与 repo secret 两套体系互不混用**（本地=AI 开发侧，secret=流水线侧）。
 - **与既有 ADR 不重复**：ADR-009 管业务系统内 admin 密码（RESET_PASSWORD 全链路）；ADR-024 管 CD 的 SSH 认证（ed25519 密钥走 repo secret）；ADR-037 管 CI/CD secret 最小作用域。**本 ADR 管 AI 开发侧的本地凭据管理**（外部系统认证的创建/存放/优先级/防弹窗），是方法论层规范，可复用于后续项目。
 - **已落点**：2026-09-15（v2.7.0 RC 期间）——GitHub PAT 存 `C:\Users\jinta\.securetrans\github-token.txt`（带标题注释行，使用时 regex 提取 `ghp_...`）；Gitea API token 存 `~/.securetrans/`（origin remote URL 引用）；v2.7.0 draft Release 发布/阶段调整（alpha/beta/rc）全部通过 token API 完成（无账号密码）；git 固定 `credential.https://github.com.username = ai-age-justforfun` 消除弹窗；后续新系统（GitLab 等）按本 ADR 执行。
+- **补充（2026-09-16，credential 文件读取约定，强制）**：**从 credential 文件读 token 必须先核对行结构与前缀，禁止盲取第一行**——本项目 `github-token.txt` 结构=**L0 标签行（`github-token: ...`，勿当 token）+ L1 才是真 token（`ghp_...` classic，40 字符）**；本次事故=误取 L0 标签行致 API Bad credentials，实际 token（`securetrans-ci`，scope=repo,workflow）一直有效。读取规范：① 逐行 Trim 后按前缀识别（`ghp_`/`github_pat_`/`glpat-` 等 token 特征），取**首个匹配 token 前缀的行**；② 标签行/注释行（含 `:`、中文说明、`#`）跳过；③ 读取后用 API 快速验证（`GET /user` 200）再使用；④ 写入凭据管理器用真 token 行，防"存了错值弹窗歧义"。已修正凭据管理器并验证（非交互 ls-remote 通过）。
 ---
 
 ### ADR-043：部署形态正式切换——Docker 为默认形态、原生退役为备选 + 蓝绿切换顺序纪律（v2.7.0 RC，强制）

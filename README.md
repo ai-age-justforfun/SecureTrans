@@ -294,7 +294,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 039 | kaniko 废弃 → 容器内 docker CLI + 宿主 docker.sock / WSL 环境重建 / v2.7.0=RC | v2.7.0 |
 | 040 | act_runner 脱离 systemd → nohup 直跑 + 无窗口保活（WSL systemd 非 PID1 周期性重置修复） | v2.7.0 |
 | 041 | v2.7.0 双通道发布回归修复（release.yml 版本提取 + cd.yml MD5 资产歧义） | v2.7.0 |
-| 042 | AI 访问外部系统认证：token > ssh >> 账号密码 + 本地 credential 文件不入库（方法论） | v2.7.0 |
+| 042 | AI 访问外部系统认证：token > ssh >> 账号密码 + 本地 credential 文件不入库（方法论）；**读取约定=按 token 前缀（ghp_/github_pat_ 等）取真 token 行，标签行勿当 token（L0 误读事故已记）** | v2.7.3 |
 | 043 | 部署形态正式切换：Docker 默认、原生退役 + 蓝绿切换顺序纪律（先停原生再起容器） | v2.7.0 |
 | 044 | 审计统计四维口径重构（提交文件数按名去重+审批+下载+管理操作仅admin）+ CD 正式切换 Docker 通道（v2.7.1 首个验证） | v2.7.1 |
 | 045 | GitLab CICD 实验线打通（gitlabcicotest：独立 WSL+docker+数据，跨平台 CI/CD 迁移教训，docs/15） | v2.7.1 |
