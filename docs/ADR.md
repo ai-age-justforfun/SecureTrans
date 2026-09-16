@@ -702,3 +702,12 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   4. **本项目落点**：RTM 缓冲=现有 rc 阶段（v2.7.x，APP_STAGE=rc，ADR-043）；防眩晕=日常迭代已按变更预算收敛；下一项目直接套用 docs/01 v3.0 模板。
 - **与既有 ADR 不重复**：ADR-025 管 AGENTS Part A 唯一来源（本 ADR 是其内容升级的依据）；ADR-027 管双闭环复盘（PSF/PMF 节奏）；ADR-047 管发布触发自动化。**本 ADR 管 AI 时代人机协同方法论（SE 3.0 范式+变更分级+范式+防眩晕）采纳与模板升级**。
 - **已落点**：2026-09-15——docs/01 v3.0（模板本体）+ AGENTS Part A（协作契约）同步升级入库；commit 携带 [L1|L2|L3] 标记从本 ADR 起执行。
+
+### ADR-049：GitLab 隔离——双开发域分离（2026-09-16，方法论+强制）
+- **背景**：用户决策——进入 GitLab 即公司开发域，与本地/Gitea/GitHub（个人开发域）严格分离，改用另一 AI 工具独立访问维护 GitLab。同步前发现 GitLab CI/release/CD 配置完整性存疑：核实结果=`.gitlab-ci.yml` 已入库且与 gitlabcicotest 分支一致（git diff=0），缺的是 Runner 侧配置（config.toml 关键段）、仓库 CI/CD 变量清单与完整配置资产清单未文档化。
+- **决策**：
+  1. **配置资产全量固化**：docs/15 新增 §7 配置资产全量清单——仓库内资产（.gitlab-ci.yml 权威配置、docs/15、infra/docker/Dockerfile、Dockerfile.run）+ 服务器侧配置记录（Runner config.toml 关键段、GITLAB_PAT、WSL/docker/数据目录/端口/镜像），保证 Gitea/GitHub 侧可完整复现与审计。
+  2. **双开发域分离（强制）**：个人开发域=本地 Windows + Gitea（权威）+ GitHub（备份/云端闭环）；公司开发域=GitLab（另一 AI 工具访问）。主仓库**不再推送 GitLab remote**；GitLab 服务器现状保留（gitlabcicotest 分支/Runner/数据/Release v2.7.1），由另一 AI 工具维护。
+  3. **再启用条件**：仅当用户明确指示（如公司侧需重跑实验线）才允许推送 GitLab 并触发流水线；默认保持隔离。
+- **与既有 ADR 不重复**：ADR-036 管权威+备份双仓（Gitea/GitHub）；ADR-045 管 GitLab 实验线打通与隔离纪律；ADR-046 管三平台选型。**本 ADR 管 GitLab 从"实验线"转"公司开发域"的隔离与配置资产固化**。
+- **已落点**：2026-09-16——docs/15 更新为"已隔离归档"（§7 配置资产全量清单 + §8 隔离状态）；README/AGENTS 同步；本次 commit 仅推送 Gitea + GitHub（不推送 GitLab）。

@@ -236,7 +236,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
 - [GitHub 迁移方案（Active，v2.6.5 首验落地）](docs/14-github-migration.md)
-- [GitLab CICD 实验线（Active，v2.7.1 首验落地）](docs/15-gitlab-cicd.md)
+- [GitLab CICD 实验线（已隔离归档 2026-09-16；配置资产全量固化 §7；ADR-049 双开发域分离，主仓库不再推送 GitLab）](docs/15-gitlab-cicd.md)
 - [跨平台 CICD 指南（Gitea/GitHub/GitLab 对比+模板+入门）](docs/CICD.md)
 - [用户使用手册（普通用户 + 管理员）](docs/16-user-manual.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
@@ -301,6 +301,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 046 | Git 服务器选型：Gitea/GitHub/GitLab 优劣势对比 + 场景选型建议（方法论，未来项目可复用） | v2.7.1 |
 | 047 | 发布触发自动化与 AI 边界：触发=git 事件自动（tag→Release→CD 全链自治）；AI 只保留打 tag/发布决策+应急 dispatch | v2.7.1 |
 | 048 | AI 时代人机协同 Agile 方法论采纳（v2.0→v3.0）：SE 3.0 范式 + L1/L2/L3 变更分级 + HITL/HOTL/HOOTL + PDCA 微循环 + RTM 缓冲并入 Agile + 防眩晕 | v2.7.1 |
+| 049 | GitLab 隔离——双开发域分离：个人域=本地+Gitea+GitHub，公司域=GitLab（另一 AI 工具）；配置资产全量固化（docs/15 §7）；主仓库不再推送 GitLab；再启用须用户指示 | v2.7.1 |
 
 > **使用方式**：决策冲突时以 docs/ADR.md 对应条目为准；新增决策只追加编号（ADR-0xx），不修改历史条目。
 > 最新落点摘要（ADR-031/032/033/034 核心）：合作方全量编辑+联系人必填；WSL 测试收敛为 dev+CI 两环境；生产只读冒烟=业界标准；

@@ -1,13 +1,12 @@
 # GitLab CICD 实验线（gitlabcicotest）
 
-> 状态：**Active（v2.7.1 rc 首验落地，2026-09-15）**
-> 定位：第三条平台线（Gitea 权威 + GitHub 备份/云端闭环 + GitLab 实验）——验证 GitLab CI/CD 全链路
-> 并沉淀跨平台迁移方法论。**实验线隔离纪律：绝不碰 Rocky 测试/生产环境（ADR-045 强制）**。
-> **可选流程（2026-09-15 起）**：本实验线的全部代码（.gitlab-ci.yml、docs/15、ADR-045/046）已随仓库
-> 合入 Gitea main / GitHub 备份仓，但 **GitLab CI/release/CD 默认不触发**——各平台只执行自己的
-> workflow 文件（Gitea 只跑 .gitea/workflows/*，GitHub 只跑 .github/workflows/*，均不执行 .gitlab-ci.yml），
-> 且默认分支不推送 GitLab remote。**仅当需要再跑 GitLab 实验线时**：手动 `git push gitlab gitlabcicotest`
-> 才会触发 GitLab 流水线（推送后 GitLab Runner 自动执行 ci-check/release/deploy）。
+> 状态：**已隔离归档（2026-09-16 起）**——配置资产已全部固化到主仓库（Gitea main / GitHub 备份仓），
+> **主仓库不再推送 GitLab remote**。双开发域分离：**个人开发域 = 本地 + Gitea + GitHub；公司开发域 = GitLab**
+> （由另一 AI 工具独立访问维护，本工具不再访问 GitLab）。如需再启用 GitLab 实验线，须用户明确指示（ADR-049）。
+> 历史：v2.7.1 rc 首验落地（2026-09-15）——第三条平台线（Gitea 权威 + GitHub 备份/云端闭环 + GitLab 实验）
+> 验证 GitLab CI/CD 全链路并沉淀跨平台迁移方法论。**实验线隔离纪律：绝不碰 Rocky 测试/生产环境（ADR-045 强制）**。
+
+---
 
 ## 1. 目标与边界
 
@@ -66,3 +65,43 @@ push tag v* ─────────► ci-check → release（打包+Release
 3. CI 镜像复用 `infra/docker/Dockerfile`（wheelhouse 同源）→ `gitlab-runner register`（volumes 挂 docker.sock + 独立数据目录）
 4. `.gitlab-ci.yml` 三阶段（ci/release/deploy）→ push 分支验证 CI → tag 验证全链路
 5. 验证独立部署（独立端口+数据）→ 冒烟（容器 IP）+ 登录 → 记录 ADR + 手册
+
+## 7. 配置资产全量清单（2026-09-16 同步固化）
+
+> 目的：GitLab 隔离后（ADR-049），**CI/release/CD 全部配置在主仓库（Gitea/GitHub）可完整复现与审计**；
+> GitLab 服务器侧现状保留，不再访问。
+
+### 7.1 仓库内资产（已入库，权威）
+| 资产 | 路径 | 说明 |
+|------|------|------|
+| 流水线配置 | `.gitlab-ci.yml`（仓库根） | **权威配置**：三阶段 ci-check/release/deploy 全文；校验：`git diff gitlab/gitlabcicotest origin/main -- .gitlab-ci.yml` = 0（与 GitLab 分支一致） |
+| 本手册 | `docs/15-gitlab-cicd.md` | 环境/流水线/验证/教训/复用（本文件） |
+| CI 镜像 Dockerfile | `infra/docker/Dockerfile` | wheelhouse 同源，构建 `securetrans-gitlab-ci:3.12` |
+| 运行镜像 Dockerfile | `infra/docker/Dockerfile.run` | python:3.12.11-slim-bookworm，uid 1000 |
+
+### 7.2 服务器侧配置（不入库，仅记录；如需重建按此恢复）
+| 项 | 配置 | 说明 |
+|----|------|------|
+| Runner config.toml（关键段） | `concurrent = 1`；`[[runners]] name="gitlabcicotest-docker"`；`executor = "docker"`；`tags = ["gitlabcicotest"]`；`pull_policy = "if-not-present"`；`volumes = ["/var/run/docker.sock:/var/run/docker.sock", "/opt/securetrans-gitlab:/opt/securetrans-gitlab"]` | gitlab-runner 19.3.3；WSL 内 `nohup` 直跑（非 systemd） |
+| 仓库 CI/CD 变量 | `GITLAB_PAT`（最小 scope，ADR-042） | 仅 release job 使用；本地另有 `~/.securetrans/gitlab-token.txt` |
+| 运行环境 | WSL distro `gitlabcicotest`（Ubuntu 24.04）+ docker daemon | 独立于 rocky10-ci / rocky10-st |
+| 数据目录 | `/opt/securetrans-gitlab/{data,nas}` | 独立，chown 1000:1000 |
+| 端口 | 宿主 18080 → 容器 8000 | 与生产 8000 / 实验 18080 各自独立 |
+| 镜像 | `securetrans-gitlab-ci:3.12`（488MB）、`securetrans-gitlab:v2.7.1` | 已构建于 WSL，重建可复用 infra/docker/* |
+
+### 7.3 触发矩阵（GitLab 侧）
+| 事件 | 流水线 | 说明 |
+|------|--------|------|
+| push `gitlabcicotest` | ci-check | 仅 CI |
+| push tag `v*` | ci-check → release → deploy | 全链路 |
+
+## 8. 隔离状态（2026-09-16 起，ADR-049）
+
+- **双开发域分离**：个人开发域 = 本地 Windows + Gitea + GitHub（本 AI 工具）；公司开发域 = GitLab（另一 AI 工具独立访问维护）
+- **主仓库不再推送 GitLab remote**；GitLab 服务器现状保留不动（含 gitlabcicotest 分支、Runner、数据）
+- 配置资产已固化（§7），GitLab 侧再出问题可由另一 AI 工具按 §7 恢复
+- 再启用条件：用户明确指示（如公司侧需要重跑实验线）
+
+---
+
+*文档结束 | GitLab CICD 实验线（gitlabcicotest）| 已隔离归档 2026-09-16*
