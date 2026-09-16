@@ -238,6 +238,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 - [GitHub 迁移方案（Active，v2.6.5 首验落地）](docs/14-github-migration.md)
 - [GitLab CICD 实验线（Active，v2.7.1 首验落地）](docs/15-gitlab-cicd.md)
 - [跨平台 CICD 指南（Gitea/GitHub/GitLab 对比+模板+入门）](docs/CICD.md)
+- [用户使用手册（普通用户 + 管理员）](docs/16-user-manual.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
 - [部署指南（唯一部署文档）](docs/DEPLOY.md)
 
