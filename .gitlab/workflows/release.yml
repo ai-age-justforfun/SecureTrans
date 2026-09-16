@@ -34,7 +34,7 @@ release:
       V=$(grep -m1 '^APP_VERSION = "v' src/app.py | sed -E 's/.*"v([^"]+)".*/\1/')
       API="http://10.10.30.9/api/v4/projects/${CI_PROJECT_ID}"
       AUTH="PRIVATE-TOKEN: ${GITLAB_PAT}"
-      DESC="SecureTrans v${V}（GitLab CICD 实验发布 gitlabcicotest）"
+      DESC="SecureTrans v${V}（GitLab CICD 实验发布，收尾后 main 触发）"
       DESC="${DESC} — 本版变更摘要：$(git log -1 --format=%s | sed 's/"/\\"/g')"
       curl -sf -H "$AUTH" -X POST "$API/releases" -H "Content-Type: application/json" \
         -d "{\"name\":\"v${V}\",\"tag_name\":\"${CI_COMMIT_TAG}\",\"description\":\"${DESC}\"}" || true
