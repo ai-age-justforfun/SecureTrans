@@ -14,7 +14,7 @@
 |---|---|---|---|
 | 角色 | **本地权威仓**（全部 git 操作 + 生产 CD） | **公有云备份仓**（容灾/分发/独立验证） | **本地实验线**（第三条平台验证） |
 | 服务地址 | http://localhost:3000 | github.com（ai-age-justforfun/SecureTrans） | http://10.10.30.9 |
-| Workflow 文件 | `.gitea/workflows/{ci,release,cd}.yml` | `.github/workflows/{ci,release,cd-sim}.yml` | `.gitlab-ci.yml`（单文件三阶段） |
+| Workflow 文件 | `.gitea/workflows/{ci,release,cd}.yml` | `.github/workflows/{ci,release,cd-sim}.yml` | `.gitlab-ci.yml`（入口 include）+ `.gitlab/workflows/{ci,release,deploy}.yml`（明细，ADR-050 总分式） |
 | Runner | act_runner（**自托管**，WSL 容器 label） | GitHub-hosted（`ubuntu-latest` 云 VM） | gitlab-runner（**docker executor** 容器） |
 | 依赖安装 | 离线 wheelhouse（镜像内） | 在线 `pip install` | 离线 wheelhouse（镜像内） |
 | CI 门禁 | 静态+版本+env键+脚本+全量TDD（容器内干净数据） | 同门禁（云 VM） | 同门禁（docker executor 容器） |

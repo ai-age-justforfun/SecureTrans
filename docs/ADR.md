@@ -711,3 +711,13 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   3. **再启用条件**：仅当用户明确指示（如公司侧需重跑实验线）才允许推送 GitLab 并触发流水线；默认保持隔离。
 - **与既有 ADR 不重复**：ADR-036 管权威+备份双仓（Gitea/GitHub）；ADR-045 管 GitLab 实验线打通与隔离纪律；ADR-046 管三平台选型。**本 ADR 管 GitLab 从"实验线"转"公司开发域"的隔离与配置资产固化**。
 - **已落点**：2026-09-16——docs/15 更新为"已隔离归档"（§7 配置资产全量清单 + §8 隔离状态）；README/AGENTS 同步；本次 commit 仅推送 Gitea + GitHub（不推送 GitLab）。
+
+### ADR-050：CICD Workflow 组织方式——总分式（入口+明细拆分）vs 单文件（2026-09-16 复盘，方法论）
+- **背景**：三平台（Gitea/GitHub/GitLab）CICD 全 workflow 流程的组织方式复盘。本项目现行=总分式多文件（Gitea `.gitea/workflows/{ci,release,cd}.yml`；GitHub `.github/workflows/{ci,release,cd-sim}.yml`；GitLab `.gitlab-ci.yml` 入口 + `.gitlab/workflows/{ci,release,deploy}.yml`），与"全部写在一个 workflow 文件"对比评估优劣势。
+- **对比结论**：
+  1. 总分式优势=触发即作用域（push→CI/tag→Release/release→CD 天然分离，rules 简单）、权限最小化（每 workflow 独立 secrets：CI 零写、Release 持 RELEASETOKEN、CD 持 CD_SSH_KEY）、失败隔离（单阶段独立 rerun，CD 失败不污染 CI）、可读维护（文件小 diff 小）、跨平台迁移（workflow 仅薄壳，门禁逻辑全在 infra/*.sh 平台无关，逐平台易对齐）。
+  2. 总分式代价=跨阶段传值需 artifacts（release→cd 下载）、默认 env/镜像 tag 多份复制有漂移风险（以 infra/*.sh 单一来源缓解）、新手需先懂触发矩阵。
+  3. 单文件优势=needs+outputs 同文件传值简单、配置一处定义、一文件看全流程；代价=rules/if 条件复杂易错（ADR-041 同源教训）、secret 难隔离（Gitea 尤其弱）、rerun 粒度粗、低频 CD 拖累高频 CI 队列、跨平台迁移整体重写。
+- **决策**：本项目保持总分式（现状即正确）。理由：①三平台 workflow 是薄壳（ADR-037 平台无关门禁）；②安全关键——Release/CD 需写凭据，拆开才能 secret 最小作用域；③触发矩阵天然三分，单文件 rules 复杂是 ADR-041 出 bug 的同类复杂度；④GitLab 侧以根入口 + include local 对标（GitLab 官方惯例，全局 stages 留根文件）。
+- **单文件适用边界**（未来项目判断）：纯 CI 单平台、阶段线性无独立发布/部署、无跨平台对齐需求、团队偏好一文件看全流程——可单文件；命中"多平台/有发布部署/安全敏感"任意一条则优先总分式。
+- **落点**：2026-09-16 复盘入库；docs/CICD.md §2.1 结构表更新为入口+明细（原"单文件三阶段"表述过时已修正）；三平台目录对齐清单见 docs/15 §7.1。
