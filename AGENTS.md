@@ -162,6 +162,8 @@ AI 执行中识别到 L3 倾向必须停下请求决策，commit 携带级别标
 | 迭代小结 | docs/07-psf-sprintN-retrospective.md | 每个 Sprint 结束 |
 | 部署指南（唯一） | docs/DEPLOY.md | 部署流程变更时 |
 | 复盘总结 | docs/12-project-retrospective.md | 阶段里程碑 |
+| 版本结果汇总（v1.5.0→v2.7.3 全量） | docs/17-version-summary.md | 每次版本发布后更新 |
+| PSF 阶段 Scrum 复盘（Inspect & Adapt 标准版） | docs/18-psf-retrospective.md | 阶段里程碑 |
 | GitHub 迁移方案（Active，v2.6.6 首验落地） | docs/14-github-migration.md | GitHub 独立闭环已打通：CI-TDD（GitHub-hosted）+ RELEASE（云端构建 4 资产）+ CD-SIM（ubuntu 云端 Docker 仿真+数据洁净门禁，无本地 Docker/self-hosted runner） |
 | GitLab CICD 实验线（**已隔离归档 2026-09-16**；配置资产全量固化 docs/15 §7；**双开发域分离 ADR-049：主仓库不再推送 GitLab**） | docs/15-gitlab-cicd.md | GitLab（10.10.30.9）=公司开发域，由另一 AI 工具独立维护；个人开发域=本地+Gitea（权威）+GitHub（备份）；再启用须用户明确指示；.gitlab-ci.yml 已入库且与 gitlabcicotest 一致（diff=0），Runner config.toml/变量等服务器侧配置见 §7 记录 |
 | 跨平台 CICD 指南（对比+模板+入门） | docs/CICD.md | 三平台 CICD 对比总表、服务器配置、带注释 workflow 模板、宿主 docker 与 Git 服务器 workflow 关系图、快速入门路径 |

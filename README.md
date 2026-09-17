@@ -207,6 +207,7 @@ SecureTrans/
 - **迭代**：Scrum（1周Sprint for PSF，2周Sprint for PMF），Sprint作为研发工作分解阶段，在过程文档中体现
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main，临时开发拉分支，合入后删除
 - **交付**：DevOps（轻量CI/CD，蓝绿部署）
+- **可复用模板**：AI 人机协同敏捷工程模板（独立仓库 [openwrtadmin/ai-collab-agile-template](http://localhost:3000/openwrtadmin/ai-collab-agile-template)，供其他创业项目复用）
 
 ### Git 工作流
 
@@ -235,6 +236,8 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 - [测试报告（361项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
+- [版本结果汇总（v1.5.0→v2.7.3 全量）](docs/17-version-summary.md)
+- [PSF 阶段 Scrum 复盘（Inspect & Adapt 标准版）](docs/18-psf-retrospective.md)
 - [GitHub 迁移方案（Active，v2.6.5 首验落地）](docs/14-github-migration.md)
 - [GitLab CICD 实验线（已隔离归档 2026-09-16；配置资产全量固化 §7；ADR-049 双开发域分离，主仓库不再推送 GitLab）](docs/15-gitlab-cicd.md)
 - [跨平台 CICD 指南（Gitea/GitHub/GitLab 对比+模板+入门）](docs/CICD.md)
