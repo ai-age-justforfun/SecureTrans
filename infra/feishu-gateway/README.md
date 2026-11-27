@@ -90,6 +90,9 @@ bash deploy-gateway.sh
 - `code=0` 只要有一条发送成功；全部失败返回 502（业务侧应视作旁路失败，不阻塞主流程）。
 - 带 `request_id` 时同 id 重复请求返回首次结果（`duplicate: true`），避免重试放大消息量。
 - 收件人上限由 `NOTIFY_MAX_RECIPIENTS`（默认 20）控制。
+- **源 IP 白名单（应用层，fail-closed）**：`NOTIFY_ALLOW_CIDRS` 配置允许的来源网段（逗号分隔，如 `10.10.30.8/32`）；
+  **未配置即全部拒绝**，不在名单内返回 `403 {"code":403,"msg":"client ip not allowed","client":"<ip>"}`。
+  这是防火墙/设备 ACL 之外的第二道校验，防止上游 ACL 被误改或漏配后网关变成任意来源可用的发送代理。
 
 ### 支持的事件
 
@@ -110,5 +113,7 @@ bash deploy-gateway.sh
 - 审计：`tail -f /var/lib/securetrans-notify/notify.jsonl`（只记元数据，收件人均已掩码）
 - Token 轮换：改 `NOTIFY_TOKEN` 生成新值 → 更新 `/opt/securetrans-notify/.env` 与 SecureTrans `.env` → 两边同时 `systemctl restart`
 - 端口：`NOTIFY_PORT` 默认 8090；绑定地址 `NOTIFY_BIND` 默认取本机首张网卡 IP（不写死）
+- 来源白名单：`NOTIFY_ALLOW_CIDRS`（fail-closed，空值 = 拒绝全部来源）；改后 `systemctl restart securetrans-notify`，
+  用 `GET /health` 的 `allow_cidrs` 字段确认已生效
 
 > 监听 `127.0.0.1:8090` 会连接被拒——这是正常的：服务绑定的是内网 IP，本机回环不通，**只接受内网来源**。
