@@ -675,3 +675,13 @@
   - 逐条正向命中：22 条规则各构造最小样本（extension 用对应后缀、binary 用特征码字节、组合用特征码+后缀），断言规则名 ∈ matchedRules；
   - 组合负向：.xyz 含 AA995566 → Vivado 组合不命中（后缀不符）、仅 Vivado Bit同步字命中。
 - **验证**：Windows dev（testing）350/350；WSL test（production 模拟）待补（同步本报告）；双环境 100%。未改动 app.py 业务逻辑，纯测试+文档增强。
+
+### v2.7.5 生产实测（2026-11-27 23:1x）
+
+| 项 | 结果 |
+|----|------|
+| 全量 TDD（干净库） | **510/510 通过** |
+| 生产冒烟（`smoke.sh http://10.10.30.8:8000`） | **11/11，exit 0** |
+| 网关版本 | 0.2.1（并发投递生效） |
+| 多审批人投递（6 位一级审批人） | `notification_logs`=`sent / sent=6`，**1 秒内完成**（修复前 5s 超时误记 failed） |
+| 部门补全 | 仍未生效：`GET contact/v3/users/:id` 返回 99991672，需开放平台勾选 `contact:contact.base:readonly` 并**创建并发布版本**（当前自动省略部门行，不阻塞） |
