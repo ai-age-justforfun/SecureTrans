@@ -340,9 +340,18 @@ const I18N = {
     'audit.personType': '人员 / 文件类型', 'audit.personDay': '人员 / 日期', 'audit.range': '统计范围：{0} 至 {1}', 'audit.days': '（{0} 天）',
     'toast.uploadSuccess': '文件 "{0}" 上传成功', 'toast.uploadFail': '上传失败: {0}',
     'toast.cancelSubmit': '已清空所选文件与表单',
-    'toast.submitSuccessAuto': '提交成功，免审批自动通过！提交单号: {0}',
-    'toast.submitSuccess': '提交成功，进入审批流程。提交单号: {0}', 'toast.submitFail': '提交失败: {0}',
-    'toast.approveDone': '审批完成，当前状态: {0}', 'toast.approveFail': '审批失败: {0}',
+    'toast.submitSuccessAuto': '提交成功，免审批自动通过！提交单号: {0}（飞书通知异步发送，状态见列表）',
+    'toast.submitSuccess': '提交成功，进入审批流程。提交单号: {0}（飞书通知异步发送，状态见列表）', 'toast.submitFail': '提交失败: {0}',
+    // 飞书通知（ADR-051/052 旁路通道）状态展示
+    'notify.col': '飞书通知', 'notify.sent': '已发送', 'notify.failed': '发送失败', 'notify.skipped': '已跳过', 'notify.none': '无记录',
+    'notify.title': '飞书通知记录', 'notify.event': '事件', 'notify.status': '状态', 'notify.recipients': '收件人',
+    'notify.time': '时间', 'notify.detail': '说明',
+    'notify.hint': '飞书通知为旁路通道，失败不影响提交/审批；若持续失败请检查通知网关、飞书开放平台或网络',
+    'notify.event.submission_pending_l1': '待一级审批', 'notify.event.submission_pending_l2': '待二级审批',
+    'notify.event.submission_status': '过程状态', 'notify.event.submission_approved': '审批通过',
+    'notify.event.submission_rejected': '已驳回', 'notify.event.submission_auto_approved': '免审批直通',
+    'notify.event.approval_level_skipped': '跳过二级审批',
+    'toast.approveDone': '审批完成，当前状态: {0}（飞书通知异步发送，状态见列表）', 'toast.approveFail': '审批失败: {0}',
     'toast.loadDetailFail': '加载详情失败: {0}', 'toast.loadFail': '加载失败: {0}',
     'toast.loadFilesFail': '加载文件列表失败: {0}',
     'toast.createSuccess': '用户创建成功', 'toast.createFail': '创建失败: {0}',
@@ -482,9 +491,18 @@ const I18N = {
     'audit.personType': 'User / File Type', 'audit.personDay': 'User / Date', 'audit.range': 'Range: {0} to {1}', 'audit.days': ' ({0} days)',
     'toast.uploadSuccess': 'File "{0}" uploaded', 'toast.uploadFail': 'Upload failed: {0}',
     'toast.cancelSubmit': 'Cleared selected files and form',
-    'toast.submitSuccessAuto': 'Submitted and auto-approved! No: {0}',
-    'toast.submitSuccess': 'Submitted, entering approval flow. No: {0}', 'toast.submitFail': 'Submit failed: {0}',
-    'toast.approveDone': 'Approval done, current status: {0}', 'toast.approveFail': 'Approval failed: {0}',
+    'toast.submitSuccessAuto': 'Submitted and auto-approved! No: {0} (Feishu notify sent async, see list)',
+    'toast.submitSuccess': 'Submitted, entering approval flow. No: {0} (Feishu notify sent async, see list)', 'toast.submitFail': 'Submit failed: {0}',
+    // Feishu notification (ADR-051/052 side channel) status
+    'notify.col': 'Feishu Notify', 'notify.sent': 'Sent', 'notify.failed': 'Failed', 'notify.skipped': 'Skipped', 'notify.none': 'None',
+    'notify.title': 'Feishu Notification Log', 'notify.event': 'Event', 'notify.status': 'Status', 'notify.recipients': 'Recipients',
+    'notify.time': 'Time', 'notify.detail': 'Detail',
+    'notify.hint': 'Feishu notification is a side channel: failures never block submit/approve. If it keeps failing, check the notify gateway, Feishu Open Platform or network',
+    'notify.event.submission_pending_l1': 'Pending L1 approval', 'notify.event.submission_pending_l2': 'Pending L2 approval',
+    'notify.event.submission_status': 'Status update', 'notify.event.submission_approved': 'Approved',
+    'notify.event.submission_rejected': 'Rejected', 'notify.event.submission_auto_approved': 'Auto-approved',
+    'notify.event.approval_level_skipped': 'L2 skipped',
+    'toast.approveDone': 'Approval done, current status: {0} (Feishu notify sent async, see list)', 'toast.approveFail': 'Approval failed: {0}',
     'toast.loadDetailFail': 'Failed to load detail: {0}', 'toast.loadFail': 'Failed to load: {0}',
     'toast.loadFilesFail': 'Failed to load file list: {0}',
     'toast.createSuccess': 'User created', 'toast.createFail': 'Create failed: {0}',
@@ -590,6 +608,27 @@ const STATUS_LABELS = {
   'rejected': { key: 'status.rejected', cls: 'badge-rejected' },
   'archived': { key: 'status.archived', cls: 'badge-archived' }
 };
+
+// 飞书通知状态 → 徽标（status: sent / failed / skipped）
+const NOTIFY_LABELS = {
+  'sent': { key: 'notify.sent', cls: 'badge-approved' },
+  'failed': { key: 'notify.failed', cls: 'badge-rejected' },
+  'skipped': { key: 'notify.skipped', cls: 'badge-archived' }
+};
+
+function notifyBadge(n) {
+  if (!n || !n.status) return `<span class="text-muted text-sm">${t('notify.none')}</span>`;
+  const lb = NOTIFY_LABELS[n.status] || { key: n.status, cls: '' };
+  const ev = n.event ? notifyEventLabel(n.event) : '';
+  return `<span class="badge ${lb.cls}" title="${ev}${n.detail ? '：' + n.detail : ''}">${t(lb.key)}</span>`
+    + `<span class="text-sm text-muted" style="margin-left:4px;">${ev}</span>`;
+}
+
+function notifyEventLabel(ev) {
+  const k = 'notify.event.' + ev;
+  const s = t(k);
+  return s === k ? (ev || '-') : s;
+}
 
 // ============================================================
 // API helper
@@ -1091,7 +1130,7 @@ async function renderMySubmissions() {
     document.getElementById('content').innerHTML = `
       <div class="card">
         <table>
-          <thead><tr><th data-i18n="list.subNo">提交单号</th><th data-i18n="list.receiver">接收方</th><th data-i18n="list.files">文件数</th><th data-i18n="list.size">大小</th><th data-i18n="common.status">状态</th><th data-i18n="list.submitTime">提交时间</th><th data-i18n="common.actions">操作</th></tr></thead>
+          <thead><tr><th data-i18n="list.subNo">提交单号</th><th data-i18n="list.receiver">接收方</th><th data-i18n="list.files">文件数</th><th data-i18n="list.size">大小</th><th data-i18n="common.status">状态</th><th data-i18n="notify.col">飞书通知</th><th data-i18n="list.submitTime">提交时间</th><th data-i18n="common.actions">操作</th></tr></thead>
           <tbody>
             ${list.map(s => {
               const st = STATUS_LABELS[s.status] || { key: s.status, cls: '' };
@@ -1101,6 +1140,7 @@ async function renderMySubmissions() {
                 <td>${s.file_count}</td>
                 <td>${formatSize(s.total_size || 0)}</td>
                 <td><span class="badge ${st.cls}">${t(st.key)}</span>${s.auto_approved ? ` <span class="badge badge-auto" data-i18n="status.auto">免审批</span>` : ''}</td>
+                <td>${notifyBadge(s.notify)}</td>
                 <td class="text-sm text-muted">${s.submit_time || '-'}</td>
                 <td><button class="btn btn-sm btn-secondary" onclick="showSubmissionDetail('${s.id}')" data-i18n="common.detail">详情</button></td>
               </tr>`;
@@ -1151,7 +1191,7 @@ async function renderAllSubmissions() {
     document.getElementById('content').innerHTML = `
       <div class="card">
         <table>
-          <thead><tr><th data-i18n="list.subNo">提交单号</th><th data-i18n="list.submitter">提交人</th><th data-i18n="list.receiver">接收方</th><th data-i18n="list.files">文件数</th><th data-i18n="list.size">大小</th><th data-i18n="common.status">状态</th><th data-i18n="list.submitTime">提交时间</th><th data-i18n="common.actions">操作</th></tr></thead>
+          <thead><tr><th data-i18n="list.subNo">提交单号</th><th data-i18n="list.submitter">提交人</th><th data-i18n="list.receiver">接收方</th><th data-i18n="list.files">文件数</th><th data-i18n="list.size">大小</th><th data-i18n="common.status">状态</th><th data-i18n="notify.col">飞书通知</th><th data-i18n="list.submitTime">提交时间</th><th data-i18n="common.actions">操作</th></tr></thead>
           <tbody>
             ${list.map(s => {
               const st = STATUS_LABELS[s.status] || { key: s.status, cls: '' };
@@ -1162,6 +1202,7 @@ async function renderAllSubmissions() {
                 <td>${s.file_count}</td>
                 <td>${formatSize(s.total_size || 0)}</td>
                 <td><span class="badge ${st.cls}">${t(st.key)}</span>${s.auto_approved ? ` <span class="badge badge-auto" data-i18n="status.auto">免审批</span>` : ''}</td>
+                <td>${notifyBadge(s.notify)}</td>
                 <td class="text-sm text-muted">${s.submit_time || '-'}</td>
                 <td><button class="btn btn-sm btn-secondary" onclick="showSubmissionDetail('${s.id}')" data-i18n="common.detail">详情</button></td>
               </tr>`;
@@ -1223,6 +1264,25 @@ async function showSubmissionDetail(id) {
           </div>`).join('')}
         </div>
       </div>
+      <div class="detail-section">
+        <h4 data-i18n="notify.title">飞书通知记录</h4>
+        <div class="text-sm text-muted" style="margin-bottom:8px;" data-i18n="notify.hint">飞书通知为旁路通道，失败不影响提交/审批；若持续失败请检查通知网关、飞书开放平台或网络</div>
+        ${(sub.notifications || []).length ? `<table>
+          <thead><tr><th data-i18n="notify.event">事件</th><th data-i18n="notify.status">状态</th><th data-i18n="notify.recipients">收件人</th><th data-i18n="notify.time">时间</th><th data-i18n="notify.detail">说明</th></tr></thead>
+          <tbody>
+            ${sub.notifications.map(n => {
+              const lb = NOTIFY_LABELS[n.status] || { key: n.status, cls: '' };
+              return `<tr>
+                <td>${notifyEventLabel(n.event)}</td>
+                <td><span class="badge ${lb.cls}">${t(lb.key)}</span></td>
+                <td class="text-sm text-muted">${n.recipients || '-'}</td>
+                <td class="text-sm text-muted">${n.created_at || '-'}</td>
+                <td class="text-sm text-muted">${n.detail || '-'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>` : `<div class="empty" data-i18n="notify.none">无记录</div>`}
+      </div>
     `;
     document.getElementById('modalFooter').innerHTML = `
       <button class="btn btn-secondary" onclick="closeModal()" data-i18n="common.close">关闭</button>`;
@@ -1265,7 +1325,7 @@ async function renderPending() {
     document.getElementById('content').innerHTML = `
       <div class="card">
         <table>
-          <thead><tr><th data-i18n="list.subNo">提交单号</th><th data-i18n="list.submitter">提交人</th><th data-i18n="list.receiver">接收方</th><th data-i18n="list.files">文件数</th><th data-i18n="list.size">大小</th><th data-i18n="common.status">状态</th><th data-i18n="list.submitTime">提交时间</th><th data-i18n="common.actions">操作</th></tr></thead>
+          <thead><tr><th data-i18n="list.subNo">提交单号</th><th data-i18n="list.submitter">提交人</th><th data-i18n="list.receiver">接收方</th><th data-i18n="list.files">文件数</th><th data-i18n="list.size">大小</th><th data-i18n="common.status">状态</th><th data-i18n="notify.col">飞书通知</th><th data-i18n="list.submitTime">提交时间</th><th data-i18n="common.actions">操作</th></tr></thead>
           <tbody>
             ${list.map(s => {
               const st = STATUS_LABELS[s.status] || { key: s.status, cls: '' };
@@ -1276,6 +1336,7 @@ async function renderPending() {
                 <td>${s.file_count}</td>
                 <td>${formatSize(s.total_size || 0)}</td>
                 <td><span class="badge ${st.cls}">${t(st.key)}</span></td>
+                <td>${notifyBadge(s.notify)}</td>
                 <td class="text-sm text-muted">${s.submit_time || '-'}</td>
                 <td class="flex gap-8">
                   <button class="btn btn-sm btn-success" onclick="approveSubmission('${s.id}', 'approve')" data-i18n="common.approve">通过</button>
