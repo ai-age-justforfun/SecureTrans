@@ -8,7 +8,8 @@
 > 飞书通知网关：`10.10.30.114:8090`（systemd `securetrans-notify`，升级 `infra/feishu-gateway/deploy-gateway.sh --secret-file ...`，沿用本机 .env）
 > 时间口径：宿主与容器均 `Asia/Shanghai`；容器不设 `TZ` 会显示 UTC（已修复）
 > 旧版说明（v2.3.7 | 2026-09-11）（+ADR-023 文件名安全清理/AD 改密前端拦截）（ADR-017 测试/生产隔离 + ADR-018 CI/CD 分层 + ADR-019 CI 容器隔离与静态门禁）
-> 唯一部署文档：测试环境（本地/WSL）? 生产环境（服务器），一个 `DEPLOY_MODE` 开关切换，代码完全复用
+> 唯一部署文档：**现行只有生产环境**（10.10.30.8，容器形态）；开发机可跑 `DEPLOY_MODE=testing` 自测，代码完全复用（ADR-057）
+> 构建口径：**生产机零出网、无基座镜像/wheelhouse，禁止在产机构建镜像**；镜像来自 GitHub 云端构建（GHCR）或 Release `image.tar.gz` → `podman load`
 > 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
 ---
@@ -683,7 +684,7 @@ Release 发布后自动部署到生产服务器（或手动 workflow_dispatch �
 6. **运维要点（已固化到 cd.yml）**：容器访问 Gitea 统一走 `CI_GW="${CI_GATEWAY:-172.17.0.1}"`（docker0，任务网络网关随机不可达）；Release 资产 `browser_download_url` 为 localhost（容器内指向自身）须 sed 替换 host；`github.token` 经 curl 注入异常时回退匿名（public 仓库可读）；CD job 先 git clone 仓库获取 infra/cd-deploy.sh。
 7. **手动触发 CD**：
    - 页面：Gitea → 仓库 SecureTrans → Actions → 左侧 Workflows → CD-Deploy → Run workflow → 输入版本号（留空=自动取最新 tag）→ Run
-   - API：`curl -X POST -H "Content-Type: application/json" -d '{"ref":"main","inputs":{"version":"v2.3.7"}}' http://localhost:3000/api/v1/repos/openwrtadmin/SecureTrans/actions/workflows/cd.yml/dispatches`
+   - API：`curl -X POST -H "Content-Type: application/json" -d '{"ref":"main","inputs":{"version":"v2.3.7"}}' http://localhost:3000/api/v1/repos/opencodegit/SecureTrans/actions/workflows/cd.yml/dispatches`
 8. **停止自动触发**：
    - 临时停：Gitea Actions 页 Workflows 列表 → CD-Deploy 行 → 禁用（Disable）该 workflow，随时可恢复
    - 永久停：删除 cd.yml 中 `release: types: [published]` 触发块（仅保留 workflow_dispatch），提交即生效
@@ -708,7 +709,7 @@ Release 发布后自动部署到生产服务器（或手动 workflow_dispatch �
    数据脱敏一致，不触网）；生产必须 `false`。
 3. **测试边界**：全面 TDD 回归只在开发/测试环境执行（写数据）；生产只做只读冒烟 + 人工验收
    （需求↔测试追踪矩阵见 `docs/07-requirements-traceability.md`）。
-4. **CI**：`.gitea/workflows/ci.yml` + 本地 runner（注册见 `infra/ci-runner.md`），
+4. **CI**：`.github/workflows/ci.yml`（GitHub 云 VM；Gitea runner 已于 2026-11-28 退役，ADR-057），
    push 到 main 自动跑全量回归；生产发布保留人工门禁。
 5. **配置纪律**：生产 `.env`/密钥/数据永不入 git；三模板随发布包携带。
 
@@ -724,12 +725,12 @@ Release 发布后自动部署到生产服务器（或手动 workflow_dispatch �
 │   └── static/               # 前端SPA（index.html，单页应用）
 ├── env/                      # 12-Factor 分层配置（ADR-016）
 │   ├── dev.env               # 开发环境（Windows 本地 + AD mock）
-│   ├── test.env              # 测试环境（WSL + AD mock）
+│   ├── test.env              # 测试/CI 配置（AD mock）
 │   └── prod.env.template     # 生产环境模板（真实 AD，NAS）
 ├── tests/
 │   ├── test_api.py           # 318项全量测试（WSL 生产面 318项）
 │   └── mock/                 # 模拟数据与 AD 模拟目录（ADR-016：mock_ad.py 校验 / mock_expected.json 基线）
-├── .gitea/workflows/ci.yml  # Gitea Actions CI（本地 runner，全量 TDD 回归）
+├── .github/workflows/       # ci.yml（CI-TDD）/ release.yml（云发布）/ cd-sim.yml（CD 仿真）
 ├── infra/                    # 部署脚本和配置
 │   ├── deploy.sh             # 一键部署 (Linux，RESET_DB=1 部署时出厂重置)
 │   ├── deploy.ps1            # 一键部署 (Windows)
@@ -739,7 +740,6 @@ Release 发布后自动部署到生产服务器（或手动 workflow_dispatch �
 │   ├── nginx-securetrans.conf       # Nginx 双网卡模式
 │   ├── nginx-securetrans-single.conf # Nginx 单网卡模式
 │   ├── securetrans.service   # systemd 服务
-│   ├── ci-runner.md         # Gitea Actions runner 注册指南（ADR-016）
 │   └── package.sh / release.ps1     # 打包与 Gitea 发布
 ├── docs/                     # 文档
 │   ├── DEPLOY.md             # 本部署指南（唯一部署文档）

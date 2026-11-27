@@ -90,7 +90,7 @@ AI 执行中识别到 L3 倾向必须停下请求决策，commit 携带级别标
 - **测试只增不减**：计数基线门禁（全量 ≥300 / 冒烟 ==10），防静默删减
 - **测试要覆盖用户真实链路**：不只测 API，还要测前端调用链（弹窗→接口→权限→界面）
 - **生产零写**：生产环境只跑只读冒烟（smoke.sh 白名单），全量 TDD 只在 dev/test/CI
-- **三环境基线**：Windows dev + WSL test 全量 100% 通过才允许 bump 版本
+- **双环境基线（ADR-057）**：开发机（Windows）全量 TDD + GitHub 云端 CI 全量 TDD 均 100% 通过才允许 bump 版本；原 WSL test 环境已于 2026-11-28 拆除
 
 ## A6 CICD 与 AI（GitOps）
 
@@ -107,7 +107,7 @@ AI 执行中识别到 L3 倾向必须停下请求决策，commit 携带级别标
 2. 版本号一致性（app.py ↔ index.html ↔ 文档）
 3. env 键一致性（dev/test 键集合一致，prod 可多不可缺）
 4. 脚本完整性 + bash -n 语法
-5. 全量 TDD 双环境 100%（Windows dev + WSL test）
+5. 全量 TDD 双环境 100%（开发机 Windows + GitHub 云端 CI）
 6. 冒烟 11/11（生产只读）
 7. 文档同步审计（README/AGENTS/DEPLOY 与代码一致）
 8. 发布：package.sh + release.ps1 + git tag
@@ -135,10 +135,12 @@ AI 执行中识别到 L3 倾向必须停下请求决策，commit 携带级别标
 
 - **项目**：SecureTrans — 轻量级跨网文件审批摆渡系统（内网提交/审批 → 外网下载）
 - **阶段/版本**：Release（v2.7.6，生产 APP_STAGE=release；版本号单一来源 `src/app.py` APP_VERSION，前端 index.html 同步）
+- **环境现状（2026-11-28，ADR-057）**：**只保留生产环境**+通知网关+开发机；WSL 测试域、Gitea act_runner、GitLab 实验线均已拆除，不再重建
 - **技术栈**：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝；Python 3.12 venv
 - **架构**：后端单文件 `src/app.py`，前端单页 `src/static/index.html`（i18n 双语）
 - **开发模式**：主干开发，单分支 main；Sprint 只进文档不进目录/commit
 - **部署**：封闭数据中心，Rocky 8.10 单网卡 10.10.30.8；生产=podman 容器 `securetrans-docker`(8000, TZ=Asia/Shanghai)，原生 gunicorn+systemd 为回退通道（ADR-043）；外部唯一出口=飞书通知网关 10.10.30.114:8090（ADR-052）
+- **流水线**：代码权威=Gitea `opencodegit/SecureTrans`（旧账号 `openwrtadmin` 已注销）；唯一自动化流水线=GitHub Actions（CI-TDD/RELEASE/CD-SIM）；生产机零出网，镜像只 `podman load`、不在产机构建
 
 ## B2 代码规范
 
@@ -164,9 +166,8 @@ AI 执行中识别到 L3 倾向必须停下请求决策，commit 携带级别标
 | 复盘总结 | docs/12-project-retrospective.md | 阶段里程碑 |
 | 版本结果汇总（v1.5.0→v2.7.6 全量） | docs/17-version-summary.md | 每次版本发布后更新 |
 | PSF 阶段 Scrum 复盘（Inspect & Adapt 标准版） | docs/18-psf-retrospective.md | 阶段里程碑 |
-| GitHub 迁移方案（Active，v2.6.6 首验落地） | docs/14-github-migration.md | GitHub 独立闭环已打通：CI-TDD（GitHub-hosted）+ RELEASE（云端构建 4 资产）+ CD-SIM（ubuntu 云端 Docker 仿真+数据洁净门禁，无本地 Docker/self-hosted runner） |
-| GitLab CICD 实验线（**已隔离归档 2026-09-16**；配置资产全量固化 docs/15 §7；**双开发域分离 ADR-049：主仓库不再推送 GitLab**） | docs/15-gitlab-cicd.md | GitLab（10.10.30.9）=公司开发域，由另一 AI 工具独立维护；个人开发域=本地+Gitea（权威）+GitHub（备份）；再启用须用户明确指示；.gitlab-ci.yml 已入库且与 gitlabcicotest 一致（diff=0），Runner config.toml/变量等服务器侧配置见 §7 记录 |
-| 跨平台 CICD 指南（对比+模板+入门） | docs/CICD.md | 三平台 CICD 对比总表、服务器配置、带注释 workflow 模板、宿主 docker 与 Git 服务器 workflow 关系图、快速入门路径 |
+| GitHub 流水线（现行唯一自动化通道，v2.7.6） | docs/14-github-migration.md | CI-TDD（GitHub-hosted）+ RELEASE（云端构建 4 资产 + GHCR 镜像）+ CD-SIM（云端容器仿真+数据洁净门禁）；Gitea Actions 已退役（ADR-057） |
+| 跨平台 CICD 指南（对比+模板+入门） | docs/CICD.md | Gitea/GitHub 现行配置 + GitLab 通用参考（GitLab 测试域已删除）；workflow 模板、宿主 docker 与 Git 服务器关系图、快速入门路径 |
 
 **文档原则**：聚焦关键内容；文件名不含版本号（版本写文档内，关键变更用 git tag）；
 ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
@@ -186,7 +187,7 @@ ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
 - **ADR-018 CI 门禁**：fast-check 秒级前置；计数基线 全量≥300 / 冒烟==10
 - **ADR-024 CD**：Release → 容器 job → MD5 → scp → cd-deploy.sh → 冒烟；CD_SSH_KEY 走 repo secret
 - **ADR-025 流程规范**：AGENTS.md Part A=AI 辅助软件工程方法唯一来源；任务卡模板 + 六步工作流 + 发布前门禁
-- **ADR-026 git 为中心**：三环境各自独立 git 副本，唯一同步通道=Gitea；WSL 禁用 /mnt/c、/mnt/d 用原生路径；
+- **ADR-026 git 为中心**（**WSL 部分已于 2026-11-28 废止，见 ADR-057**）：三环境各自独立 git 副本，唯一同步通道=Gitea；WSL 禁用 /mnt/c、/mnt/d 用原生路径；
   /opt/securetrans/.runner + config.yaml 保护（备份/清理禁止移动删除）
 - **ADR-027 双闭环复盘**：nginx 暂不引入（日均个位数访问，触发条件=worker阻塞/对外HTTPS）；PSF 只做"被使用验证的需求"，推演特性标假设；beta=PSF 收尾→PMF 万里长征第一步；stepping-stone 方法论，技术债显式记账+偿还触发；人机协同过程/体会留痕=决策资产
 - **ADR-028 v2.5.1 落点**：Vivado 规则精简为唯一组合规则（同步字 AND .bin/.bit）+ .ltx 扩展名规则（旧 .bit 独立规则/仅同步字规则删除，迁移清理）；公司内部/合作方一级通过不产生二级审批记录（审计链修复+历史幻影记录清理，语义B仅限非合作方）；性能并发 story（perf_test.py PERF_CONCURRENCY 3-5 用户）；提交页取消/清空按钮；AD mock 三环境审计（dev/test/CI=true、生产=false，组23自动探测）
@@ -198,15 +199,16 @@ ADR 三段式（背景/决策/落点）；README/AGENTS/DEPLOY 三处同步。
 - **ADR-042 AI 访问外部系统认证（方法论，强制）**：认证优先级 token（PAT）> SSH key >> 账号密码；首次用账号密码一次性创建 token/SSH，之后不再用账号密码；本地 credential 文件存版本管理目录之外（本项目 `~/.securetrans/`，命名如 `github-token.txt`/`gitea-token.txt`），严禁入库；**读取约定：逐行按 token 前缀（ghp_/github_pat_/glpat- 等）取首个真 token 行，标签行/注释行跳过，读取后 API 验证再使用（L0 标签行误当 token 致 Bad credentials 事故已记 ADR-042）**；token 权限最小化（按用途最小 scope）；本机 git 固定 `credential.https://<host>.username` 防多账户弹窗（Git Credential Manager 歧义）；本地 credential 与 CI/CD repo secret（CD_SSH_KEY/RELEASETOKEN）两套体系分离；GitLab 等新系统按此执行
 - **ADR-043 部署形态正式切换（v2.7.0 RC，强制）**：Docker（podman）为默认部署形态（容器 securetrans-docker 监听 8000），原生 systemd 退役（stop+disable，deploy.sh 保留回退）；后续新版本 CD 改 docker 通道，原生仅强制要求时用；**切换顺序纪律=蓝绿共享同一 SQLite/NAS，严禁双实例同时运行，必须先停原生再起容器（回滚相反）**，18000 仅蓝绿验收临时端口不保留；ENV_ROLE 尊重 .env（docker-deploy.sh 默认从 .env 读，SECURETRANS_ENV_ROLE 仅显式覆盖）；生产冒烟从内网 IP 执行（`smoke.sh http://<内网IP>:8000`，127.0.0.1 判外网 403 是正确行为）；WSL 全程原生路径禁 /mnt/c /mnt/d（呼应 ADR-026，跨 Windows 传内容走 base64→WSL 原生路径）
 - **ADR-044 审计统计四维口径 + CD docker 通道（v2.7.1 落点）**：/api/audit-logs/stats 重构——提交文件数（upload 动作、白名单后缀、按 (user,文件名,日) 去重、类型列固定顺序）+ 审批次数（approval_*）+ 下载次数（download+admin_download）+ 管理操作（仅 admin/system 且排除 login/logout/改密/create_submission；普通用户不出该列）；TDD +5（基线 403→407）；cd-deploy.sh 重写为形态自动检测（容器存在或原生 inactive→docker 模式，调 docker-deploy.sh 先 rm 再起满足切换纪律，内网 IP 冒烟；原生回退保留）；cd.yml 四资产精确 == 匹配（主包+md5+image+img-md5，双 MD5，scp 双包，podman 汇总）
-- **ADR-045 GitLab CICD 实验线（v2.7.1 rc 落点，方法论+隔离纪律）**：第三条平台线（GitLab 10.10.30.9 root/securetrans，gitlabcicotest 分支）——独立 WSL Ubuntu 24.04 + 独立 docker + `/opt/securetrans-gitlab` 数据 + 18080 端口，**绝对不碰 Rocky 测试/生产**；Runner docker executor（pull_policy=if-not-present + docker.sock + nohup）；CI 镜像复用 infra/docker/Dockerfile（wheelhouse 同源）；流水线 ci-check/release/deploy 职责对齐（ADR-037），Release=GitLab 四 sources 资产，CD=独立 docker + 容器 IP 冒烟；跨平台迁移教训=Windows autocrlf 强制 LF（.gitattributes+autocrlf=false，LF 验证在 Linux 侧）、job 容器 localhost 非宿主（docker inspect 取 IP）、卷 chown 1000:1000、env 行尾注释清洗、GITHUB_WORKSPACE=$CI_PROJECT_DIR（docs/15）**（2026-09-16 起已隔离归档，ADR-049）**
+- **ADR-045 GitLab CICD 实验线（v2.7.1 rc 落点，方法论+隔离纪律）**：第三条平台线（GitLab 10.10.30.9 root/securetrans，gitlabcicotest 分支）——独立 WSL Ubuntu 24.04 + 独立 docker + `/opt/securetrans-gitlab` 数据 + 18080 端口，**绝对不碰 Rocky 测试/生产**；Runner docker executor（pull_policy=if-not-present + docker.sock + nohup）；CI 镜像复用 infra/docker/Dockerfile（wheelhouse 同源）；流水线 ci-check/release/deploy 职责对齐（ADR-037），Release=GitLab 四 sources 资产，CD=独立 docker + 容器 IP 冒烟；跨平台迁移教训=Windows autocrlf 强制 LF（.gitattributes+autocrlf=false，LF 验证在 Linux 侧）、job 容器 localhost 非宿主（docker inspect 取 IP）、卷 chown 1000:1000、env 行尾注释清洗、GITHUB_WORKSPACE=$CI_PROJECT_DIR（docs/15，已删除）**（2026-09-16 隔离归档 → 2026-11-28 测试仓删除，ADR-049/057）**
 - **ADR-046 Git 服务器选型（方法论，未来项目可复用）**：三平台优劣势归纳——Gitea（自托管轻量：数据掌控/封闭数据中心/离线依赖友好；生态少/无内置 registry/act_runner 已知 bug）适用私有/小团队/权威仓；GitHub（公有云：托管免费/生态最大/GHCR 零注册/云闭环；私有额度限制/**无法直连封闭数据中心 CD 只能仿真**/合规敏感）适用开源/公网/备份仓；GitLab（全家桶：单文件三阶段/内置 registry+package+Release/细权限；CE 受限/较重/config.toml 手工）适用公司级多项目统一。选型原则=①权威+备份双仓（备份永不接触生产，ADR-036）②token>ssh>>密码（ADR-042）③CI 门禁平台无关（放 infra/*.sh）④环境即代码（官方镜像+离线 wheelhouse）⑤聚焦主要矛盾动态平衡（ADR-027）；操作手册见 docs/CICD.md
 - **ADR-047 发布触发自动化与 AI 边界（方法论+强制）**：触发=git 事件自动（Gitea/GitHub/GitLab 三平台 workflow 逐条审核：CI=push main/tag/PR、Release=push tag、CD=release published+dispatch）；发布链全自动（git tag+push=人/AI 唯一介入点 → tag → release 建 Release → published → CD：Gitea 生产/GitHub 云仿真/GitLab 实验 18080）；**tag 推送范围=发布范围**（日常只推 main 不推 tag 即不触发）；**执行顺序**（docs/CICD §10.4）：GitLab stages 严格顺序（同 stage 并行）、Gitea/GitHub 事件链=push tag 时 CI+Release 并行、CD 在 Release 后；**失败回退**=CI 失败 rerun/Release 重建/CD 手动补部署/部署后问题先回滚生产再打新 tag（生产回滚≠代码回退）；AI 边界=孵化期深度介入（脚本/配置/试运行）→ 成熟期只保留发布决策（打 tag）+应急 dispatch，流水线本体平台自治；门禁逻辑全在 infra/*.sh 平台无关
-- **ADR-049 GitLab 隔离——双开发域分离（2026-09-16，强制）**：个人开发域=本地 Windows + Gitea（权威）+ GitHub（备份/云端闭环）；公司开发域=GitLab（10.10.30.9，另一 AI 工具独立维护）；**主仓库不再推送 GitLab remote**（**隔离终态 4a7ffe6，不再使用**：开发分支 gitlabcicotest 已合并删除——分支引用删除内容全量保留在 main；CI 触发改 **push main**（ci.yml rules 已改）；GitLab Release=仅 4 sources 源码包无业务资产=实验线有意简化；**tags: [gitlabcicotest]=runner 选择标签非分支依赖（与分支同名纯属巧合）**；v2.7.3 main 全链 CI-release-CD 实证 #695/#696 全绿，仅实验 WSL+18080，不碰 Rocky/生产；GitLab main 已与 Gitea/GitHub 对齐）；配置资产已全量固化（docs/15 §7：.gitlab-ci.yml 权威配置 + Runner config.toml 关键段 + GITLAB_PAT 变量 + WSL/docker/数据/端口/镜像）；再启用须用户明确指示；**GitHub 认证=PAT token（2FA 已启用禁账号密码，ADR-042）**
+- **ADR-049 GitLab 隔离——双开发域分离（2026-09-16，强制）**：个人开发域=本地 Windows + Gitea（权威）+ GitHub（备份/云端闭环）；公司开发域=GitLab（10.10.30.9，另一 AI 工具独立维护）；**主仓库不再推送 GitLab remote**（**隔离终态 4a7ffe6，不再使用**：开发分支 gitlabcicotest 已合并删除——分支引用删除内容全量保留在 main；CI 触发改 **push main**（ci.yml rules 已改）；GitLab Release=仅 4 sources 源码包无业务资产=实验线有意简化；**tags: [gitlabcicotest]=runner 选择标签非分支依赖（与分支同名纯属巧合）**；v2.7.3 main 全链 CI-release-CD 实证 #695/#696 全绿，仅实验 WSL+18080，不碰 Rocky/生产；GitLab main 已与 Gitea/GitHub 对齐）；配置资产曾固化于 docs/15 §7（**该文档已于 2026-11-28 随测试仓删除**；GitLab 配置从仓库移除，见 ADR-057）；再启用须用户明确指示；**GitHub 认证=PAT token（2FA 已启用禁账号密码，ADR-042）**
 - **ADR-051 飞书审批通知（2026-11-27，强制）**：通知=**独立旁路通道**——异步派发（daemon 线程），失败**绝不阻塞**提交/审批、不改业务状态机；7 事件固定（提交需审批→提交人+一级；免审批直通→**仅提交人**；一级进二级→提交人+二级；一级即终审/自动跳过二级→提交人；二级通过→提交人；驳回→提交人含原因）。收件人三级解析=本地 `local_users.email` → AD `mail` → 飞书；解析不到记 `skipped`。成功/失败/跳过落 `notification_logs`，仅失败另写审计 `notify_failed`。**界面可观测（强制）**：三列表"飞书通知"列 + 详情"通知记录" + 提交/审批提示注明异步发送。测试=组 25（通知桩 18099），全量基线 433。
 - **ADR-052 关键服务器零出网 + 专用单向通知网关（2026-11-27，安全强制）**：生产机**零互联网出站**，唯一外部路径=内网 POST `10.10.30.114:8090`；网关仅放行 `open.feishu.cn:443`（防 SSRF/开放代理）+ 源 IP 白名单（仅 10.10.30.8）+ 预共享 token，双重校验；网关只做「鉴权→渲染→发送→记账」，不做业务决策、不落业务正文；飞书 App ID/Secret 只存两处（开发机 `server_credential.md` 与网关 `.env` 600），**禁入 git**。
 - **ADR-053 生产部署冒烟全量通过=发布门禁（2026-11-27，强制）**：`infra/smoke.sh`（组 24 白名单 + 计数门禁）**全量通过**才算部署成功，任一失败 `exit 1`（禁止"警告继续"的假绿）；docker 与原生回退通道一致；冒烟目标用内网 IP（`127.0.0.1` 判外网 403 属正确）；凭据取 `.env RESET_PASSWORD`（已改密用 `VERIFY_ADMIN_PASS` 传入）；冒烟断言须容错，登录失败必须明示凭据原因而非抛栈掩盖。
 - **ADR-054 飞书通知=独立配置域 + hook 化（2026-11-27，强制）**：`feishu_config` 表（与 `ad_config` 同构，DB 权威、`.env` 播种/回退、留空回退），配置页"飞书通知"独立卡片可配 9 项（开关/网关 host·port·path·完整 URL/预共享 token/超时/入口 URL/App ID）；**App Secret 仍只存网关 `.env`（600），业务机不存不展示**，配置页仅经网关 `/health` 展示 `app_configured/token_configured`；通知读取全部改运行期配置（删模块级 `FEISHU_NOTIFY_*` 常量，保存即时生效）；`NOTIFY_HOOKS`+`register_notify_hook` 使 `notify_event` 成为派发器（飞书=默认通道 `feishu`，业务 8 处调用点零改动，可并接钉钉/邮件）；`POST /api/admin/feishu-config/test` 可单独自测（失败返 `ok=false` 不 500）；token 仅掩码回显、掩码回存不覆盖；审计 `update_feishu_config`/`import_feishu_config`/`test_feishu_notify`。测试基线 467→**496**（组 27，29 项）。
 - **ADR-056 通知可读性收口 + 生产时区（2026-11-27，v2.7.6，强制）**：通知单号短号 `#8位hex`（不引入流水号）；部门取主部门（`orders.is_primary_dept`，回退 `department_ids[0]`）；`submission_status` 仅在确有审批人时渲染"X 级审批已通过"；容器 `TZ=Asia/Shanghai` 且 `docker-deploy.sh` 固化 `-e TZ` 与 `-e PATH=/venv/bin:...`（漏 PATH 重建即 `gunicorn not found`）；**外网下载列表按提交人过滤＝有意设计**（自己提交、审批后自己下载，不用接收方视角）；`/api/health` 回显 `resetPassword` 属既有行为，reset 即回初始密码、admin 立即改密
+- **ADR-057 测试域拆除与流水线收敛（2026-11-28，强制）**：只保留生产环境；WSL `rocky10-ci`、Gitea `act_runner`、GitLab 10.10.30.9 测试仓（含 `.gitlab-ci.yml`/`.gitlab/`/docs/15）全部拆除；Git 权威=Gitea `opencodegit/SecureTrans`（旧账号 `openwrtadmin` 注销，路径全量替换）；唯一自动化流水线=GitHub Actions（CI-TDD/RELEASE/CD-SIM），Gitea 只作代码权威与 Release 存档（`release.ps1` 同步）；**生产机零出网、无基座镜像/wheelhouse，禁止在产机构建镜像**（HTTP 实测 ghcr 不可达），镜像=GitHub 云端 build→GHCR，离线用 Release `image.tar.gz`（待补）；生产自动化只允许只读冒烟
 - **ADR-055 飞书 App Secret 受控下发 + 部门补全（2026-11-27，强制）**：Secret 仍只存网关 `.env`（600）；网关新增 `POST /admin/secret`（白名单 IP + 预共享 token，**先验凭据再原子写 .env 并热重建客户端**）；业务侧 `POST /api/admin/feishu-config/secret` 只做内存转发、**不落库/不落盘/不回显**，审计仅记动作（`push_feishu_secret`，无密钥正文）；`deploy-gateway.sh` 支持 `--secret-file` 且升级沿用本机 `.env`（无需重输、不依赖 AI）；待审批通知由网关查飞书通讯录补“提交人部门 + 请部门负责人审批”（缺权限自动省略、不阻塞）；`/health` 增 `app_id_masked/contact_readable`；测试基线 496→**510**（组 28，13 项）。
 - **ADR-050 CICD Workflow 组织方式（2026-09-16 复盘，方法论）**：总分式（入口+明细：Gitea/GitHub workflows 多文件、GitLab .gitlab-ci.yml 入口+include local 三文件）vs 单文件——总分式优势=触发即作用域/权限最小化（secret 最小作用域）/失败隔离/跨平台迁移（workflow 薄壳+infra/*.sh）；代价=artifacts 传值/配置复制漂移/新手需懂触发矩阵；单文件适用=纯 CI 单平台线性项目；本项目保持总分式（ADR-037/041 佐证）；docs/CICD.md §2.1 已同步；**GitLab 根文件=平台硬性机制**（.gitlab-ci.yml 必须留根目录，GitLab 不扫描 .gitlab/，删根文件则流水线完全不执行；根文件=总入口 include 明细，非冗余）
 - **ADR-040 v2.7.0 落点（运行稳定性）**：WSL（rocky10-ci）systemd 非 PID1、被 Microsoft init 空闲终止机制周期关闭（官方 15s 终止超时；需活跃子进程），连带杀死 act_runner systemd service。修复双保险=Windows 计划任务无窗口 VBS 保活（每分钟 wsl sleep 45，规避 ADR-021 弹窗）+ act_runner 脱离 systemd 改 nohup 直跑（WSL init 直接子进程）；故障 job 幂等 rerun 恢复
@@ -240,8 +242,8 @@ Sprint 周期 2周→1周→1-2天，以协同效率为准演进（人审核是�
 - **生产冒烟**：`infra/smoke.sh`（只读白名单 11 项，不写业务数据；凭据同 verify）
 - **性能**：`tests/perf_test.py`（800MB 阈值断言 + MD5 四方一致）
 - **新增功能必加测试**：test_api.py 对应组 + 文档 + i18n 字典
-- **环境路径（ADR-026）**：WSL 测试/运行一律原生路径（/opt/securetrans），禁止 /mnt/c、/mnt/d；
-  同步走 git（push/pull），禁止 rsync/scp 直拷代码目录
+- **环境路径（ADR-057 修订）**：测试域已拆除，全量 TDD 在开发机（Windows）与 GitHub CI 容器执行；生产机只跑 `smoke.sh`（只读）；
+  代码同步走 git（push/pull）；部署资产（tar.gz/image.tar.gz）允许 scp 到生产 `/opt/securetrans/incoming`
 
 ## B7 部署规范
 
@@ -252,8 +254,8 @@ Sprint 周期 2周→1周→1-2天，以协同效率为准演进（人审核是�
 - **容器必备参数**：`--user <uid>:<gid>`（数据属主）、`-e SECURETRANS_DATA=/data -e NAS_ROOT=/nas`（覆盖 .env 宿主路径）、`-e TZ=Asia/Shanghai`、`-e PATH=/venv/bin:...`
 - **双模式**：DEPLOY_MODE=testing（本地文件系统+Flask）/ production（NAS + 容器内 gunicorn；原生 systemd 回退）
 - **网络面**：单网卡源网段分面（INTERNAL_CIDRS）；外网仅登录+下载，管理接口 403
-- **发布**：`bash infra/package.sh <版本>` → `powershell -File infra/release.ps1 -Version v<版本>` → Gitea Release（源码包+offline-deps+md5/sha256）
-- **CD**：Release 发布自动部署生产（cd.yml）；手动触发/停止方式见 DEPLOY.md 5.6
+- **发布**：`bash infra/package.sh <版本>` → 打 tag push（触发 GitHub RELEASE 云端构建 4 资产+GHCR 镜像）→ `powershell -File infra/release.ps1 -Version v<版本>` 同步 Gitea Release（`opencodegit/SecureTrans`）
+- **CD**：Gitea `cd.yml` 已随 runner 退役删除；生产部署由人执行（HITL）：资产 scp → `podman load` → `podman run` → 只读冒烟（ADR-057，DEPLOY.md §5）
 - **数据生命周期**：系统工具页（在线）/ ops-*.sh（离线脚本）；出厂重置自动先备份
 - **脚本要求**：LF 换行（禁 CRLF），修改后 `bash -n` 语法检查
 
@@ -277,6 +279,8 @@ Sprint 周期 2周→1周→1-2天，以协同效率为准演进（人审核是�
 8. 测试/冒烟凭据取 RESET_PASSWORD，改密后用 VERIFY_ADMIN_PASS 传入
 9. 生产只跑冒烟不跑全量（防数据污染）；出厂重置前自动备份
 10. 新增测试只增不减（计数门禁）；CI 无测试输出=假绿
+11. **生产机零出网、无基座镜像与 wheelhouse，禁止在产机 `podman build`**；镜像只从 GitHub GHCR / Release `image.tar.gz` 经 `podman load` 落地
+12. 旧账号 `openwrtadmin` 已注销：脚本/工作流/文档一律 `opencodegit/SecureTrans`，出现旧路径即视为 bug
 
 ---
 

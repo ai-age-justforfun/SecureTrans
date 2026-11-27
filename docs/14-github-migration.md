@@ -1,5 +1,9 @@
 # GitHub 迁移方案（Active / 首验落地 v2.6.5 → v2.6.6）
 
+> **现状（2026-11-28，ADR-057）**：GitHub 已成为**唯一自动化流水线**（CI-TDD / RELEASE / CD-SIM）——
+> Gitea 侧 `act_runner` 与 WSL 宿主已拆除，`.gitea/workflows` 删除；Gitea 只作代码权威 + Release 存档（`infra/release.ps1` 同步）。
+> GitHub 仓已转为 public（`ai-age-justforfun/SecureTrans`）；镜像由云端 `docker build` 推 GHCR，Release 暂不含 `image.tar.gz`（docs/13 D7）。
+
 > **状态：已落地首验（ACTIVE，2026-09-15 v2.6.5 / v2.6.6）** — 本文件从方案讨论升级为落地记录。
 > **首验结果**：GitHub Actions CI-TDD #1/#2 success（等效本地测试环境全量门禁+TDD 392 项）；CD-SIM #1 success（self-hosted runner → 本地 Docker 仿真 18000，独立数据）；生产 10.10.30.8 零影响（v2.6.5/beta/ok 保持不变）。
 > **发布资产双传（2026-09-15 补规）**：GitHub Release 资产与 Gitea 完全对齐（4 项：主包 tar.gz + md5 + sha256 + offline-deps），容灾完整（Gitea 丢失可恢复部署资产）。发布流程：Gitea Release 上传后，下载 4 资产 → 上传同 tag 的 GitHub Release（脚本化，见 §6 发布清单）。

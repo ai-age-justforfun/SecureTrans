@@ -18,7 +18,8 @@ SecureTrans 是面向中小企业的轻量级单向跨网文件审批摆渡系�
 - **免审批机制**：特征码匹配的文件自动通过（支持压缩包/Vivado Bitstream 等规则，可手工配置；v2.4.0 起支持组合规则 = 特征码 AND 后缀，如 tar.gz/Vivado .bin,.bit）
 - **分级审批**：合作方一级审批，非合作方二级审批（二级审批人已在一级审批过则自动跳过）
 - **轻量级部署**：单服务器 + SQLite + NAS，支撑50人到200人
-- **双模式部署**：测试环境（本地文件系统+Flask）/ 生产环境（NAS + 容器内 gunicorn），`.env` 一个开关切换；生产默认 podman 容器形态，原生 systemd 为回退
+- **双模式部署**：测试模式（本地文件系统+Flask，仅开发机自测用）/ 生产环境（NAS + 容器内 gunicorn），`.env` 一个开关切换；生产默认 podman 容器形态，原生 systemd 为回退
+- **运行形态（2026-11-28，ADR-057）**：**只保留生产环境**（10.10.30.8 容器 `securetrans-docker`）+ 通知网关（10.10.30.114:8090）+ 开发机；原 WSL 测试域、Gitea act_runner、GitLab 实验线已全部拆除。代码权威=Gitea（`opencodegit/SecureTrans`），唯一自动化流水线=GitHub Actions，生产不跑全量 TDD、只跑只读冒烟；镜像由 GitHub 云端构建并 push GHCR（`ghcr.io/ai-age-justforfun/securetrans`），生产只 `podman load`
 - **双 OS 支持**：Windows（waitress）与 Linux（gunicorn）均可一键部署，离线依赖随发布包内置
 - **飞书审批通知（v2.7.x，ADR-051~055）**：提交/审批/驳回 7 个事件异步推送飞书，失败不阻塞业务；独立配置域（开关/网关地址/token/超时/App ID 可配），App Secret 只存网关 `.env` 可经界面一次性下发；待审批通知自动补"提交人部门 + 请部门负责人审批"
 - **网络面隔离（业务语义）**：内/外网均属公司内部网络分区（内网=提交/审批区，外网=接收/下载区），无 NAT、不向互联网开放、无攻击威胁；分面隔离为**单向摆渡流程管控**而非防攻击——外网面仅登录+下载，管理接口 403。单网卡按来源网段（`INTERNAL_CIDRS`）识别，双网卡可绑内网 IP 物理隔离
@@ -89,7 +90,7 @@ SecureTrans/
 │   ├── start-production.sh   # 生产环境启动脚本（gunicorn）
 │   ├── start.bat             # Windows启动脚本
 │   ├── env/                  # 12-Factor 分层配置（ADR-016）
-│   │   ├── test.env          # 测试环境配置（WSL + AD mock）
+│   │   ├── test.env          # 测试/CI 配置（AD mock）
 │   │   ├── dev.env           # 开发环境配置（Windows 本地 + AD mock）
 │   └── static/               # 前端静态文件（SPA + 登录页）
 ├── tests/                    # 自动化测试
@@ -210,7 +211,7 @@ SecureTrans/
 - **迭代**：Scrum（1周Sprint for PSF，2周Sprint for PMF），Sprint作为研发工作分解阶段，在过程文档中体现
 - **开发模式**：主干开发（Trunk-Based Development），单分支 main，临时开发拉分支，合入后删除
 - **交付**：DevOps（轻量CI/CD，蓝绿部署）
-- **可复用模板**：AI 人机协同敏捷工程模板（独立仓库 [openwrtadmin/ai-collab-agile-template](http://localhost:3000/openwrtadmin/ai-collab-agile-template)，供其他创业项目复用）
+- **可复用模板**：AI 人机协同敏捷工程模板（Part A 方法论可抽出复用；原独立模板仓随旧账号 `openwrtadmin` 注销已下线，模板内容保留在本仓库 AGENTS.md Part A）
 
 ### Git 工作流
 
@@ -242,8 +243,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 - [版本结果汇总（v1.5.0→v2.7.6 全量）](docs/17-version-summary.md)
 - [PSF 阶段 Scrum 复盘（Inspect & Adapt 标准版）](docs/18-psf-retrospective.md)
 - [GitHub 迁移方案（Active，v2.6.5 首验落地）](docs/14-github-migration.md)
-- [GitLab CICD 实验线（已隔离归档 2026-09-16；配置资产全量固化 §7；ADR-049 双开发域分离，主仓库不再推送 GitLab）](docs/15-gitlab-cicd.md)
-- [跨平台 CICD 指南（Gitea/GitHub/GitLab 对比+模板+入门）](docs/CICD.md)
+- [跨平台 CICD 指南（Gitea/GitHub 现行配置 + GitLab 通用参考；本项目流水线仅用 GitHub）](docs/CICD.md)
 - [用户使用手册（普通用户 + 管理员）](docs/16-user-manual.md)
 - [生产预验收清单](docs/09-preprod-verification.md)
 - [部署指南（唯一部署文档）](docs/DEPLOY.md)
@@ -297,17 +297,17 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 036 | 单一权威仓库 + 备份仓库体系（架构决策，docs/14 为执行手册） | v2.6.6 |
 | 037 | 环境职责分层 + 双仓 CI/CD/Release 职责对齐（测试合一/发布权限隔离/CD 目标隔离） | v2.6.7 |
 | 038 | Docker 一站式交付 + 蓝绿部署验证 + Registry 分发策略（RC 启动，ADR-039 修订决策 2） | v2.7.0 |
-| 039 | kaniko 废弃 → 容器内 docker CLI + 宿主 docker.sock / WSL 环境重建 / v2.7.0=RC | v2.7.0 |
-| 040 | act_runner 脱离 systemd → nohup 直跑 + 无窗口保活（WSL systemd 非 PID1 周期性重置修复） | v2.7.0 |
+| 039 | kaniko 废弃 → 容器内 docker CLI + 宿主 docker.sock / WSL 环境重建 / v2.7.0=RC（**WSL 已退役 2026-11-28、通道废止，见 ADR-057**） | v2.7.0 |
+| 040 | act_runner 脱离 systemd → nohup 直跑 + 无窗口保活（**已随 WSL 退役，2026-11-28 见 ADR-057**） | v2.7.0 |
 | 041 | v2.7.0 双通道发布回归修复（release.yml 版本提取 + cd.yml MD5 资产歧义） | v2.7.0 |
 | 042 | AI 访问外部系统认证：token > ssh >> 账号密码 + 本地 credential 文件不入库（方法论）；**读取约定=按 token 前缀（ghp_/github_pat_ 等）取真 token 行，标签行勿当 token（L0 误读事故已记）** | v2.7.3 |
 | 043 | 部署形态正式切换：Docker 默认、原生退役 + 蓝绿切换顺序纪律（先停原生再起容器） | v2.7.0 |
 | 044 | 审计统计四维口径重构（提交文件数按名去重+审批+下载+管理操作仅admin）+ CD 正式切换 Docker 通道（v2.7.1 首个验证） | v2.7.1 |
-| 045 | GitLab CICD 实验线打通（gitlabcicotest：独立 WSL+docker+数据，跨平台 CI/CD 迁移教训，docs/15） | v2.7.1 |
+| 045 | GitLab CICD 实验线打通（**测试仓已于 2026-11-28 删除，docs/15 移除；仅存历史方法论**，ADR-057） | v2.7.1 |
 | 046 | Git 服务器选型：Gitea/GitHub/GitLab 优劣势对比 + 场景选型建议（方法论，未来项目可复用） | v2.7.1 |
 | 047 | 发布触发自动化与 AI 边界：触发=git 事件自动（tag→Release→CD 全链自治）；AI 只保留打 tag/发布决策+应急 dispatch；执行顺序=GitLab stages 严格顺序 / Gitea-GitHub 事件链（CI+Release 并行、CD 在后）；失败回退=先回滚生产再修代码，生产回滚≠代码回退（docs/CICD §10.4） | v2.7.1 |
 | 048 | AI 时代人机协同 Agile 方法论采纳（v2.0→v3.0）：SE 3.0 范式 + L1/L2/L3 变更分级 + HITL/HOTL/HOOTL + PDCA 微循环 + RTM 缓冲并入 Agile + 防眩晕 | v2.7.1 |
-| 049 | GitLab 隔离——双开发域分离：个人域=本地+Gitea+GitHub，公司域=GitLab（另一 AI 工具）；**隔离终态 4a7ffe6 不再使用**：gitlabcicotest 已合并删除、CI 触发改 push main、tags=runner 标签非分支、Release=仅 4 sources 源码包（有意简化）、main 全链实证全绿、已与 Gitea/GitHub 对齐；GitHub 认证=PAT token（2FA） | v2.7.3 |
+| 049 | GitLab 隔离——双开发域分离（**GitLab 测试域已于 2026-11-28 删除，ADR-057**）：个人域=本地+Gitea+GitHub，公司域=GitLab（另一 AI 工具）；**隔离终态 4a7ffe6 不再使用**：gitlabcicotest 已合并删除、CI 触发改 push main、tags=runner 标签非分支、Release=仅 4 sources 源码包（有意简化）、main 全链实证全绿、已与 Gitea/GitHub 对齐；GitHub 认证=PAT token（2FA） | v2.7.3 |
 | 050 | CICD Workflow 组织方式——总分式（入口+明细）vs 单文件：触发即作用域/权限最小化/失败隔离/跨平台迁移优，传值与配置共享劣；单文件适用纯 CI 单平台线性项目；本项目保持总分式（薄壳+infra/*.sh+secret 最小作用域）；GitLab 根 .gitlab-ci.yml=平台硬性入口（不扫描 .gitlab/，删根文件则不执行流水线，根文件 include 明细非冗余） | v2.7.2 |
 | 051 | 飞书审批通知=独立旁路通道：异步派发、失败不阻塞业务；7 事件固定（免审批直通仅发提交人）；账号→AD 邮箱→飞书三级解析；界面三列表+详情可观测（成功/失败/跳过） | v2.7.3 |
 | 052 | 关键服务器零出网 + 专用单向通知网关（10.10.30.114:8090）：仅放行 open.feishu.cn:443 + 源 IP 白名单（仅生产机）+ 预共享 token；网关只做鉴权→渲染→发送→记账，不做业务决策/不落正文；App ID/Secret 只存两处且禁入 git | v2.7.3 |
@@ -315,6 +315,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 054 | 飞书通知=独立配置域（外挂式 channel）：`feishu_config` 表（DB 权威、`.env` 播种/回退），配置页独立卡片可配 9 项（开关/网关 IP·端口·路径·完整 URL/token/超时/入口/AppID）；App Secret 仍只存网关；保存即时生效；`NOTIFY_HOOKS` hook 化（业务 8 处调用点零改动，可并接钉钉/邮件）；`POST /api/admin/feishu-config/test` 可单测通知，配置页显示网关 /health 状态灯；测试基线 467→496 | v2.7.3 |
 | 055 | 飞书 App Secret 受控下发 + 部门补全：网关 `POST /admin/secret`（白名单 IP + token，先验凭据再原子写 `.env` 600 并热重建客户端）；业务侧只做内存转发不落库/不落盘/不回显（审计只记动作）；`deploy-gateway.sh` 支持 `--secret-file` 且升级沿用本机 `.env`（不依赖 AI）；待审批通知经飞书通讯录补"提交人部门 + 请部门负责人审批"（缺权限自动省略不阻塞）；`/health` 增 `app_id_masked/contact_readable`；测试基线 496→510 | v2.7.6 |
 | 056 | 通知可读性收口 + 生产时区：通知单号只显示短号 `#8位hex`（不引入流水号，A 方案）；部门取主部门（`is_primary_dept`）；`submission_status` 无审批人不再渲染"审批人：-"；容器时区 `Asia/Shanghai`（`-e TZ` 固化进 docker-deploy.sh，同时带 `PATH=/venv/bin:...`）；**外网下载可见性=提交人本人，有意设计不修改**；`/api/health` 回显 `resetPassword` 保留（reset 即回初始密码） | v2.7.6 |
+| 057 | **测试域拆除与流水线收敛（2026-11-28）**：只保留生产环境；WSL/act_runner/GitLab 实验线全部退役；Gitea=代码权威（`opencodegit`，旧账号 openwrtadmin 注销），唯一自动化流水线=GitHub Actions；镜像不在生产机构建（零出网/无基座），GitHub 云端 build→GHCR，Release `image.tar.gz` 待补；docs/15 移除 | v2.7.6 |
 
 > **使用方式**：决策冲突时以 docs/ADR.md 对应条目为准；新增决策只追加编号（ADR-0xx），不修改历史条目。
 > 最新落点摘要（ADR-031/032/033/034 核心）：合作方全量编辑+联系人必填；WSL 测试收敛为 dev+CI 两环境；生产只读冒烟=业界标准；
@@ -322,8 +323,8 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 > 审计闭环：已审批未下载超时归档逐单审计（system_archive_expired）、手动清理留痕（admin_cleanup_manual）、临时清理不审计（ADR-033）；
 > 有效期统一：提交未审批+审批未下载统一按"文件有效期"（default_expiry_days）超时归档，审计区分超时原因（ADR-034）。
 > 仓库治理（ADR-036 架构）：单一权威仓库（本地 Gitea，承载全部 git 操作与生产 CD）+ 备份仓库（GitHub 等，容灾/分发/独立验证）；每阶段聚焦主要矛盾、其余跟随调整形成动态平衡；备份仓永不接触生产；切换权威的触发条件见 docs/14。
-> GitHub 独立 CI/CD/Release 闭环（2026-09-15）：两条链路完全独立——Gitea（权威仓）CI→Release→CD→生产；GitHub（备份仓）CI-TDD→RELEASE（ubuntu 云端构建 4 资产）→CD-SIM（ubuntu 云端 Docker 仿真，无本地 Docker/self-hosted runner）；历史手动双传保留为对齐手段，正常发布以 release.yml 云构建为准（docs/14）。CD-SIM 含数据洁净门禁（业务文件=0+提交记录=0，验证全新容器）；actions 已升级 v7（Node24 消除弃用告警）。
-> Docker 镜像构建路径（ADR-039 修订，2026-09-15）：kaniko 废弃（本地 Debian bookworm 宿主工具链污染导致 kaniko 构建 apt postinst 报 GLIBC_2.38 失败）；改为 Gitea release job 容器内 docker-ce-cli + act_runner container.options 挂载宿主 docker.sock → 本地 WSL docker daemon 构建（runc 完整隔离）；WSL 测试宿主重建为真实 Rocky 10.1（rocky10-ci，glibc 2.39 干净环境）；v2.7.0 阶段定为 rc（Release Candidate）。
+> 流水线现状（2026-11-28，ADR-057）：Gitea Actions 随 runner 退役，`.gitea/workflows` 已删除；**唯一自动化流水线=GitHub Actions**——CI-TDD（ubuntu 云端全量）→ RELEASE（云端构建 4 资产 + GHCR 镜像）→ CD-SIM（云端容器仿真+数据洁净门禁）；Gitea 保留代码权威与 Release 存档，由 `infra/release.ps1` 同步（docs/14）。
+> 镜像构建路径（ADR-057 收口，2026-11-28）：GitHub 云端 `docker build` → GHCR 分发（原 WSL 宿主 docker + act_runner 通道已退役，ADR-039/040 为历史）。**生产机零出网、无 python 基座镜像、无 wheelhouse，禁止在生产机构建**（实测 `ghcr.io` 不可达）；离线场景使用 Release `image.tar.gz` 资产（待补，docs/13 D7）。
 
 ## 许可证
 

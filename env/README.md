@@ -7,13 +7,13 @@
 | 文件 | 环境 | 用途 | 数据目录 | AD |
 |---|---|---|---|---|
 | `env/dev.env` | 开发（Windows 本地） | AI 开发 + TDD 全量回归 | `./data`（相对） | `AD_MOCK_MODE=true`（模拟） |
-| `env/test.env` | 测试（WSL rocky10-st） | verify.sh 全量回归 + CI runner | `/opt/securetrans/data` | `AD_MOCK_MODE=true`（模拟） |
+| `env/test.env` | 测试（本机自测 / GitHub CI 容器） | verify.sh 全量回归（WSL 已拆除，ADR-057） | `/opt/securetrans/data` | `AD_MOCK_MODE=true`（模拟） |
 | `env/prod.env.template` | 生产（Rocky 8.10） | deploy.sh 据此生成 `.env` | `/mnt/nas/securetrans` | `AD_MOCK_MODE=false`（真实 AD） |
 
 ## 使用方式
 
 - **开发/测试**：把对应模板复制为运行目录的 `.env`（Windows: `src/.env`；WSL: `/opt/securetrans/.env`）。
-  示例：`cp env/dev.env src/.env`（Windows）、`cp env/test.env /opt/securetrans/.env`（WSL）。
+  示例：`cp env/dev.env src/.env`（Windows）；CI 容器用 `env/test.env`（WSL 测试域已拆除，ADR-057）。
 - **生产**：发布包自带 `env/prod.env.template`，`deploy.sh` 首次部署时自动复制生成 `.env` + 随机 SECRET_KEY；
   已有 `.env` 时自动保留（deploybak 保护，不覆盖）。
 

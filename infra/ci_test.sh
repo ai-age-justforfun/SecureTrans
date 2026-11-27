@@ -21,7 +21,7 @@ cd "$WS"
 if [ ! -f src/app.py ]; then
     echo "工作区无代码，显式 clone（${CI_GITEA_URL}）..."
     rm -rf "$WS" && mkdir -p "$WS"
-    git clone --depth 1 "${CI_GITEA_URL}/openwrtadmin/SecureTrans.git" "$WS"
+    git clone --depth 1 "${CI_GITEA_URL}/opencodegit/SecureTrans.git" "$WS"
     cd "$WS"
 fi
 [ -f src/app.py ] || { echo "工作区缺少 src/app.py，当前目录: $(pwd)"; ls -la; exit 1; }

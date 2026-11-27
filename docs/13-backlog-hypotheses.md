@@ -49,5 +49,5 @@
 | D4 | 外网下载列表按提交人过滤（有意设计） | 接收方本人无法看到别人摆渡给他的文件 | 业务确需接收方下载时再改为接收方视角（L2） |
 | D5 | `/api/health` 回显 `resetPassword` | 初始密码可被读取（仅内网面） | 安全审计要求收敛时移除（L1） |
 | D6 | `approved` 长期未下载单依赖有效期归档 | 存储缓慢增长 | 观察期后核对 11 单历史待下载单的归档情况 |
-| D7 | **本地 WSL 发行版 `rocky10-ci` 未注册，`act_runner` 停机** | Gitea `ci/release/cd` 全部 queued，镜像资产无法构建，CD 无法自动重建容器 | 用户恢复 WSL 发行版 + act_runner（步骤见 docs/15 §7/ADR-040）；恢复后补 `image.tar.gz` 并 dispatch CD |
-| D8 | `infra/release.ps1` 与 `.gitea/workflows/cd.yml` 仍写死旧仓库路径 `openwrtadmin/SecureTrans` | 本地脚本/工作流解析 Release 可能 404（需确认仓名迁移后未同步） | 下次发布前统一为 `opencodegit/SecureTrans`（L1） |
+| D7 | **Release 缺 `image.tar.gz` 离线镜像资产**（Gitea runner 已退役，镜像改 GitHub 云端构建推 GHCR） | 生产零出网无法 pull GHCR，离线部署只能继续用旧镜像 + 热更代码（当前 v2.7.6 即此形态） | GitHub `release.yml` 在已有 `docker build` 之后追加 `docker save | gzip` 并 `gh release upload image.tar.gz`；生产 `podman load`（L1，需跑一次 tag 验证） |
+| D8 | ~~旧仓库路径 `openwrtadmin/SecureTrans`~~ | — | **已关闭（2026-11-28）**：`.gitea/workflows` 删除，`infra/ci_test.sh`/`release.ps1`/docs 全量替换为 `opencodegit/SecureTrans`（ADR-057） |

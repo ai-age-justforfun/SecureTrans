@@ -4,7 +4,9 @@
 > 并**对照本项目真实配置**（Gitea/GitHub/GitLab 三套 workflow 全部在仓库内，可直接复制复用）。
 > **不是 ADR**：技术决策走 docs/ADR.md（ADR-037 职责分层、ADR-042 认证、ADR-045 GitLab 实验线等）；
 > 本文档回答"怎么配置、怎么运行、三者差在哪"。
-> 配套手册：docs/14-github-migration.md（GitHub 执行手册）、docs/15-gitlab-cicd.md（GitLab 实验线）。
+> 配套手册：docs/14-github-migration.md（GitHub 执行手册）。
+> **现状（2026-11-28，ADR-057）**：本项目只剩 **GitHub Actions** 一条自动化流水线；Gitea Actions（act_runner）已退役，
+> GitLab 测试仓与 `.gitlab-ci.yml` 已删除——本文 GitLab 章节仅作**通用机制参考**，不代表现行配置。
 
 ---
 
@@ -12,9 +14,9 @@
 
 | 维度 | Gitea Actions | GitHub Actions | GitLab CI/CD |
 |---|---|---|---|
-| 角色 | **本地权威仓**（全部 git 操作 + 生产 CD） | **公有云备份仓**（容灾/分发/独立验证） | **本地实验线**（第三条平台验证） |
+| 角色 | **本地权威仓**（git 操作 + Release 存档；Actions 已退役） | **公有云备份仓 + 唯一自动化流水线**（CI/Release/CD-SIM） | ~~本地实验线~~（已删除，仅通用参考） |
 | 服务地址 | http://localhost:3000 | github.com（ai-age-justforfun/SecureTrans） | http://10.10.30.9 |
-| Workflow 文件 | `.gitea/workflows/{ci,release,cd}.yml` | `.github/workflows/{ci,release,cd-sim}.yml` | `.gitlab-ci.yml`（入口 include）+ `.gitlab/workflows/{ci,release,deploy}.yml`（明细，ADR-050 总分式） |
+| Workflow 文件 | ~~`.gitea/workflows/*`~~（已删除，ADR-057） | `.github/workflows/{ci,release,cd-sim}.yml` | `.gitlab-ci.yml`（入口 include）+ `.gitlab/workflows/{ci,release,deploy}.yml`（明细，ADR-050 总分式） |
 | Runner | act_runner（**自托管**，WSL 容器 label） | GitHub-hosted（`ubuntu-latest` 云 VM） | gitlab-runner（**docker executor** 容器） |
 | 依赖安装 | 离线 wheelhouse（镜像内） | 在线 `pip install` | 离线 wheelhouse（镜像内） |
 | CI 门禁 | 静态+版本+env键+脚本+全量TDD（容器内干净数据） | 同门禁（云 VM） | 同门禁（docker executor 容器） |
@@ -173,7 +175,7 @@ jobs:
           cd "$WS"
           if [ ! -f src/app.py ]; then
             rm -rf "$WS"/* "$WS"/.[!.]* 2>/dev/null || true
-            git clone --depth 1 "${CI_GITEA_URL}/openwrtadmin/SecureTrans.git" "$WS"
+            git clone --depth 1 "${CI_GITEA_URL}/opencodegit/SecureTrans.git" "$WS"
           fi
           PORT=18000 CLEAN_DIR=/data bash infra/preflight.sh   # 环境前置检查（ADR-035）
           python -m py_compile src/app.py tests/test_api.py infra/static_check.py
@@ -608,13 +610,11 @@ deploy:
 
 | 平台 | 文件 | 职责 |
 |---|---|---|
-| Gitea | `.gitea/workflows/ci.yml` | CI-TDD 门禁（容器） |
-| Gitea | `.gitea/workflows/release.yml` | 发布（7 资产 + 镜像） |
-| Gitea | `.gitea/workflows/cd.yml` | 生产 CD（SSH + docker + 冒烟） |
+| Gitea | ~~`.gitea/workflows/{ci,release,cd}.yml`~~ | **已删除（2026-11-28，runner 退役，ADR-057）；Gitea 仅作代码权威 + Release 存档** |
 | GitHub | `.github/workflows/ci.yml` | CI-TDD 门禁（云 VM） |
 | GitHub | `.github/workflows/release.yml` | 云发布（4 资产 + GHCR + 触发 CD-SIM） |
 | GitHub | `.github/workflows/cd-sim.yml` | 云 CD 仿真（18000 + 数据洁净） |
-| GitLab | `.gitlab-ci.yml` | 三阶段（ci-check/release/deploy） |
+| GitLab | ~~`.gitlab-ci.yml`~~ | **测试仓已删除（2026-11-28，ADR-057）；本表仅存历史参考** |
 
 > 关联文档：ADR-016/018/019/020（CI 分层与容器隔离）、ADR-024（CD）、ADR-037（三平台职责对齐）、
 > ADR-039（docker.sock 构建）、ADR-042（认证）、ADR-043（docker 部署形态）、ADR-045（GitLab 实验线）。

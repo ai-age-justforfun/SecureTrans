@@ -1,5 +1,7 @@
 # SecureTrans CI/CD + GitOps 架构方案
 
+
+> **现状（2026-11-28，ADR-057）**：本文所述 Gitea act_runner / WSL 宿主 / GitLab 实验线均已拆除，现行自动化流水线只有 GitHub Actions；Gitea 仅作代码权威与 Release 存档。
 > 版本：v1.0 | 日期：2026-08-27 | 阶段：PSF → PMF 过渡
 > 目标：从手动部署演进到持续交付，打通 Lean Startup → Agile → DevOps → GitOps
 
@@ -291,7 +293,7 @@ AI Agent 生成代码 → 自动运行测试 → 提交到 Git → CI 自动验�
 > ⏸️ **状态说明**：以下 3 项为 CI/CD 启动清单，**待生产环境（封闭数据中心 Rocky Linux）部署测试全部通过后再启动**。
 > 当前 PSF 阶段已完成的配置管理：Gitea 仓库（main 单分支）+ 一键打包（package.sh）+ 一键部署（deploy.sh）+ 74 项自动化测试。
 
-1. **配置 Gitea Actions**：在 Gitea 中启用 Actions，添加 Runner，创建 `.gitea/workflows/ci.yml`（代码提交→自动测试→自动打包）
+1. ~~**配置 Gitea Actions**：在 Gitea 中启用 Actions，添加 Runner，创建 `.gitea/workflows/ci.yml`~~（2026-11-28 已退役，现用 GitHub Actions，见 ADR-057）
 2. **创建 env/ 目录**：分离测试环境和生产环境配置，密钥用 Ansible Vault 加密
 3. **搭建本地 PyPI 镜像**：在数据中心部署 pypiserver，预下载所有 Python 依赖
 

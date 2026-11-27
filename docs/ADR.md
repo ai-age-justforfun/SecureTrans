@@ -728,7 +728,8 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   - **GitLab Release 资产口径（有意简化，非异常）**：GitLab 对任何 tag 自动生成 4 种 sources 源码包（zip/tar.gz/tar.bz2/tar），实验线 release 未显式上传业务资产（主部署包/md5/offline-deps/镜像）——与 Gitea 7 资产/GitHub 4+GHCR 不一致是**实验线有意简化**（ADR-045 只验证链路对齐）；未来公司域正式用需在 release.yml 补 `upload-asset`。已记录 docs/15 §3。
   - **收尾全链实证**：v2.7.3——push main 触发 ci-check ✅（#695）、push tag v2.7.3 触发 ci-check→release→deploy 全绿 ✅（#696，stages 严格顺序），CD 部署容器 `securetrans-gitlab`（18080 对外）+ 只读冒烟 PASS；全程仅 GitLab 实验 WSL（Ubuntu 24.04）+ 独立 docker + `/opt/securetrans-gitlab`，Rocky 测试/生产未触碰，Gitea/GitHub 未推（无 v2.7.3 tag）。
   - **runner 标签澄清（2026-09-16 用户误解澄清，重要）**：三个 job 的 `tags: [gitlabcicotest]` 是 **GitLab runner 选择标签，不是分支依赖**——job 靠 tags 派发给注册该标签的专用物理 runner（`gitlabcicotest-docker`，Ubuntu 24.04 WSL docker executor）；恰与开发分支同名纯属巧合。tag v* 触发的 release/deploy 不经过任何分支条件；删改 tags 会导致 job 找不到 runner 卡死。教训：GitLab Web UI 中 tags 与分支同名易误导，文档需显式区分"触发条件 rules（分支/tag）vs 运行载体 tags（runner）"。
-  - **隔离终态（2026-09-16）**：GitLab 仓库 main=4a7ffe6（含收尾全部 commit：53005e3 收尾主提交 + 7e3de0d 根入口注释修正 + 4a7ffe6 release 描述清理）；已与 Gitea/GitHub 对齐（本地 main=origin=4a7ffe6）。**GitLab 自此隔离不再使用**；公司开发域由另一 AI 工具独立维护；主仓库仅 Gitea（权威）+ GitHub（备份），GitHub 认证=**PAT token**（官方 2FA 已启用，禁用账号密码；token 含特殊字符需 URL 编码或 credential helper，ADR-042）。
+  - **落点（2026-11-28，ADR-057）**：GitLab 测试仓已**删除**（10.10.30.9 不再提供服务），`.gitlab-ci.yml`/`.gitlab/` 与 docs/15 从仓库移除；本 ADR 的隔离/配置固化结论转为历史记录，现行只有 Gitea（权威）+ GitHub（流水线）。
+- **隔离终态（2026-09-16）**：GitLab 仓库 main=4a7ffe6（含收尾全部 commit：53005e3 收尾主提交 + 7e3de0d 根入口注释修正 + 4a7ffe6 release 描述清理）；已与 Gitea/GitHub 对齐（本地 main=origin=4a7ffe6）。**GitLab 自此隔离不再使用**；公司开发域由另一 AI 工具独立维护；主仓库仅 Gitea（权威）+ GitHub（备份），GitHub 认证=**PAT token**（官方 2FA 已启用，禁用账号密码；token 含特殊字符需 URL 编码或 credential helper，ADR-042）。
 
 ### ADR-050：CICD Workflow 组织方式——总分式（入口+明细拆分）vs 单文件（2026-09-16 复盘，方法论）
 - **背景**：三平台（Gitea/GitHub/GitLab）CICD 全 workflow 流程的组织方式复盘。本项目现行=总分式多文件（Gitea `.gitea/workflows/{ci,release,cd}.yml`；GitHub `.github/workflows/{ci,release,cd-sim}.yml`；GitLab `.gitlab-ci.yml` 入口 + `.gitlab/workflows/{ci,release,deploy}.yml`），与"全部写在一个 workflow 文件"对比评估优劣势。
@@ -864,3 +865,15 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
 - **验证**：全量 TDD 510/510；生产冒烟 11/11；容器 `date`=CST；`submission_pending_l1 sent=6 failed=0`、`department=软件开发部`；
   外网面 `jintao` 可见自己 2 单（`admin` 为空属正常）。
 - **教训**：①"看起来像乱码"往往不是显示 bug 而是**标识设计**缺一层；②外部依赖的权限按官方返回的**最小必要**申请，别把错误串里的所有 scope 当清单（本次误报 3 个不存在的 scope）；③容器形态下时区/路径/PATH 是**部署参数**，不写进脚本就会在下次重建时复发。
+
+### ADR-057：测试域拆除与流水线收敛——单生产环境 + GitHub 云端唯一自动化流水线（2026-11-28，强制）
+- **背景**：v2.7.6 已正式发布进入运行期，同时原测试域全部拆除——本地 WSL 发行版 `rocky10-ci` 已清理（不再重建）、Gitea `act_runner` 随之停机、GitLab `10.10.30.9` 的历史测试仓已删除、旧账号 `openwrtadmin` 已注销。现存资产只有：生产 `10.10.30.8`、通知网关 `10.10.30.114:8090`、开发机（Windows）。此前文档仍按"三环境 + 三平台"描述，与实际不符。
+- **决策**：
+  1. **唯一运行环境=生产**，测试域不重建。全量 TDD 只在开发机（Windows）与 GitHub 云端 CI 容器执行；生产侧自动化只允许**只读冒烟**（ADR-017/053），禁止写数据测试。
+  2. **Git 权威=Gitea `opencodegit/SecureTrans`**；备份与唯一自动化流水线=GitHub `ai-age-justforfun/SecureTrans`（public）。旧账号/旧路径 `openwrtadmin` 全部废止：脚本、工作流、文档、示例统一 `opencodegit`。
+  3. **Gitea Actions 退役**：`.gitea/workflows/{ci,release,cd}.yml` 删除、runner 注册清理。Gitea 只承担"代码权威 + Release 存档"；打 tag 后 CI/Release/镜像全部由 GitHub Actions 承担，Gitea Release 由 `infra/release.ps1` 手动同步。
+  4. **镜像不在生产机构建**：生产零出网（实测 `https://ghcr.io` 不可达）、podman 无 `python:3.12.11-slim-bookworm` 基座、无 wheelhouse → `podman build` 不可行。镜像=GitHub 云端 `docker build` 并推 GHCR（`ghcr.io/ai-age-justforfun/securetrans`）；封闭数据中心场景用 Release `image.tar.gz` 兜底（当前待补，docs/13 D7）。生产侧只 `podman load` + `podman run`。
+  5. **GitLab 测试域删除**：`.gitlab-ci.yml`、`.gitlab/workflows/`、`docs/15-gitlab-cicd.md` 一并移除，gitlab remote 删除。ADR-045/049/050 中 GitLab 机制说明降级为历史方法论，不再代表现行流水线。
+- **代价与约束**：失去"Gitea tag 即自动 Release+CD"的本地闭环，发布流程变为「打 tag → GitHub 云 CI/Release → 同步 Gitea Release → 资产 scp → `podman load` → 冒烟」，生产变更由人（AI 辅助）执行，属 HITL。门禁逻辑仍全部在 `infra/*.sh`（平台无关），换平台不改门禁。
+- **落点（2026-11-28）**：删除 `.gitlab-ci.yml`、`.gitlab/workflows/*`、`.gitea/workflows/*`、`docs/15-gitlab-cicd.md`、`infra/ci-runner.md`；`openwrtadmin` → `opencodegit`（`infra/ci_test.sh`、`infra/release.ps1`、docs/CICD、docs/DEPLOY、README）；README/AGENTS/PRD 现状段落、DEPLOY 现状速览、CICD 指南定位、docs/13 D7/D8、docs/14、docs/05、docs/08 同步；docs/13 D7（镜像离线资产）保留、D8（旧仓路径）关闭。
+

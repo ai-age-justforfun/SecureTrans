@@ -10,7 +10,7 @@ param([string]$Version = "v1.5.0")
 
 $ErrorActionPreference = "Stop"
 
-$repo = "openwrtadmin/SecureTrans"
+$repo = "opencodegit/SecureTrans"
 # Gitea 地址支持环境变量 GITEA_BASE 覆盖（默认 http://localhost:3000）
 $giteaBase = $env:GITEA_BASE
 if (-not $giteaBase) { $giteaBase = "http://localhost:3000" }

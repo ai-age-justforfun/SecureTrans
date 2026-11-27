@@ -172,7 +172,7 @@
 | 2 | 浏览器后退 | 不能回到系统内部（需重新登录） |
 
 #### TC-016：网络面隔离（应用层，本地/WSL 模拟验证）
-> 说明：应用层隔离在本地 dev / WSL test 单网卡环境通过注入 `X-Network-Zone` 头模拟验证；
+> 说明：应用层隔离在本地 dev / GitHub CI 容器环境（单网卡）通过注入 `X-Network-Zone` 头模拟验证；
 > **双网卡物理隔离（Nginx+防火墙）仅在 pre-production 环境验收**（见 docs/09-preprod-verification.md）。
 | 步骤 | 操作 | 预期结果 |
 |------|------|---------|
