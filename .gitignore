@@ -25,6 +25,9 @@ nas/
 .env
 .env.local
 
+# 本地凭据清单（ADR-042：凭据只存本地，绝不入库）
+server_credential*.md
+
 # IDE
 .vscode/
 .idea/
