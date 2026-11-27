@@ -88,6 +88,8 @@ ${RUNTIME} run -d \
   --env-file "$ENV_FILE" \
   -e HOST=0.0.0.0 -e PORT=8000 -e ENV_ROLE="$ENV_ROLE_VAL" \
   -e SECURETRANS_DATA=/data -e NAS_ROOT=/nas \
+  -e TZ=Asia/Shanghai \
+  -e PATH=/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
   -v "${DATA_DIR}:/data" \
   -v "${NAS_DIR}:/nas" \
   ${HOST_UID:+--user ${HOST_UID}:${HOST_GID}} \

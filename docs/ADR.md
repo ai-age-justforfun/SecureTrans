@@ -840,3 +840,4 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
     结果顺序与收件人一致）；②业务侧 `_feishu_timeout()` 默认 5s→**10s**（配置域仍可覆盖 0.5~60s）；
     ③TDD 增补「一级审批人多人时全员投递（收件人=全部一级审批人）」，基线 509→**510**。
     教训：外部投递类旁路的超时必须按"最多收件人 × 单次 RTT"估算，否则会出现"已送达却记失败"的假失败。
+  - **落点补充 2（v2.7.6）**：①通知单号改短号 `#<8位hex>`（详情页仍全 ID，A 方案，不引入流水号）；②待审批通知部门取**主部门**（`orders.is_primary_dept`，回退 `department_ids[0]`），名称缺失回退 `i18n_name.zh_cn`；③`submission_status` 模板仅在确有审批人时渲染"X 级审批已通过"，修复提交提示出现"1 级审批已通过（审批人：-）"；④生产容器时区 UTC→`Asia/Shanghai`（`-e TZ` 入 `docker-deploy.sh`，避免 CD 重建后又回 UTC），容器重建需同时带 `SECURETRANS_DATA=/data`、`NAS_ROOT=/nas`、`PATH=/venv/bin:...`（漏 PATH 会 `gunicorn not found`）。

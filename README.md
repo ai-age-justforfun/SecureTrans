@@ -236,7 +236,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 - [测试报告（510项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
-- [版本结果汇总（v1.5.0→v2.7.5 全量）](docs/17-version-summary.md)
+- [版本结果汇总（v1.5.0→v2.7.6 全量）](docs/17-version-summary.md)
 - [PSF 阶段 Scrum 复盘（Inspect & Adapt 标准版）](docs/18-psf-retrospective.md)
 - [GitHub 迁移方案（Active，v2.6.5 首验落地）](docs/14-github-migration.md)
 - [GitLab CICD 实验线（已隔离归档 2026-09-16；配置资产全量固化 §7；ADR-049 双开发域分离，主仓库不再推送 GitLab）](docs/15-gitlab-cicd.md)
@@ -310,7 +310,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 052 | 关键服务器零出网 + 专用单向通知网关（10.10.30.114:8090）：仅放行 open.feishu.cn:443 + 源 IP 白名单（仅生产机）+ 预共享 token；网关只做鉴权→渲染→发送→记账，不做业务决策/不落正文；App ID/Secret 只存两处且禁入 git | v2.7.3 |
 | 053 | 生产部署只读冒烟全量通过=发布门禁：`smoke.sh` 任一失败即 `exit 1`（禁"警告继续"假绿），docker/原生两通道一致；冒烟用内网 IP、凭据取 RESET_PASSWORD（改密用 VERIFY_ADMIN_PASS）；断言须容错、登录失败明示凭据原因 | v2.7.3 |
 | 054 | 飞书通知=独立配置域（外挂式 channel）：`feishu_config` 表（DB 权威、`.env` 播种/回退），配置页独立卡片可配 9 项（开关/网关 IP·端口·路径·完整 URL/token/超时/入口/AppID）；App Secret 仍只存网关；保存即时生效；`NOTIFY_HOOKS` hook 化（业务 8 处调用点零改动，可并接钉钉/邮件）；`POST /api/admin/feishu-config/test` 可单测通知，配置页显示网关 /health 状态灯；测试基线 467→496 | v2.7.3 |
-| 055 | 飞书 App Secret 受控下发 + 部门补全：网关 `POST /admin/secret`（白名单 IP + token，先验凭据再原子写 `.env` 600 并热重建客户端）；业务侧只做内存转发不落库/不落盘/不回显（审计只记动作）；`deploy-gateway.sh` 支持 `--secret-file` 且升级沿用本机 `.env`（不依赖 AI）；待审批通知经飞书通讯录补"提交人部门 + 请部门负责人审批"（缺权限自动省略不阻塞）；`/health` 增 `app_id_masked/contact_readable`；测试基线 496→510 | v2.7.5 |
+| 055 | 飞书 App Secret 受控下发 + 部门补全：网关 `POST /admin/secret`（白名单 IP + token，先验凭据再原子写 `.env` 600 并热重建客户端）；业务侧只做内存转发不落库/不落盘/不回显（审计只记动作）；`deploy-gateway.sh` 支持 `--secret-file` 且升级沿用本机 `.env`（不依赖 AI）；待审批通知经飞书通讯录补"提交人部门 + 请部门负责人审批"（缺权限自动省略不阻塞）；`/health` 增 `app_id_masked/contact_readable`；测试基线 496→510 | v2.7.6 |
 
 > **使用方式**：决策冲突时以 docs/ADR.md 对应条目为准；新增决策只追加编号（ADR-0xx），不修改历史条目。
 > 最新落点摘要（ADR-031/032/033/034 核心）：合作方全量编辑+联系人必填；WSL 测试收敛为 dev+CI 两环境；生产只读冒烟=业界标准；

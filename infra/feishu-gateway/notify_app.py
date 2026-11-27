@@ -30,7 +30,7 @@ from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
 
-VERSION = "0.2.1"
+VERSION = "0.2.2"
 STARTED_AT = time.time()
 
 ENV_PATH = os.getenv("NOTIFY_ENV_FILE", "/opt/securetrans-notify/.env")
@@ -157,8 +157,15 @@ def _lookup_department(email: str) -> str:
             _contact_ok["value"] = False
             return ""
         _contact_ok["value"] = True
-        dept_ids = ((user.get("data") or {}).get("user") or {}).get("department_ids") or []
-        dept_id = dept_ids[0] if dept_ids else ""
+        user_obj = ((user.get("data") or {}).get("user") or {})
+        # 优先"主部门"（orders.is_primary_dept），否则退回 department_ids 首个
+        primary = ""
+        for o in (user_obj.get("orders") or []):
+            if o.get("is_primary_dept"):
+                primary = o.get("department_id") or ""
+                break
+        dept_ids = user_obj.get("department_ids") or []
+        dept_id = primary or (dept_ids[0] if dept_ids else "")
         if not dept_id:
             return ""
         dept = _http_json(
@@ -169,6 +176,8 @@ def _lookup_department(email: str) -> str:
         if dept.get("code") != 0:
             return ""
         name = ((dept.get("data") or {}).get("department") or {}).get("name") or ""
+        if not name:
+            name = (((dept.get("data") or {}).get("department") or {}).get("i18n_name") or {}).get("zh_cn") or ""
         if name:
             with _lock:
                 _dept_cache[email] = (now + 3600, name)
@@ -190,7 +199,11 @@ def _render(event: str, v: Dict[str, Any]) -> str:
     external_url = v.get("external_url") or app_url
     operator = v.get("operator") or "-"
     sid = v.get("submission_id")
-    sid_text = f"#{sid}" if sid else "-"
+    # 单号口径：系统主键=<8位hex>_<提交时间戳>，通知里只显示短号（详情页仍为全 ID）
+    if sid:
+        sid_text = "#" + (str(sid).split("_")[0] if "_" in str(sid) else str(sid)[:8])
+    else:
+        sid_text = "-"
     department = (v.get("submitter_department") or "").strip()
     dept_line = f"提交人部门：{department}\n请部门负责人进行审批。\n" if department else ""
 
@@ -219,11 +232,18 @@ def _render(event: str, v: Dict[str, Any]) -> str:
             f"驳回原因：{reason}\n时间：{when}"
         )
     if event == "submission_status":
-        return (
-            "【SecureTrans 审批进度】\n"
-            f"单号：{sid_text}\n文件：{filename}\n"
-            f"{level} 级审批已通过（审批人：{approver}）\n当前状态：{status_text}\n时间：{when}"
-        )
+        # 只有确实带审批人才渲染"X 级审批已通过"，否则只报当前状态
+        # （v2.7.6 修复：提交时 status_text=已提交待审批，旧模板却硬写"1 级审批已通过（审批人：-）"）
+        lines = [
+            "【SecureTrans 审批进度】",
+            f"单号：{sid_text}",
+            f"文件：{filename}",
+        ]
+        if approver and approver != "-":
+            lines.append(f"{level} 级审批已通过（审批人：{approver}）")
+        lines.append(f"当前状态：{status_text}")
+        lines.append(f"时间：{when}")
+        return "\n".join(lines)
     if event == "submission_auto_approved":
         return (
             "【SecureTrans 免审批放行】\n"
