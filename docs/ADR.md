@@ -775,5 +775,6 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   - ✅ 端到端实证（2026-11-27）：生产机 `10.10.30.8` → `POST http://10.10.30.114:8090/notify`（`event=submission_pending_l1`）→ `HTTP 200 / sent=1 / message_id=om_x100b7fa1e02864b0df13d5f36785be8`；网关审计 `client=10.10.30.8`，用户收到消息原文确认标题/单号/提交人/文件名/事由/时间/入口正确。
   - ✅ 应用层源 IP 白名单（2026-11-27，fail-closed）：`notify_app.py` 新增 `_client_allowed()`（`NOTIFY_ALLOW_CIDRS` 未配置即拒绝，默认拒绝而非放行）；`/notify` 首行校验 `request.client.host`，不在白名单返回 `403 client ip not allowed`。实测：网关本机（`10.10.30.114`）POST → **403**；生产容器 POST → **200**。`NOTIFY_ALLOW_CIDRS=10.10.30.8/32` 已写入网关 `.env`；`deploy-gateway.sh` 对空值显式告警。
   - ✅ 生产部署形态联通（2026-11-27）：生产容器（`--user 973:972`，仅挂 `/data`、`/nas`）内直接 POST 网关 → `200 / sent=1 / message_id=om_x100b7fa25bd450a0c1ffd42f65fcc23`，证明"容器零出网 + 仅内网通知"在真实部署形态下可用。
+  - ✅ 开机自恢复（2026-11-27）：生产 `podman-restart.service` 原为 disabled（容器 `RestartPolicy=unless-stopped` 只在 podman 运行期间有效，rootful 无守护进程 → 主机重启后容器不自启），已 `enable --now`，`is-enabled=enabled`、`is-active=active`。
   - ⏳ 待落地（属部署步骤，非代码缺陷）：生产 `.env` 写入 `FEISHU_NOTIFY_URL=http://10.10.30.114:8090/notify` 与真实 `FEISHU_NOTIFY_TOKEN` 并重启容器；SecureTrans 容器出站策略显式拒绝互联网（仅内网放行到 10.10.30.114:8090）；token 轮换流程（建议 180 天，与飞书 App Secret 同步）。
   - 关联：ADR-042（凭据只存本地/受控服务端两处）、ADR-051（失败不阻塞与界面可观测）。
