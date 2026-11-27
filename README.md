@@ -223,7 +223,7 @@ main ────●────●────●────●────  �
 
 ### 当前阶段
 **PSF → RC（v2.7.0 发布候选）**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，
-433 项自动化测试 100%（Windows dev）+ CI 容器全量 TDD + 800MB 性能压力测试 + 3-5 用户并发测试通过
+467 项自动化测试 100%（Windows dev）+ CI 容器全量 TDD + 800MB 性能压力测试 + 3-5 用户并发测试通过
 （MD5 端到端一致）+ CD 全自动部署打通（Release 发布 → 生产自动升级）+ **Docker 双通道发布（Gitea image.tar.gz + GitHub GHCR，ADR-038/039）**；
 beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署验证），通过后正式 release。全项目复盘见 [项目复盘总结](docs/12-project-retrospective.md)。
 
@@ -233,7 +233,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（433项全通过）](docs/06-test-report.md)
+- [测试报告（467项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
 - [版本结果汇总（v1.5.0→v2.7.3 全量）](docs/17-version-summary.md)

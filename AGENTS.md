@@ -229,7 +229,8 @@ Sprint 周期 2周→1周→1-2天，以协同效率为准演进（人审核是�
 
 ## B6 测试规范
 
-- **全量 TDD**：`tests/test_api.py`（433 项，标准库 urllib 无额外依赖）；启动服务后 `cd tests && python test_api.py`
+- **全量 TDD**：`tests/test_api.py`（467 项，标准库 urllib 无额外依赖）；**必须在项目根执行** `python tests/test_api.py`
+  （`src/.env` 的 `NAS_ROOT=./nas`、`SECURETRANS_DATA=./data` 是相对路径，按进程 CWD 解析；在 `tests/` 目录下运行会指向 `tests/nas` 而断言错位）
 - **部署验证**：`infra/verify.sh`（BASE_URL 自适应 .env HOST/PORT；admin 凭据自动取 RESET_PASSWORD，
   手工改密后 `VERIFY_ADMIN_PASS=<密码> bash infra/verify.sh`）
 - **生产冒烟**：`infra/smoke.sh`（只读白名单 11 项，不写业务数据；凭据同 verify）

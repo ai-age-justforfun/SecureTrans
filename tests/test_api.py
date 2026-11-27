@@ -96,6 +96,7 @@ no_redirect_opener = urllib.request.build_opener(NoRedirectHandler, urllib.reque
 # ============================================================
 NOTIFY_REQUESTS = []
 notify_stub_fail = False  # 置 True 后桩返回 502，用于验证"通知失败不阻塞业务"
+notify_stub_mode = "ok"   # ok / partial / unauthorized / slow（组26 契约级验证；fail 仍走 notify_stub_fail）
 _notify_stub = None
 if ENV_ROLE != 'prod' and not SMOKE_MODE:
     try:
@@ -112,6 +113,15 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
                     self.end_headers()
                     self.wfile.write(payload)
                     return
+                # 组26：网关鉴权失败 / 部分失败 / 超时（客户端 timeout=3s 小于慢桩 6s）
+                if notify_stub_mode == "unauthorized":
+                    payload = json.dumps({"code": 401, "msg": "invalid notify token"}).encode('utf-8')
+                    self.send_response(401)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
                 try:
                     n = int(self.headers.get('Content-Length') or 0)
                     body = self.rfile.read(n).decode('utf-8', errors='ignore')
@@ -123,7 +133,15 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
                         'requestId': data.get('request_id') or '',
                         'token': self.headers.get('X-Notify-Token') or '',
                     })
-                    resp = {"code": 0, "sent": len(data.get('recipients') or []), "failed": 0}
+                    if notify_stub_mode == "partial":
+                        # 模拟"部分成功"：无论收件人多少都回 sent=1 failed=1，
+                        # 让业务侧稳定走到 partial 分支（等价于网关多收件人时个别失败）
+                        resp = {"code": 0, "sent": 1, "failed": 1, "msg": "partial delivery (stub)"}
+                    elif notify_stub_mode == "slow":
+                        time.sleep(6)
+                        resp = {"code": 0, "sent": len(data.get('recipients') or []), "failed": 0}
+                    else:
+                        resp = {"code": 0, "sent": len(data.get('recipients') or []), "failed": 0}
                 except Exception as ex:
                     resp = {"code": 400, "sent": 0, "failed": 0, "msg": str(ex)}
                 payload = json.dumps(resp).encode('utf-8')
@@ -2825,6 +2843,238 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     for _u in ("nt_sub", "nt_l1", "nt_l2"):
         request('DELETE', f'/api/admin/local-users/{_u}')
     test("通知: 清理通知测试用户/审批人配置", True, "nt_sub/nt_l1/nt_l2 已清理")
+
+    # ============================================================
+    # 26. 飞书通知 · 独立功能验证（契约 / 落库质量 / 事件矩阵补全）
+    #   组 25 回答"业务链路是否发出通知"；本组回答"通知功能本身是否可信"：
+    #     1) 幂等键形态 <sub>:<event>:<status_text>
+    #     2) 收件人脱敏落库（详情/列表都不出现完整工作邮箱）
+    #     3) 列表 notify 字段、详情 notifications 字段可读
+    #     4) 成功投递不写 notify_failed（反向断言）
+    #     5) 审批人无可用邮箱 → skipped，业务不阻塞
+    #     6) 内部提交一级即终态 → 只发 approved，不发 pending_l2
+    #     7) 语义B（同一人具备一二级权限）→ approval_level_skipped，不算终审 approved
+    #     8) 网关契约：partial / 401 / 超时 → 落库状态与审计正确，业务始终不阻塞
+    # ============================================================
+    print("\n--- 26. 飞书通知独立功能验证（契约/落库/事件矩阵） ---")
+    _set_group("26. 飞书通知独立功能验证")
+
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    _c26, _a26 = request('GET', '/api/admin/approvers')
+    for _a in (_a26 if isinstance(_a26, list) else []):
+        if _a.get('username') in ("nt2_l1", "nt2_l2", "nt2_nomail"):
+            request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
+    for _u in ("nt2_sub", "nt2_l1", "nt2_l2", "nt2_nomail"):
+        request('DELETE', f'/api/admin/local-users/{_u}')
+
+    for _un, _em, _dn in (("nt2_sub", "nt2_sub@company.com", "独立验证提交人"),
+                          ("nt2_l1", "nt2_l1@company.com", "独立验证一级"),
+                          ("nt2_l2", "nt2_l2@company.com", "独立验证二级"),
+                          ("nt2_nomail", "", "独立验证无邮箱审批人")):
+        _body = {"username": _un, "password": "Test@123456", "displayName": _dn,
+                 "role": "internal-user"}
+        if _em:
+            _body["email"] = _em
+        code, _ = request('POST', '/api/admin/local-users', json_data=_body)
+        test(f"通知独立: 创建用户 {_un}" + ("（无邮箱）" if not _em else "（有邮箱）"), code == 200, f"code={code}")
+    code, _ = request('POST', '/api/admin/approvers', json_data={
+        "level": 1, "username": "nt2_l1", "displayName": "独立验证一级", "scope": "all"})
+    test("通知独立: 配置 nt2_l1 为一级审批人", code == 200, f"code={code}")
+    code, _ = request('POST', '/api/admin/approvers', json_data={
+        "level": 2, "username": "nt2_l2", "displayName": "独立验证二级", "scope": "all"})
+    test("通知独立: 配置 nt2_l2 为二级审批人", code == 200, f"code={code}")
+
+    def _nt2_submit(tag, rtype="non-partner", org="通知独立验证公司"):
+        """上传+提交，返回 (sub_id, post_code, post_data)"""
+        _fp = os.path.join(test_dir, f"nt2_{tag}.exe")
+        with open(_fp, 'wb') as _f:
+            _f.write(b"MZ" + tag.encode('utf-8') * 60)
+        _c, _d = upload_file(_fp, f"nt2_{tag}.exe")
+        _tid = _d.get('tempId') if isinstance(_d, dict) else None
+        _body = {"tempIds": [_tid], "receiverName": "接收人", "receiverEmail": "r@x.com",
+                 "receiverType": rtype, "securityLevel": "internal", "reason": f"通知独立验证-{tag}"}
+        if rtype != "internal":
+            _body["receiverOrg"] = org
+        _c2, _d2 = request('POST', '/api/submissions', json_data=_body)
+        return (_d2.get('id') if isinstance(_d2, dict) else None), _c2, _d2
+
+    def _nt2_audit_count():
+        """统计 notify_failed 审计条数（审计接口仅 admin 可读 → 内部切 admin 登录）"""
+        request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+        _c, _rows = request('GET', '/api/audit-logs?action=notify_failed')
+        return len(_rows) if isinstance(_rows, list) else 0
+
+    # ---- 26-A：投递质量（幂等键 / 脱敏 / 列表与详情可见 / 成功不写失败审计） ----
+    request('POST', '/api/auth/login', json_data={"username": "nt2_sub", "password": "Test@123456"})
+    _audit_before = _nt2_audit_count()
+    request('POST', '/api/auth/login', json_data={"username": "nt2_sub", "password": "Test@123456"})
+    _mk_a = notify_mark()
+    _sub_a, _c_a, _d_a = _nt2_submit("A")
+    test("通知独立: 提交成功", _c_a == 200 and _d_a.get('status') == 'pending',
+         f"code={_c_a}, status={_d_a.get('status') if isinstance(_d_a, dict) else None}")
+    _req_a = notify_since(_mk_a, "submission_pending_l1")
+    test("通知独立: 幂等键形态为 <单号>:<事件>:<节点状态>",
+         bool(_req_a) and str(_req_a.get('requestId', '')).startswith(f"{_sub_a}:submission_pending_l1:"),
+         f"requestId={_req_a.get('requestId') if _req_a else None}")
+    _rows_a = notify_wait_events(_sub_a, ("submission_pending_l1", "submission_status"))
+    _rows_a_text = json.dumps(_rows_a, ensure_ascii=False)
+    test("通知独立: 落库收件人为脱敏形式（n***@c***）",
+         any('n***@c***' in str(r.get('recipients', '')) for r in _rows_a),
+         f"recipients={[r.get('recipients') for r in _rows_a]}")
+    test("通知独立: 落库不含完整工作邮箱（防扩散）",
+         "nt2_l1@company.com" not in _rows_a_text and "nt2_sub@company.com" not in _rows_a_text,
+         "详情 notifications 内无完整邮箱")
+    _c_l, _list_l = request('GET', '/api/submissions')
+    _item_a = next((x for x in (_list_l if isinstance(_list_l, list) else [])
+                    if isinstance(x, dict) and x.get('id') == _sub_a), None)
+    test("通知独立: 列表接口返回 notify 字段（界面列数据源）",
+         isinstance(_item_a, dict) and isinstance(_item_a.get('notify'), dict)
+         and _item_a['notify'].get('status') and _item_a['notify'].get('event'),
+         f"notify={_item_a.get('notify') if isinstance(_item_a, dict) else None}")
+    _b = None
+    for r in _rows_a:  # 从详情确认字段齐备
+        if r.get('event') == 'submission_status':
+            _b = r
+            break
+    test("通知独立: 详情 notifications 含 event/status/detail/time",
+         bool(_b) and all(_b.get(k) for k in ('event', 'status', 'detail', 'created_at')),
+         f"row={_b}")
+    _audit_mid = _nt2_audit_count()
+    test("通知独立: 成功投递不写审计 notify_failed（反向断言）",
+         _audit_mid == _audit_before, f"before={_audit_before}, after={_audit_mid}")
+
+    # ---- 26-B：审批人无可用邮箱 → skipped，业务不阻塞（生产 AD 缺 mail 的真实场景） ----
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    _c, _lv1 = request('GET', '/api/admin/approvers')
+    _lv1_backup = [dict(x) for x in (_lv1 if isinstance(_lv1, list) else []) if x.get('level') == 1]
+    for _a in _lv1_backup:
+        request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
+    code, _ = request('POST', '/api/admin/approvers', json_data={
+        "level": 1, "username": "nt2_nomail", "displayName": "独立验证无邮箱审批人", "scope": "all"})
+    test("通知独立: 临时以无邮箱用户作唯一一级审批人", code == 200, f"code={code}")
+    request('POST', '/api/auth/login', json_data={"username": "nt2_sub", "password": "Test@123456"})
+    _mk_b = notify_mark()
+    _sub_b, _c_b, _d_b = _nt2_submit("B")
+    test("通知独立: 审批人无邮箱时提交仍成功（旁路不阻塞）",
+         _c_b == 200 and _d_b.get('status') == 'pending',
+         f"code={_c_b}, status={_d_b.get('status') if isinstance(_d_b, dict) else None}")
+    _rows_b = notify_wait_events(_sub_b, ("submission_status", "submission_pending_l1"))
+    _row_b = next((r for r in _rows_b if r.get('event') == 'submission_pending_l1'), None)
+    test("通知独立: 审批人无邮箱投递记为 skipped 并注明原因",
+         bool(_row_b) and _row_b.get('status') == 'skipped'
+         and '无可用工作邮箱' in str(_row_b.get('detail', '')),
+         f"row={_row_b}")
+    # 恢复一级审批人：删除无邮箱临时配置，按原样回填
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    _c, _lv1_now = request('GET', '/api/admin/approvers')
+    for _a in (_lv1_now if isinstance(_lv1_now, list) else []):
+        if _a.get('level') == 1 and _a.get('username') == 'nt2_nomail':
+            request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
+    for _a in _lv1_backup:
+        request('POST', '/api/admin/approvers', json_data={
+            "level": 1, "username": _a.get('username'),
+            "displayName": _a.get('display_name') or _a.get('username'),
+            "scope": _a.get('scope') or "all"})
+    test("通知独立: 一级审批人配置已恢复", True, f"restored={[x.get('username') for x in _lv1_backup]}")
+
+    # ---- 26-C：内部提交（一级通过即终态）→ 只发 approved，不发 pending_l2 ----
+    request('POST', '/api/auth/login', json_data={"username": "nt2_sub", "password": "Test@123456"})
+    _mk_c = notify_mark()
+    _sub_c, _c_c, _d_c = _nt2_submit("C", rtype="internal")
+    test("通知独立: 内部提交成功（需一级审批）",
+         _c_c == 200 and _d_c.get('status') == 'pending',
+         f"code={_c_c}, status={_d_c.get('status') if isinstance(_d_c, dict) else None}")
+    request('POST', '/api/auth/login', json_data={"username": "nt2_l1", "password": "Test@123456"})
+    _c, _d = request('POST', f'/api/submissions/{_sub_c}/approve', json_data={
+        "action": "approve", "comment": "内部提交一级通过"})
+    test("通知独立: 内部提交一级通过即终态 approved",
+         _c == 200 and _d.get('status') == 'approved', f"code={_c}, status={_d.get('status')}")
+    _req_c = notify_since(_mk_c, "submission_approved")
+    test("通知独立: 内部提交通知提交人终审通过",
+         bool(_req_c) and "nt2_sub@company.com" in (_req_c.get('recipients') or []),
+         f"recipients={_req_c.get('recipients') if _req_c else None}")
+    _p2_c = [x for x in NOTIFY_REQUESTS[_mk_c:] if x.get('event') == "submission_pending_l2"]
+    test("通知独立: 内部提交不产生二级待审批通知（跳过二级）", len(_p2_c) == 0,
+         f"pending_l2={_p2_c}")
+
+    # ---- 26-D：语义B（同一人同时具备一级+二级权限）→ approval_level_skipped ----
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    code, _ = request('POST', '/api/admin/approvers', json_data={
+        "level": 2, "username": "nt2_l1", "displayName": "独立验证一级", "scope": "all"})
+    test("通知独立: nt2_l1 同时具备二级权限（语义B 前置）", code == 200, f"code={code}")
+    request('POST', '/api/auth/login', json_data={"username": "nt2_sub", "password": "Test@123456"})
+    _mk_d = notify_mark()
+    _sub_d, _c_d, _d_d = _nt2_submit("D")
+    test("通知独立: 语义B 场景提交成功（非合作方）", _c_d == 200, f"code={_c_d}")
+    request('POST', '/api/auth/login', json_data={"username": "nt2_l1", "password": "Test@123456"})
+    _c, _d = request('POST', f'/api/submissions/{_sub_d}/approve', json_data={
+        "action": "approve", "comment": "同人具备一二级权限"})
+    test("通知独立: 语义B 一级通过即终态 approved", _c == 200 and _d.get('status') == 'approved',
+         f"code={_c}, status={_d.get('status')}")
+    _req_d = notify_since(_mk_d, "approval_level_skipped")
+    test("通知独立: 二级自动跳过通知提交人（approval_level_skipped）",
+         bool(_req_d) and "nt2_sub@company.com" in (_req_d.get('recipients') or []),
+         f"recipients={_req_d.get('recipients') if _req_d else None}")
+    _p2_d = [x for x in NOTIFY_REQUESTS[_mk_d:] if x.get('event') == "submission_pending_l2"]
+    test("通知独立: 语义B 不产生二级待审批通知", len(_p2_d) == 0, f"pending_l2={_p2_d}")
+    # 撤掉 nt2_l1 的二级权限，恢复单一二级审批人
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    _c, _lv2 = request('GET', '/api/admin/approvers')
+    for _a in (_lv2 if isinstance(_lv2, list) else []):
+        if _a.get('level') == 2 and _a.get('username') == 'nt2_l1':
+            request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
+
+    # ---- 26-E：网关契约异常（partial / 401 / 超时）→ 落库状态正确且业务始终不阻塞 ----
+    # E1 部分成功 → partial（+ 审计 notify_failed）
+    notify_stub_mode = "partial"
+    request('POST', '/api/auth/login', json_data={"username": "nt2_sub", "password": "Test@123456"})
+    _audit_p0 = _nt2_audit_count()
+    request('POST', '/api/auth/login', json_data={"username": "nt2_sub", "password": "Test@123456"})
+    _mk_e1 = notify_mark()
+    _sub_e1, _c_e1, _d_e1 = _nt2_submit("E1")
+    test("通知独立: 网关部分失败时业务仍成功", _c_e1 == 200, f"code={_c_e1}")
+    _rows_e1 = notify_wait_events(_sub_e1, ("submission_pending_l1", "submission_status"))
+    test("通知独立: 部分失败落库为 partial",
+         any(r.get('status') == 'partial' for r in _rows_e1),
+         f"rows={[(r.get('event'), r.get('status')) for r in _rows_e1]}")
+    _audit_p1 = _nt2_audit_count()
+    test("通知独立: 部分失败写审计 notify_failed", _audit_p1 > _audit_p0,
+         f"before={_audit_p0}, after={_audit_p1}")
+    notify_stub_mode = "ok"
+
+    # E2 网关鉴权失败（401）→ failed
+    notify_stub_mode = "unauthorized"
+    request('POST', '/api/auth/login', json_data={"username": "nt2_sub", "password": "Test@123456"})
+    _mk_e2 = notify_mark()
+    _sub_e2, _c_e2, _d_e2 = _nt2_submit("E2")
+    test("通知独立: 网关 401 时业务仍成功", _c_e2 == 200, f"code={_c_e2}")
+    _rows_e2 = notify_wait_events(_sub_e2, ("submission_pending_l1", "submission_status"))
+    test("通知独立: 网关鉴权失败落库为 failed",
+         any(r.get('status') == 'failed' for r in _rows_e2),
+         f"rows={[(r.get('event'), r.get('status'), r.get('detail')) for r in _rows_e2]}")
+    notify_stub_mode = "ok"
+
+    # E3 网关超时（客户端 TIMEOUT=3s，慢桩 6s）→ failed，业务不阻塞
+    notify_stub_mode = "slow"
+    request('POST', '/api/auth/login', json_data={"username": "nt2_sub", "password": "Test@123456"})
+    _mk_e3 = notify_mark()
+    _sub_e3, _c_e3, _d_e3 = _nt2_submit("E3")
+    test("通知独立: 网关超时时业务仍成功（提交不被拖住）", _c_e3 == 200, f"code={_c_e3}")
+    _rows_e3 = notify_wait_events(_sub_e3, ("submission_pending_l1", "submission_status"), timeout=12)
+    test("通知独立: 网关超时落库为 failed 且注明异常",
+         any(r.get('status') == 'failed' and '异常' in str(r.get('detail', '')) for r in _rows_e3),
+         f"rows={[(r.get('event'), r.get('status'), r.get('detail')) for r in _rows_e3]}")
+    notify_stub_mode = "ok"
+
+    # ---- 26-F：清理（用户 + 审批人配置） ----
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    _c, _a26f = request('GET', '/api/admin/approvers')
+    for _a in (_a26f if isinstance(_a26f, list) else []):
+        if _a.get('username') in ("nt2_l1", "nt2_l2", "nt2_nomail"):
+            request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
+    for _u in ("nt2_sub", "nt2_l1", "nt2_l2", "nt2_nomail"):
+        request('DELETE', f'/api/admin/local-users/{_u}')
+    test("通知独立: 清理独立验证用户/审批人配置", True, "nt2_* 已清理")
 
     # ============================================================
 

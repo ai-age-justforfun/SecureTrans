@@ -757,7 +757,8 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   - 接口：`/api/submissions`、`/api/admin/submissions/all`、`/api/submissions/pending/my` 每条附 `notify`（最新 status/event/detail/time）；`/api/submissions/<id>` 附 `notifications`（近 20 条，收件人已掩码）。
   - 界面（`src/static/index.html`）：三个列表新增"飞书通知"列（成功/失败/跳过/无记录徽标 + 事件名），详情页新增"通知记录"区块，提交/审批成功提示注明异步发送；i18n 中英双语键 `notify.*` 完整。
   - 网关：`infra/feishu-gateway/`（FastAPI，8090），7 事件模板 + `X-Notify-Token` 鉴权 + `request_id` 幂等 + JSONL 记账。
-  - 测试：`tests/test_api.py` 组 25（通知桩 `127.0.0.1:18099`），21 条断言覆盖七事件、AD/本地邮箱、免审批"仅提交人"强断言、网关 502 不阻塞 + `notify_failed` 审计；全量 **433/433 通过**（干净库基线）。
+  - 测试：`tests/test_api.py` 组 25（通知桩 `127.0.0.1:18099`），21 条断言覆盖七事件、AD/本地邮箱、免审批"仅提交人"强断言、网关 502 不阻塞 + `notify_failed` 审计；**组 26 独立功能验证**（2026-11-27）追加 22 条：幂等键形态、收件人脱敏、列表/详情字段齐备、成功投递不写失败审计（反向断言）、无邮箱降级 `skipped`、内部提交跳过二级、语义B 自动跳过二级、网关契约异常三态（`partial`/401/超时）均不阻塞业务——**全量 467/467 通过**（干净库基线）。
+  - **测试执行约束（教训）**：全量 TDD **必须在项目根**执行 `python tests/test_api.py`——`NAS_ROOT=./nas`、`SECURETRANS_DATA=./data` 是相对路径，按进程 CWD 解析，在 `tests/` 下运行会指向 `tests/nas` 而使 staging 断言错位；审计接口 `@role_required("admin")`，统计 `notify_failed` 须在 admin 会话下取，否则 403 静默取 0（本轮即因此产生一条假失败/假通过）。
   - 已知边界：收件人无可用邮箱→`skipped`（不回退通知管理员）；生产 `.env` 与容器出站策略属部署步骤（见 ADR-052 落点）。
   - 生产下发（2026-11-27 验证态）：`.env` 增 `FEISHU_NOTIFY_ENABLED/URL/TOKEN/TIMEOUT/APP_URL`；因 podman 4.9 `commit` 对 docker-format 图层报 `unsupported MIME type for compression`，改用 `podman export` + `podman import` 生成临时镜像 `securetrans:v2.7.3-feishu-r1`（保留 `securetrans:v2.7.1-rollback` 回退点），以原 run 参数（同端口/卷/`--user 973:972`）重建容器，`/api/health` = `v2.7.3` 且页面 200。**该镜像非发布资产，正式版本须以标准 `image.tar.gz`（Dockerfile.run 构建 + CD 通道）替换。**
 
