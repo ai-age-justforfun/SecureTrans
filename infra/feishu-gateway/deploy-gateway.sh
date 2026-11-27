@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # SecureTrans 飞书通知网关 —— 安装/升级脚本（在 feishu-sdk-server-securetrans 上执行）
 #
-# 用法（在网关机上）：
+# 用法（在网关机上，任选其一给凭据）：
 #   FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=yyy bash deploy-gateway.sh
+#   bash deploy-gateway.sh --app-id cli_xxx --secret-file /root/feishu-app-secret.txt
+#   bash deploy-gateway.sh            # 升级：沿用本机 .env 里已有的 App ID/Secret（无需再输入）
+#
+# 凭据链（ADR-055）：
+#   ① 首次/轮换：人工在网关机上执行本脚本，或用 SecureTrans 管理页"下发 App Secret"
+#      （POST /admin/secret，业务机只在内存转发、不落盘）；
+#   ② 之后升级只更新代码，App Secret 从本机 .env 复用，不再需要人工输入或 AI 介入。
 #
 # 约定：
 #   - 只安装「单向通知服务」，与 CICD 的 feishu-api:8080 完全分离
@@ -12,8 +19,8 @@ set -euo pipefail
 
 ROOT="${NOTIFY_ROOT:-/opt/securetrans-notify}"
 SRC="${NOTIFY_SRC:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-APP_ID="${FEISHU_APP_ID:?请设置 FEISHU_APP_ID}"
-APP_SECRET="${FEISHU_APP_SECRET:?请设置 FEISHU_APP_SECRET}"
+APP_ID="${FEISHU_APP_ID:-}"
+APP_SECRET="${FEISHU_APP_SECRET:-}"
 PORT="${NOTIFY_PORT:-8090}"
 BIND="${NOTIFY_BIND:-$(hostname -I | awk '{print $1}')}"
 DATA_DIR="${NOTIFY_DATA_DIR:-/var/lib/securetrans-notify}"
@@ -21,6 +28,39 @@ APP_URL="${SECURETRANS_APP_URL:-}"
 ALLOW_CIDRS="${NOTIFY_ALLOW_CIDRS:-}"
 VENV_SRC="${FEISHU_SDK_VENV_SRC:-/opt/feishu-cicd/venv}"
 TOKEN="${FEISHU_NOTIFY_TOKEN:-}"
+SECRET_FILE=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --app-id) APP_ID="$2"; shift 2 ;;
+    --secret-file) SECRET_FILE="$2"; shift 2 ;;
+    --secret) APP_SECRET="$2"; shift 2 ;;
+    -h|--help) echo "用法: $0 [--app-id cli_xxx] [--secret-file /path/secret.txt] [--secret yyy]"; exit 0 ;;
+    *) echo "未知参数: $1"; exit 2 ;;
+  esac
+done
+
+if [ -n "$SECRET_FILE" ]; then
+  APP_SECRET="$(tr -d '\r\n' < "$SECRET_FILE")"
+fi
+
+# 升级场景：未显式给凭据时，沿用本机 .env，避免重复输入
+if [ -f "$ROOT/.env" ]; then
+  if [ -z "$TOKEN" ]; then
+    TOKEN="$(grep -E '^FEISHU_NOTIFY_TOKEN=' "$ROOT/.env" | head -1 | cut -d= -f2-)"
+  fi
+  if [ -z "$APP_ID" ]; then
+    APP_ID="$(grep -E '^FEISHU_APP_ID=' "$ROOT/.env" | head -1 | cut -d= -f2-)"
+  fi
+  if [ -z "$APP_SECRET" ]; then
+    APP_SECRET="$(grep -E '^FEISHU_APP_SECRET=' "$ROOT/.env" | head -1 | cut -d= -f2-)"
+  fi
+fi
+
+if [ -z "$APP_ID" ] || [ -z "$APP_SECRET" ]; then
+  echo "!! 缺少 App 凭据：请设置 FEISHU_APP_ID/FEISHU_APP_SECRET，或用 --secret-file 指定凭据文件"
+  exit 1
+fi
 
 # 源 IP 白名单为强制项（ADR-052）：服务端 fail-closed，未配置时所有 /notify 请求 403
 if [ -z "$ALLOW_CIDRS" ]; then
@@ -41,11 +81,6 @@ fi
 install -m 0644 "$SRC/notify_app.py" "$ROOT/srv/notify_app.py"
 
 # 3) .env（保留既有 token；首次生成）
-if [ -f "$ROOT/.env" ]; then
-  if [ -z "$TOKEN" ]; then
-    TOKEN="$(grep -E '^FEISHU_NOTIFY_TOKEN=' "$ROOT/.env" | head -1 | cut -d= -f2-)"
-  fi
-fi
 if [ -z "$TOKEN" ]; then
   TOKEN="$(head -c 32 /dev/urandom | base64 | tr -d '=+/' | cut -c1-43)"
   echo "==> 已生成新的 FEISHU_NOTIFY_TOKEN（请记录到开发机 server_credential.md）"
@@ -80,4 +115,4 @@ else
   exit 1
 fi
 
-echo "==> 完成。token 已写入 $ROOT/.env（600），不同步、不入库。"
+echo "==> 完成。凭据已写入 $ROOT/.env（600），不同步、不入库。"

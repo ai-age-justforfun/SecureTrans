@@ -1,3 +1,13 @@
+## ◎ 飞书 App Secret 受控下发 + 部门补全（ADR-055，2026-11-27）
+**总计 509 项测试（Windows dev，干净库）全部通过，通过率 100%。**
+
+**本轮变更：**
+1. **组 28（新增，13 项）**：网关受控写入凭据——管理员下发成功（网关返回 App ID 掩码）、网关实收 `app_id/app_secret` 且携带预共享 token、**业务机 SQLite `feishu_config` 无任何密钥/无 `feishu_app_secret` 键（不落库反证）**、配置接口不回显、缺 App Secret 400、掩码值不得当密钥 400、网关校验失败返 `ok=false`+HTTP 400 原因、普通用户 403、网关不可达优雅失败（200+ok=false）、审计 `push_feishu_secret` 无明文、`/health` 暴露 `app_id_masked`/`contact_readable`、待审批通知 `vars.submitter_email` 正确、配置页下发入口可见。
+2. **网关侧（notify_app.py 0.2.0）**：`POST /admin/secret` 先向 `open.feishu.cn` 验凭据、再原子写 `.env`(600) 并热重建 SDK 客户端；待审批模板按飞书通讯录补“提交人部门 / 请部门负责人进行审批”，缺权限自动省略不阻塞。
+3. **基线修正**：496 → 509（质量门禁 `>= 300` 不变）。
+
+---
+
 ## ◎ 飞书通知外挂配置域（ADR-054，2026-11-27）
 **总计 496 项测试（Windows dev，干净库）全部通过，通过率 100%。**
 

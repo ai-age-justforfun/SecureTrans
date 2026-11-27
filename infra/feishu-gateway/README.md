@@ -117,3 +117,20 @@ bash deploy-gateway.sh
   用 `GET /health` 的 `allow_cidrs` 字段确认已生效
 
 > 监听 `127.0.0.1:8090` 会连接被拒——这是正常的：服务绑定的是内网 IP，本机回环不通，**只接受内网来源**。
+
+
+## 6. App 凭据运维（ADR-055）
+
+| 场景 | 做法 | 是否依赖 AI |
+|---|---|---|
+| 首次部署 | `FEISHU_APP_ID=... FEISHU_APP_SECRET=... bash deploy-gateway.sh` 或 `--secret-file /root/feishu-app-secret.txt` | 否（人工一次） |
+| 升级/换机后重装 | 直接 `bash deploy-gateway.sh` —— 自动沿用本机 `.env` 里既有 App ID/Secret | 否 |
+| 凭据轮换 | SecureTrans 管理页“飞书通知” → 填 App Secret → **下发到网关**（`POST /admin/secret`） | 否 |
+| 校验是否生效 | `curl http://<网关IP>:8090/health` 看 `app_configured=true` / `app_id_masked` / `contact_readable` | 否 |
+
+- `POST /admin/secret` 仅接受白名单源 IP（`NOTIFY_ALLOW_CIDRS`）+ `X-Notify-Token`；只接受 `app_id/app_secret`；
+  **先调飞书 `tenant_access_token` 验证，通过后才写 `.env`（600）并热重建客户端**，无需重启服务。
+- 业务机只做内存转发：不入库、不落盘、不回显；审计只记动作（`push_feishu_secret`），不含密钥正文。
+- **部门补全**：`/notify` 对待审批事件用 `submitter_email` 查飞书通讯录（用户 → `department_ids` → 部门名），
+  渲染“提交人部门：X / 请部门负责人进行审批”；缺 `contact:contact.base:readonly` + `contact:department.base:readonly`
+  或查不到时该行自动省略，**不影响消息发送**。权限变更后必须在飞书“版本管理与发布”里**创建并发布版本**才生效。

@@ -62,7 +62,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.7.3"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.7.4"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -826,6 +826,15 @@ def feishu_gateway_health_url() -> str:
     return urllib.parse.urlunsplit((p.scheme, p.netloc, "/health", "", ""))
 
 
+def feishu_gateway_admin_url(path: str) -> str:
+    """网关受控管理地址（由 /notify 地址派生同源，如 /admin/secret）"""
+    url = feishu_gateway_url()
+    if not url:
+        return ""
+    p = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunsplit((p.scheme, p.netloc, path, "", ""))
+
+
 def _feishu_gateway_probe(timeout: float = 2.0) -> dict:
     """探测网关健康状态（配置页展示）：不可达只返回 reachable=false，绝不抛异常、不阻塞页面"""
     health = feishu_gateway_health_url()
@@ -840,6 +849,8 @@ def _feishu_gateway_probe(timeout: float = 2.0) -> dict:
             "version": data.get("version", ""),
             "service": data.get("service", ""),
             "app_configured": bool(data.get("app_configured")),
+            "app_id_masked": data.get("app_id_masked", ""),
+            "contact_readable": data.get("contact_readable"),
             "token_configured": bool(data.get("token_configured")),
             "allow_cidrs": data.get("allow_cidrs", ""),
             "uptime_sec": data.get("uptime_sec", 0),
@@ -2510,6 +2521,13 @@ def _notify_worker(app_obj, sub_id: str, event: str, names: list, extra: dict):
             extra_vars = {k: v for k, v in (extra or {}).items() if k in base and v}
             base.update(extra_vars)
 
+            # 提交人邮箱随消息下发：网关据此查飞书通讯录补"所属部门"（ADR-055）
+            try:
+                if base.get("submitter"):
+                    base["submitter_email"] = resolve_email(base["submitter"])[0] or ""
+            except Exception:
+                base["submitter_email"] = ""
+
             emails, missing = [], []
             for name in names:
                 email, _src = resolve_email(name)
@@ -2756,7 +2774,7 @@ def api_get_feishu_config():
         },
         "gateway": _feishu_gateway_probe(),
         "hooks": list_notify_hooks(),
-        "secret_policy": "App Secret 仅存网关 .env（600）：本系统不保存、不下发、不展示；此处仅通过 /health 校验网关 app_configured。",
+        "secret_policy": "App Secret 只存网关 .env（600）：本系统不保存、不展示；可在本页“下发到网关”一次性写入（内存转发，不落盘），网关校验后热生效。",
     })
 
 
@@ -2814,6 +2832,68 @@ def api_update_feishu_config():
     return jsonify({
         "message": "飞书通知配置已保存（数据库权威，即时生效）",
         "effective": {"enabled": _feishu_enabled(), "gateway_url": feishu_gateway_url(), "timeout": _feishu_timeout()},
+    })
+
+
+@app.route("/api/admin/feishu-config/secret", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_push_feishu_secret():
+    """把 App Secret 受控下发到网关（ADR-055）：本机只在内存转发，不落库、不落盘。
+
+    网关先向飞书验证凭据，通过后写入其 .env(600) 并热重建客户端；失败明确回因。
+    """
+    data = request.get_json() or {}
+    app_id = str(data.get("app_id") or "").strip() or (
+        get_feishu_config_value("feishu_app_id", os.getenv("FEISHU_APP_ID", "")) or ""
+    ).strip()
+    app_secret = str(data.get("app_secret") or "").strip()
+    if not app_id or not app_secret:
+        return jsonify({"ok": False, "detail": "App ID 与 App Secret 均为必填"}), 400
+    if "****" in app_secret:
+        return jsonify({"ok": False, "detail": "App Secret 含掩码字符，请填写完整密钥"}), 400
+    admin_url = feishu_gateway_admin_url("/admin/secret")
+    if not admin_url:
+        return jsonify({"ok": False, "detail": "未配置网关地址（主机/端口或完整 URL）"}), 400
+    token = (get_feishu_config_value("feishu_notify_token", os.getenv("FEISHU_NOTIFY_TOKEN", "")) or "").strip()
+    detail, result, code = "", {}, 0
+    try:
+        req = urllib.request.Request(
+            admin_url,
+            data=json.dumps({"app_id": app_id, "app_secret": app_secret}, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json", "X-Notify-Token": token},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=max(5.0, _feishu_timeout())) as resp:
+            result = json.loads((resp.read().decode("utf-8", errors="ignore") or "{}"))
+            code = resp.status
+    except urllib.error.HTTPError as ex:
+        code = ex.code
+        try:
+            body = json.loads((ex.read().decode("utf-8", errors="ignore") or "{}"))
+        except Exception:
+            body = {}
+        hint = {
+            400: "网关拒收凭据（校验不通过：请核对 App ID/Secret 是否属于同一应用且已发布版本）",
+            401: "预共享 token 与网关不一致",
+            403: "源 IP 不在网关白名单",
+            502: "网关无法访问 open.feishu.cn:443",
+        }.get(code, "网关返回异常")
+        result = {"msg": body.get("msg") or hint}
+        detail = f"HTTP {code}: {result['msg']}"
+    except Exception as ex:
+        detail = f"网关不可达或超时：{type(ex).__name__}: {ex}"
+    ok = bool(result.get("ok"))
+    if not detail:
+        detail = f"网关已写入 .env（app_id={result.get('app_id_masked') or '****'}）" if ok else "网关未确认写入"
+    # 只记"下发动作"审计，绝不记录密钥本身
+    add_audit_log(current_user.username, "push_feishu_secret", "",
+                  f"{'成功' if ok else '失败'} app_id={app_id[:6]}**** {detail}", get_client_ip())
+    return jsonify({
+        "ok": ok, "http_code": code, "detail": detail,
+        "app_id_masked": result.get("app_id_masked", ""),
+        "app_configured": bool(result.get("app_configured")),
+        "gateway": _feishu_gateway_probe(),
     })
 
 

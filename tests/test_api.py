@@ -8,6 +8,7 @@ import urllib.parse
 import urllib.error
 import http.cookiejar
 import os
+import sqlite3
 import tempfile
 import time
 import pathlib
@@ -95,6 +96,7 @@ no_redirect_opener = urllib.request.build_opener(NoRedirectHandler, urllib.reque
 #   仅 dev/test 全量模式启动；生产/冒烟模式不启动（生产只用真实网关）。
 # ============================================================
 NOTIFY_REQUESTS = []
+NOTIFY_SECRET_PUSHES = []   # 组28：/admin/secret 下发记录（断言"只在内存转发"）
 notify_stub_fail = False  # 置 True 后桩返回 502，用于验证"通知失败不阻塞业务"
 notify_stub_mode = "ok"   # ok / partial / unauthorized / slow（组26 契约级验证；fail 仍走 notify_stub_fail）
 _notify_stub = None
@@ -105,6 +107,32 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
 
         class _NotifyStubHandler(BaseHTTPRequestHandler):
             def do_POST(self):
+                # 组28：网关受控写入 App 凭据（ADR-055）
+                if self.path.split('?')[0] == '/admin/secret':
+                    try:
+                        n = int(self.headers.get('Content-Length') or 0)
+                        body = json.loads(self.rfile.read(n).decode('utf-8', errors='ignore') or '{}')
+                        NOTIFY_SECRET_PUSHES.append({
+                            'app_id': body.get('app_id') or '',
+                            'app_secret': body.get('app_secret') or '',
+                            'token': self.headers.get('X-Notify-Token') or '',
+                        })
+                        if (body.get('app_secret') or '') == 'bad-secret-value':
+                            resp = {"code": 400, "msg": "credential rejected: 10014 app secret invalid"}
+                            code = 400
+                        else:
+                            resp = {"code": 0, "ok": True, "app_configured": True,
+                                    "app_id_masked": "cli_ab****d0e", "env_file": "/opt/.env"}
+                            code = 200
+                    except Exception as ex:
+                        resp, code = {"code": 400, "msg": str(ex)}, 400
+                    payload = json.dumps(resp).encode('utf-8')
+                    self.send_response(code)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
                 if notify_stub_fail:
                     payload = json.dumps({"code": 502, "sent": 0, "failed": 0, "msg": "stub forced failure"}).encode('utf-8')
                     self.send_response(502)
@@ -156,7 +184,8 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
                 if self.path.split('?')[0] in ('/health',):
                     resp = {
                         "status": "ok", "service": "securetrans-notify", "version": "stub-1.0",
-                        "app_configured": True, "token_configured": True,
+                        "app_configured": True, "app_id_masked": "cli_ab****d0e",
+                        "token_configured": True, "contact_readable": True,
                         "uptime_sec": 42, "allow_cidrs": "10.10.30.8/32",
                     }
                     payload = json.dumps(resp).encode('utf-8')
@@ -3285,6 +3314,137 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     for _u in ("nt3_sub", "nt3_l1"):
         request('DELETE', f'/api/admin/local-users/{_u}')
     test("飞书配置: 清理配置域测试用户/审批人", True, "nt3_* 已清理")
+
+    # ============================================================
+    # 28. 飞书 App 凭据下发 + 部门补全（ADR-055）
+    #   凭据边界：业务机只在内存转发下发给网关 /admin/secret；不落库、不落盘、不写审计正文
+    # ============================================================
+    print("\n--- 28. 飞书凭据下发（ADR-055） ---")
+    _set_group("28. 飞书凭据下发（ADR-055）")
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    _SEC28 = "LocalTestSecret-0123456789abcdef"
+    _push_base = len(NOTIFY_SECRET_PUSHES)
+    code, r = request('POST', '/api/admin/feishu-config/secret',
+                      json_data={"app_id": "cli_ab83ecc5a1f81d0e", "app_secret": _SEC28})
+    test("凭据下发: 管理员下发成功（ok + 网关返回脱敏 App ID）",
+         code == 200 and (r or {}).get('ok') is True and '****' in str((r or {}).get('app_id_masked', '')),
+         f"code={code}, resp={(r or {}).get('app_id_masked')}, detail={(r or {}).get('detail')}")
+    _push28 = NOTIFY_SECRET_PUSHES[_push_base] if len(NOTIFY_SECRET_PUSHES) > _push_base else None
+    test("凭据下发: 网关收到完整凭据且携带预共享 token",
+         bool(_push28) and _push28.get('app_id') == 'cli_ab83ecc5a1f81d0e'
+         and _push28.get('app_secret') == _SEC28 and _push28.get('token') == 'test-notify-token',
+         f"push={_push28.get('app_id') if _push28 else None}, token_ok={(bool(_push28) and _push28.get('token') == 'test-notify-token')}")
+
+    # 不落库/不落盘：SQLite feishu_config 表里不得出现该密钥，源码目录不得出现 App Secret 键
+    _db28 = os.path.join(os.getcwd(), "data", "securetrans.db")
+    try:
+        _conn28 = sqlite3.connect(_db28)
+        _rows28 = _conn28.execute("SELECT key,value FROM feishu_config").fetchall()
+        _conn28.close()
+        _leak28 = [k for k, v in _rows28 if 'secret' in str(k).lower() or _SEC28 in str(v)]
+    except Exception as _ex28:
+        _rows28, _leak28 = [], [f"db-unreadable:{_ex28}"]
+    test("凭据下发: 业务机数据库/配置不含 App Secret（不落库）",
+         not _leak28, f"feishu_config keys={[k for k, _ in _rows28]}, leak={_leak28}")
+    code, _cfg28 = request('GET', '/api/admin/feishu-config')
+    test("凭据下发: 配置接口不回显 App Secret（不展示）",
+         code == 200 and _SEC28 not in json.dumps(_cfg28, ensure_ascii=False)
+         and 'feishu_app_secret' not in json.dumps(_cfg28, ensure_ascii=False),
+         f"code={code}")
+
+    # 入参校验
+    code, r = request('POST', '/api/admin/feishu-config/secret',
+                      json_data={"app_id": "cli_ab83ecc5a1f81d0e", "app_secret": ""})
+    test("凭据下发: 缺 App Secret 被拒（400）", code == 400, f"code={code}")
+    code, r = request('POST', '/api/admin/feishu-config/secret',
+                      json_data={"app_id": "cli_ab83ecc5a1f81d0e", "app_secret": "jF4R****YuG"})
+    test("凭据下发: 掩码值不得当作密钥提交（400）", code == 400, f"code={code}")
+    code, r = request('POST', '/api/admin/feishu-config/secret',
+                      json_data={"app_id": "cli_ab83ecc5a1f81d0e", "app_secret": "bad-secret-value"})
+    test("凭据下发: 网关校验失败时返 ok=false 并给出 HTTP 400 原因",
+         code == 200 and (r or {}).get('ok') is False and '400' in str((r or {}).get('detail', '')),
+         f"code={code}, detail={(r or {}).get('detail')}")
+
+    # 网关不可达 → 优雅失败（200 + ok=false），不抛 500
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    request('PUT', '/api/admin/feishu-config', json_data={"feishu_gateway_url": "http://127.0.0.1:1/notify"})
+    code, r = request('POST', '/api/admin/feishu-config/secret',
+                      json_data={"app_id": "cli_ab83ecc5a1f81d0e", "app_secret": _SEC28})
+    test("凭据下发: 网关不可达时优雅失败（200 + ok=false）",
+         code == 200 and (r or {}).get('ok') is False and '不可达' in str((r or {}).get('detail', '')),
+         f"code={code}, detail={(r or {}).get('detail')}")
+    request('PUT', '/api/admin/feishu-config', json_data={
+        "feishu_gateway_url": "", "feishu_gateway_host": "127.0.0.1",
+        "feishu_gateway_port": "18099", "feishu_gateway_path": "/notify"})
+
+    # 审计：记"下发动作"，正文不含密钥
+    code, _rows = request('GET', '/api/audit-logs?action=push_feishu_secret')
+    test("凭据下发: 审计留痕且不含密钥明文",
+         code == 200 and isinstance(_rows, list) and len(_rows) > 0
+         and _SEC28 not in json.dumps(_rows, ensure_ascii=False),
+         f"code={code}, count={len(_rows) if isinstance(_rows, list) else 0}")
+
+    # 网关健康探测暴露"应用已配/通讯录可读"（配置页状态灯用）
+    code, _cfg28b = request('GET', '/api/admin/feishu-config')
+    _gw28 = (_cfg28b or {}).get('gateway') or {}
+    test("凭据下发: 网关探活返回 app_id_masked 与通讯录可读状态",
+         code == 200 and _gw28.get('reachable') is True and bool(_gw28.get('app_id_masked'))
+         and _gw28.get('contact_readable') is True,
+         f"gateway={_gw28}")
+
+    # 部门补全契约：待审批通知必须带 submitter_email（网关据此查飞书通讯录）
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    for _un, _em, _dn in (("nt4_sub", "nt4_sub@company.com", "部门验证提交人"),
+                          ("nt4_l1", "nt4_l1@company.com", "部门验证一级")):
+        request('DELETE', f'/api/admin/local-users/{_un}')
+    _c, _a28 = request('GET', '/api/admin/approvers')
+    for _a in (_a28 if isinstance(_a28, list) else []):
+        if _a.get('username') in ("nt4_l1",):
+            request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
+    for _un, _em, _dn in (("nt4_sub", "nt4_sub@company.com", "部门验证提交人"),
+                          ("nt4_l1", "nt4_l1@company.com", "部门验证一级")):
+        request('POST', '/api/admin/local-users', json_data={
+            "username": _un, "password": "Test@123456", "displayName": _dn,
+            "role": "internal-user", "email": _em})
+    request('POST', '/api/admin/approvers', json_data={
+        "level": 1, "username": "nt4_l1", "displayName": "部门验证一级", "scope": "all"})
+    request('POST', '/api/auth/login', json_data={"username": "nt4_sub", "password": "Test@123456"})
+    _mk28c = notify_mark()
+    _fp28 = os.path.join(test_dir, "nt4_dept.exe")
+    with open(_fp28, 'wb') as _f:
+        _f.write(b"MZ" + b"dept" * 80)
+    _c, _d = upload_file(_fp28, "nt4_dept.exe")
+    _c2, _d2 = request('POST', '/api/submissions', json_data={
+        "tempIds": [_d.get('tempId') if isinstance(_d, dict) else None],
+        "receiverName": "接收人", "receiverEmail": "r@x.com", "receiverType": "internal",
+        "securityLevel": "internal", "reason": "部门补全契约验证"})
+    _req28 = notify_since(_mk28c, "submission_pending_l1")
+    test("凭据下发: 待审批通知携带提交人邮箱（供网关补部门）",
+         _c2 == 200 and bool(_req28)
+         and (_req28.get('vars') or {}).get('submitter_email') == "nt4_sub@company.com",
+         f"code={_c2}, vars_email={(_req28.get('vars') or {}).get('submitter_email') if _req28 else None}")
+
+    # 普通用户越权：换 nt4_sub 会话后下发必须 403（权限以后端为准）
+    request('POST', '/api/auth/login', json_data={"username": "nt4_sub", "password": "Test@123456"})
+    code, r = request('POST', '/api/admin/feishu-config/secret',
+                      json_data={"app_id": "cli_ab83ecc5a1f81d0e", "app_secret": _SEC28})
+    test("凭据下发: 普通用户被拒（403）", code == 403, f"code={code}")
+
+    # 前端：Secret 一次性下发入口可见（不落库的说明文案）
+    code, _html28 = request('GET', '/')
+    test("凭据下发: 配置页含“App Secret 下发到网关”入口与策略说明",
+         code == 200 and isinstance(_html28, str) and 'feishu_app_secret' in _html28
+         and 'fsConfig.pushSecret' in _html28 and 'fsConfig.deptHint' in _html28,
+         f"code={code}")
+
+    # 清理组28测试账号
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    _c, _a28b = request('GET', '/api/admin/approvers')
+    for _a in (_a28b if isinstance(_a28b, list) else []):
+        if _a.get('username') in ("nt4_l1",):
+            request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
+    for _u in ("nt4_sub", "nt4_l1"):
+        request('DELETE', f'/api/admin/local-users/{_u}')
 
     # ============================================================
 

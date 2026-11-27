@@ -207,7 +207,7 @@
 // ============================================================
 // 系统版本号（唯一来源：发布时仅改此处，界面自动拼接显示）
 // ============================================================
-const APP_VERSION = 'v2.7.3';
+const APP_VERSION = 'v2.7.4';
 
 // ============================================================
 // i18n（中英双语）——界面语言由用户选择，默认中文
@@ -337,7 +337,10 @@ const I18N = {
     'fsConfig.test': '发送测试通知', 'fsConfig.testing': '发送中...', 'fsConfig.testOk': '测试通知已送达', 'fsConfig.testFail': '测试通知失败',
     'fsConfig.gwOk': '网关可达', 'fsConfig.gwDown': '网关不可达', 'fsConfig.saved': '飞书配置已保存（即时生效）', 'fsConfig.imported': '已从 .env 导入飞书配置',
     'fsConfig.hint': '通知是旁路通道：发送失败只告警不阻塞提交/审批，界面会显示每条通知的投递状态。保存后即时生效（无需重启）。',
-    'fsConfig.secretPolicy': 'App Secret 只存网关 .env（600），本系统不保存、不展示；此处仅通过网关 /health 校验应用是否已配置。',
+    'fsConfig.secretPolicy': 'App Secret 只存网关 .env（600），本系统不保存、不展示；可在此填写后“下发到网关”（内存转发，不落盘），网关校验通过后热生效。',
+    'fsConfig.appSecret': 'App Secret（一次性下发到网关，本系统不保存）', 'fsConfig.pushSecret': '下发到网关',
+    'fsConfig.pushOk': '已下发并写入网关 .env（应用已配置）', 'fsConfig.pushFail': '下发失败',
+    'fsConfig.deptHint': '通知正文会附带提交人所属部门（取自飞书通讯录，需通讯录读权限）；查不到时该行自动省略，不影响发送。',
     'overview.title': '配置总览（来源标记，防遗忘）', 'overview.deploy': '部署级配置（.env，只读，改后需重启）', 'overview.runtime': '运行时配置（数据库，界面可改，即时生效）',
     'overview.key': '配置项', 'overview.value': '值', 'overview.source': '来源', 'overview.env': 'env', 'overview.db': 'db', 'overview.updated': '更新时间',
     'audit.titleDetail': '📋 明细', 'audit.titleStats': '📊 统计',
@@ -496,7 +499,10 @@ const I18N = {
     'fsConfig.test': 'Send test notification', 'fsConfig.testing': 'Sending...', 'fsConfig.testOk': 'Test notification delivered', 'fsConfig.testFail': 'Test notification failed',
     'fsConfig.gwOk': 'Gateway reachable', 'fsConfig.gwDown': 'Gateway unreachable', 'fsConfig.saved': 'Feishu config saved (effective now)', 'fsConfig.imported': 'Imported Feishu config from .env',
     'fsConfig.hint': 'Notifications are a side channel: delivery failure never blocks submit/approve; each delivery status is shown in the UI. Saved values take effect immediately.',
-    'fsConfig.secretPolicy': 'App Secret lives only in the gateway .env (600). This system never stores or displays it; here we only verify app_configured via gateway /health.',
+    'fsConfig.secretPolicy': 'App Secret lives only in the gateway .env (600). This system never stores or displays it; fill it here and click "Push to gateway" (in-memory relay, nothing persisted) — the gateway validates then applies hot.',
+    'fsConfig.appSecret': 'App Secret (one-time push to gateway, not stored here)', 'fsConfig.pushSecret': 'Push to gateway',
+    'fsConfig.pushOk': 'Pushed and written to gateway .env (app configured)', 'fsConfig.pushFail': 'Push failed',
+    'fsConfig.deptHint': 'Notifications include the submitter department (from Feishu contacts; requires contact read scope). If unavailable the line is omitted — sending still works.',
     'overview.title': 'Config Overview (source-tagged, anti-forgetting)', 'overview.deploy': 'Deploy-level config (.env, read-only, restart required)', 'overview.runtime': 'Runtime config (database, editable, immediate)',
     'overview.key': 'Key', 'overview.value': 'Value', 'overview.source': 'Source', 'overview.env': 'env', 'overview.db': 'db', 'overview.updated': 'Updated',
     'audit.titleDetail': '📋 Details', 'audit.titleStats': '📊 Statistics',
@@ -1993,6 +1999,16 @@ async function renderConfig() {
           <div class="form-group"><label data-i18n="fsConfig.appUrl">处理入口（消息里的系统地址）</label><input type="text" id="feishu_app_url" placeholder="http://<内网IP>:8000"></div>
           <div class="form-group"><label data-i18n="fsConfig.appId">App ID（仅展示/核对）</label><input type="text" id="feishu_app_id" placeholder="cli_xxx"></div>
         </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:2;">
+            <label data-i18n="fsConfig.appSecret">App Secret（一次性下发到网关，本系统不保存）</label>
+            <input type="password" id="feishu_app_secret" placeholder="填写后点右侧“下发到网关”，不会存入本机数据库/磁盘" autocomplete="new-password">
+          </div>
+          <div class="form-group" style="flex:0 0 auto;display:flex;align-items:flex-end;">
+            <button class="btn btn-secondary" onclick="pushFeishuSecret()" data-i18n="fsConfig.pushSecret">下发到网关</button>
+          </div>
+        </div>
+        <div id="fsSecretResult" class="text-sm mt-8" style="display:none;"></div>
         <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="btn btn-primary" onclick="saveFeishuConfig()" data-i18n="fsConfig.save">保存飞书配置</button>
           <button class="btn btn-secondary" onclick="testFeishuNotify()" data-i18n="fsConfig.test">发送测试通知</button>
@@ -2000,7 +2016,8 @@ async function renderConfig() {
         </div>
         <div id="fsTestResult" class="text-sm mt-8" style="display:none;"></div>
         <p class="text-sm text-muted mt-8" data-i18n="fsConfig.hint">通知是旁路通道：发送失败只告警不阻塞提交/审批，界面会显示每条通知的投递状态。保存后即时生效（无需重启）。</p>
-        <p class="text-sm text-muted mt-8" data-i18n="fsConfig.secretPolicy">App Secret 只存网关 .env（600），本系统不保存、不展示；此处仅通过网关 /health 校验应用是否已配置。</p>
+        <p class="text-sm text-muted mt-8" data-i18n="fsConfig.secretPolicy">App Secret 只存网关 .env（600），本系统不保存、不展示；可在此填写后“下发到网关”（内存转发，不落盘），网关校验通过后热生效。</p>
+        <p class="text-sm text-muted mt-8" data-i18n="fsConfig.deptHint">通知正文会附带提交人所属部门（取自飞书通讯录，需通讯录读权限）；查不到时该行自动省略，不影响发送。</p>
       </div>
 
       <!-- 配置总览卡片（ADR-010：来源标记，防遗忘） -->
@@ -2142,7 +2159,7 @@ async function loadFeishuConfig() {
     const box = document.getElementById('fsStatus');
     if (box) {
       box.innerHTML = gw.reachable
-        ? `<span style="color:#16a34a;">✔ ${t('fsConfig.gwOk')} · app=${gw.app_configured ? '✔' : '✘'} · token=${gw.token_configured ? '✔' : '✘'} · ${escapeHtml(String(gw.allow_cidrs || ''))}</span>`
+        ? `<span style="color:#16a34a;">✔ ${t('fsConfig.gwOk')} · app=${gw.app_configured ? '✔' : '✘'}${gw.app_id_masked ? ' ' + escapeHtml(String(gw.app_id_masked)) : ''} · token=${gw.token_configured ? '✔' : '✘'} · 通讯录=${gw.contact_readable === true ? '✔' : (gw.contact_readable === false ? '✘' : '?')} · ${escapeHtml(String(gw.allow_cidrs || ''))}</span>`
         : `<span style="color:#dc2626;">✘ ${t('fsConfig.gwDown')}：${escapeHtml(String(gw.reason || ''))}</span>`;
     }
   } catch (e) { toast(t('toast.loadFail', e.message), 'error'); }
@@ -2166,6 +2183,28 @@ async function importFeishuConfig() {
     toast(t('fsConfig.imported'), 'success');
     loadFeishuConfig(); loadConfigOverview();
   } catch (e) { toast(t('toast.saveFail', e.message), 'error'); }
+}
+async function pushFeishuSecret() {
+  const secEl = document.getElementById('feishu_app_secret');
+  const idEl = document.getElementById('feishu_app_id');
+  const box = document.getElementById('fsSecretResult');
+  const secret = (secEl && secEl.value || '').trim();
+  if (!secret) { toast(t('fsConfig.pushFail') + '：App Secret 为空', 'error'); return; }
+  box.style.display = 'block';
+  box.innerHTML = `<span class="text-sm text-muted">${t('fsConfig.pushSecret')}...</span>`;
+  try {
+    const r = await api('/api/admin/feishu-config/secret', {
+      method: 'POST',
+      body: { app_id: (idEl && idEl.value || '').trim(), app_secret: secret },
+    });
+    box.innerHTML = r.ok
+      ? `<span style="color:#16a34a;">✔ ${t('fsConfig.pushOk')} · ${escapeHtml(String(r.app_id_masked || ''))} · ${escapeHtml(String(r.detail || ''))}</span>`
+      : `<span style="color:#dc2626;">✘ ${t('fsConfig.pushFail')} · ${escapeHtml(String(r.detail || ''))}</span>`;
+    if (r.ok && secEl) secEl.value = '';   // 明文不留在页面
+    loadFeishuConfig();
+  } catch (e) {
+    box.innerHTML = `<span style="color:#dc2626;">✘ ${t('fsConfig.pushFail')}：${escapeHtml(e.message)}</span>`;
+  }
 }
 async function testFeishuNotify() {
   const box = document.getElementById('fsTestResult');

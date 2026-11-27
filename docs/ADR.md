@@ -811,3 +811,27 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   - `tests/test_api.py`：新增组 27（29 项）——配置组可读/9 项齐备、token 掩码不泄明文、Secret 不在业务机、网关探活、hook 枚举、非法端口/超时 400、保存后 host+port+path 组装、来源标 db、掩码回存不覆盖、运行期生效（DB 地址+原 token 实际到达桩）、关闭开关→skipped 且不发请求、自测 400/200/403 边界、网关不可达优雅失败、审计留痕、配置总览脱敏、配置页可配可见；**全量基线 467 → 496**（496/496 通过，干净库）。
   - 关联：ADR-051（旁路不阻塞/界面可观测）、ADR-052（零出网与网关边界）、ADR-010（配置权威与来源标记）、ADR-005（非硬编码）。
 
+
+---
+
+## ADR-055 飞书 App 凭据受控下发 + 部门补全（2026-11-27，强制）
+
+- **背景**：
+  ① ADR-054 把飞书做成独立配置域，但 App Secret 只允许存在网关 `.env`，导致运维面临"哑巴服务器"问题——每次网关重装/换机都要人工上机输入密钥，若无 AI 参与就没人会配；
+  ② 用户要求"配置菜单里能看到能配"，且不希望每次部署都依赖 AI；
+  ③ 审批人可能有多位，通知正文若不带提交人部门与"请部门负责人审批"提示，容易出现漏批/重复批（AD 侧 department/title/manager 对现有账号实测全为空，部门只能取自飞书通讯录）。
+- **决策**：
+  1. **Secret 走受控下发通道，不落业务机**：新增网关 `POST /admin/secret`（仅白名单源 IP + 预共享 token），只接受 `app_id/app_secret` 两键；网关**先向 `open.feishu.cn` 验证凭据**，通过后原子写入其 `.env`（600）并**热重建 SDK 客户端**（无需重启），失败明确返 400/401/403/502 原因。
+  2. **业务侧只做内存转发**：`POST /api/admin/feishu-config/secret` 仅 admin，登录态内接收后立即转发，**不落库、不落盘、不回显**；配置页填写后点"下发到网关"，成功即清空输入框。审计只记 `push_feishu_secret`（含 app_id 前 6 位 + 成功/失败），**绝不含密钥正文**。
+  3. **部署脚本支持"无人值守升级"**：`deploy-gateway.sh` 增加 `--app-id/--secret-file/--secret`；升级时若本机 `.env` 已有凭据则直接复用，**只更新代码、不再要求输入密钥**（首次部署或轮换才需要人工一次）。
+  4. **部门补全放在网关侧（持凭据方）**：业务侧在 `vars` 中新增 `submitter_email`（取自本地邮箱→AD mail），网关对 `submission_pending_l1/l2` 用飞书通讯录 `contact/v3/users` + `departments` 解析部门名，渲染为"提交人部门：X / 请部门负责人进行审批"；**查不到或缺通讯录读权限时该行自动省略，绝不阻塞发送**。
+  5. **通讯录读权限最小化**：只需 `contact:contact.base:readonly`（用户基本信息含 department_ids）+ `contact:department.base:readonly`（部门名）；不申请全员敏感字段；权限变更后**必须"创建并发布版本"**才生效（飞书机制）。
+  6. **可观测**：网关 `/health` 增 `app_id_masked / contact_readable`，配置页状态灯显示"应用已配 + App ID 掩码 + 通讯录是否可读"，运维无需 AI 即可判断"凭据通不通、部门能不能查"。
+  7. **Secret 边界不变**：仍只存两处（开发机 `server_credential.md` + 网关 `.env` 600）；业务机数据库、日志、审计、前端均不得出现明文（TDD 直接读 SQLite 反证）。
+- **落点**：
+  - `infra/feishu-gateway/notify_app.py`（0.2.0）：`/admin/secret`、运行时热重建客户端、`/health` 扩展、`_lookup_department`（tenant_access_token 缓存 + 部门缓存 1h）、待审批模板按部门条件渲染。
+  - `infra/feishu-gateway/deploy-gateway.sh`：凭据来源三选一（env / `--secret-file` / `--secret`），升级沿用本机 `.env`。
+  - `src/app.py`：`feishu_gateway_admin_url`、`api_push_feishu_secret`、`_notify_worker` 增 `submitter_email`、探活返回 `app_id_masked/contact_readable`。
+  - `src/static/index.html`：配置页新增"App Secret（一次性下发到网关，本系统不保存）"输入 + "下发到网关"按钮 + 结果区 + 部门说明文案（中英 `fsConfig.*`）。
+  - `tests/test_api.py`：新增组 28（13 项）——下发成功/网关实收凭据与 token、SQLite 无密钥（不落库）、接口不回显、缺参 400、掩码 400、网关校验失败 ok=false、普通用户 403、网关不可达优雅失败、审计无明文、探活暴露 app_id_masked/通讯录状态、待审批通知携带 `submitter_email`、配置页入口可见；**全量基线 496 → 509**（509/509 通过，干净库）。
+  - 关联：ADR-052（网关边界与 Secret 两处存放）、ADR-054（独立配置域）、ADR-051（旁路不阻塞）、ADR-005（非硬编码）。
