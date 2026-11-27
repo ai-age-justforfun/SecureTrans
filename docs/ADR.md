@@ -759,6 +759,7 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   - 网关：`infra/feishu-gateway/`（FastAPI，8090），7 事件模板 + `X-Notify-Token` 鉴权 + `request_id` 幂等 + JSONL 记账。
   - 测试：`tests/test_api.py` 组 25（通知桩 `127.0.0.1:18099`），21 条断言覆盖七事件、AD/本地邮箱、免审批"仅提交人"强断言、网关 502 不阻塞 + `notify_failed` 审计；全量 **433/433 通过**（干净库基线）。
   - 已知边界：收件人无可用邮箱→`skipped`（不回退通知管理员）；生产 `.env` 与容器出站策略属部署步骤（见 ADR-052 落点）。
+  - 生产下发（2026-11-27 验证态）：`.env` 增 `FEISHU_NOTIFY_ENABLED/URL/TOKEN/TIMEOUT/APP_URL`；因 podman 4.9 `commit` 对 docker-format 图层报 `unsupported MIME type for compression`，改用 `podman export` + `podman import` 生成临时镜像 `securetrans:v2.7.3-feishu-r1`（保留 `securetrans:v2.7.1-rollback` 回退点），以原 run 参数（同端口/卷/`--user 973:972`）重建容器，`/api/health` = `v2.7.3` 且页面 200。**该镜像非发布资产，正式版本须以标准 `image.tar.gz`（Dockerfile.run 构建 + CD 通道）替换。**
 
 ### ADR-052：关键服务器零出网 + 专用单向通知网关（安全，强制，2026-11-27）
 - **背景**：SecureTrans 生产（10.10.30.8）是公司关键文件摆渡节点，其可用性与数据安全优先级最高。若业务机自行直连互联网出站，一旦被攻破即具备外传与反连能力，且出站面分散、审计困难、飞书凭据需落在业务机。改为"业务机零出网 + 单台专用网关出网"后，攻击面、审计面、凭据面三处同时收敛。
@@ -772,5 +773,7 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
 - **落点**：
   - ✅ 已落地（2026-11-27）：网关防火墙 443 白名单（仅 `open.feishu.cn`）+ 源 IP 白名单（仅 `10.10.30.8`）；主机改名 `feishu-sdk-server-securetrans`；通知服务独立于 CICD 的 8080，绑定 `10.10.30.114:8090`（只监内网 IP，`127.0.0.1` 被拒属预期）；`securetrans-notify` systemd active+enabled；venv 复用网关机既有站点包（出网只放行 443，无法在线 pip 装包）；`.env` 600（`FEISHU_APP_ID`/`FEISHU_APP_SECRET`/`FEISHU_NOTIFY_TOKEN`/`NOTIFY_BIND`/`NOTIFY_PORT`/`NOTIFY_DATA_DIR`/`SECURETRANS_APP_URL`）；审计 `/var/lib/securetrans-notify/notify.jsonl`（含 `client` 源 IP、收件人掩码）。
   - ✅ 端到端实证（2026-11-27）：生产机 `10.10.30.8` → `POST http://10.10.30.114:8090/notify`（`event=submission_pending_l1`）→ `HTTP 200 / sent=1 / message_id=om_x100b7fa1e02864b0df13d5f36785be8`；网关审计 `client=10.10.30.8`，用户收到消息原文确认标题/单号/提交人/文件名/事由/时间/入口正确。
+  - ✅ 应用层源 IP 白名单（2026-11-27，fail-closed）：`notify_app.py` 新增 `_client_allowed()`（`NOTIFY_ALLOW_CIDRS` 未配置即拒绝，默认拒绝而非放行）；`/notify` 首行校验 `request.client.host`，不在白名单返回 `403 client ip not allowed`。实测：网关本机（`10.10.30.114`）POST → **403**；生产容器 POST → **200**。`NOTIFY_ALLOW_CIDRS=10.10.30.8/32` 已写入网关 `.env`；`deploy-gateway.sh` 对空值显式告警。
+  - ✅ 生产部署形态联通（2026-11-27）：生产容器（`--user 973:972`，仅挂 `/data`、`/nas`）内直接 POST 网关 → `200 / sent=1 / message_id=om_x100b7fa25bd450a0c1ffd42f65fcc23`，证明"容器零出网 + 仅内网通知"在真实部署形态下可用。
   - ⏳ 待落地（属部署步骤，非代码缺陷）：生产 `.env` 写入 `FEISHU_NOTIFY_URL=http://10.10.30.114:8090/notify` 与真实 `FEISHU_NOTIFY_TOKEN` 并重启容器；SecureTrans 容器出站策略显式拒绝互联网（仅内网放行到 10.10.30.114:8090）；token 轮换流程（建议 180 天，与飞书 App Secret 同步）。
   - 关联：ADR-042（凭据只存本地/受控服务端两处）、ADR-051（失败不阻塞与界面可观测）。

@@ -22,6 +22,11 @@ ALLOW_CIDRS="${NOTIFY_ALLOW_CIDRS:-}"
 VENV_SRC="${FEISHU_SDK_VENV_SRC:-/opt/feishu-cicd/venv}"
 TOKEN="${FEISHU_NOTIFY_TOKEN:-}"
 
+# 源 IP 白名单为强制项（ADR-052）：服务端 fail-closed，未配置时所有 /notify 请求 403
+if [ -z "$ALLOW_CIDRS" ]; then
+  echo "[WARN] NOTIFY_ALLOW_CIDRS 为空 —— 服务端将拒绝所有 /notify 请求（请设置如 10.10.30.8/32）"
+fi
+
 echo "==> 安装到 $ROOT（bind=$BIND port=$PORT）"
 mkdir -p "$ROOT/srv" "$DATA_DIR" /var/log
 

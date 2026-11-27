@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import json
 import os
 import re
@@ -167,9 +168,25 @@ def _audit(record: Dict[str, Any]) -> None:
         pass
 
 
+def _client_allowed(host: str) -> bool:
+    """源 IP 白名单校验（ADR-052）。fail-closed：未配置 NOTIFY_ALLOW_CIDRS 时一律拒绝。"""
+    if not ALLOW_CIDRS:
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    for cidr in ALLOW_CIDRS:
+        try:
+            if ip in ipaddress.ip_network(cidr, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 @app.get("/health")
-def health() -> Dict[str, Any]:
-    return {
+def health() -> Dict[str, Any]:    return {
         "status": "ok",
         "service": "securetrans-notify",
         "version": VERSION,
@@ -182,6 +199,10 @@ def health() -> Dict[str, Any]:
 
 @app.post("/notify")
 def notify(payload: Dict[str, Any], request: Request, x_notify_token: str = Header(default="")) -> JSONResponse:
+    client_host = request.client.host if request.client else ""
+    if not _client_allowed(client_host):
+        return JSONResponse(status_code=403, content={"code": 403, "msg": "client ip not allowed", "client": client_host})
+
     if not NOTIFY_TOKEN or not hmac.compare_digest(x_notify_token, NOTIFY_TOKEN):
         return JSONResponse(status_code=401, content={"code": 401, "msg": "invalid notify token"})
 
