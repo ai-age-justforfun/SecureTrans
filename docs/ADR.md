@@ -614,6 +614,7 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
 - **与既有 ADR 不重复**：ADR-009 管业务系统内 admin 密码（RESET_PASSWORD 全链路）；ADR-024 管 CD 的 SSH 认证（ed25519 密钥走 repo secret）；ADR-037 管 CI/CD secret 最小作用域。**本 ADR 管 AI 开发侧的本地凭据管理**（外部系统认证的创建/存放/优先级/防弹窗），是方法论层规范，可复用于后续项目。
 - **已落点**：2026-09-15（v2.7.0 RC 期间）——GitHub PAT 存 `C:\Users\jinta\.securetrans\github-token.txt`（带标题注释行，使用时 regex 提取 `ghp_...`）；Gitea API token 存 `~/.securetrans/`（origin remote URL 引用）；v2.7.0 draft Release 发布/阶段调整（alpha/beta/rc）全部通过 token API 完成（无账号密码）；git 固定 `credential.https://github.com.username = ai-age-justforfun` 消除弹窗；后续新系统（GitLab 等）按本 ADR 执行。
 - **补充（2026-09-16，credential 文件读取约定，强制）**：**从 credential 文件读 token 必须先核对行结构与前缀，禁止盲取第一行**——本项目 `github-token.txt` 结构=**L0 标签行（`github-token: ...`，勿当 token）+ L1 才是真 token（`ghp_...` classic，40 字符）**；本次事故=误取 L0 标签行致 API Bad credentials，实际 token（`securetrans-ci`，scope=repo,workflow）一直有效。读取规范：① 逐行 Trim 后按前缀识别（`ghp_`/`github_pat_`/`glpat-` 等 token 特征），取**首个匹配 token 前缀的行**；② 标签行/注释行（含 `:`、中文说明、`#`）跳过；③ 读取后用 API 快速验证（`GET /user` 200）再使用；④ 写入凭据管理器用真 token 行，防"存了错值弹窗歧义"。已修正凭据管理器并验证（非交互 ls-remote 通过）。
+- **补充（2026-11-27，"两处存放"边界，强制）**：外部系统凭据只允许存在于**两处**——①开发机本地（`server_credential.md` 与 `~/.securetrans/`，均 gitignore 保护）；②受控服务端 `.env`（如通知网关 `/opt/.../.env`，权限 600）。**禁止第三处**（业务机、git 仓库、CI 明文变量、聊天/工单/邮件）。本次落点：`server_credential.md` 入库前先加 `.gitignore` 规则 `server_credential*.md` 并 `git check-ignore` 验证通过，再提交（提交 `48fce2b` 只含规则，不含凭据本体）。
 ---
 
 ### ADR-043：部署形态正式切换——Docker 为默认形态、原生退役为备选 + 蓝绿切换顺序纪律（v2.7.0 RC，强制）
@@ -739,3 +740,33 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
 - **单文件适用边界**（未来项目判断）：纯 CI 单平台、阶段线性无独立发布/部署、无跨平台对齐需求、团队偏好一文件看全流程——可单文件；命中"多平台/有发布部署/安全敏感"任意一条则优先总分式。
 - **落点**：2026-09-16 复盘入库；docs/CICD.md §2.1 结构表更新为入口+明细（原"单文件三阶段"表述过时已修正）；三平台目录对齐清单见 docs/15 §7.1。
 - **补充（2026-09-16，GitLab 根文件=平台硬性机制，非冗余）**：GitLab 流水线配置文件**必须**名为 `.gitlab-ci.yml` 且**必须位于仓库根目录**——GitLab 不扫描 `.gitlab/` 目录（区别于 Gitea/GitHub 扫描 workflows 目录下所有 yml 各为独立 workflow）；删掉根文件则 GitLab 完全不执行流水线。故 GitLab 总分式的实现=**根文件做"总入口"（stages + include: local 引用明细）+ `.gitlab/workflows/*.yml` 做明细**，根文件不是重复文件而是执行链第一环；`include: local` 支持子文件用相对仓库根路径（`'.gitlab/workflows/ci.yml'`），子文件内 stages/needs 照常生效。Gitea/GitHub 无"总入口"概念（目录即集合），GitLab 必须有——这是三平台总分式对标中唯一的机制差异。
+
+### ADR-051：飞书审批通知——独立旁路通道、失败不阻塞业务、界面可观测（强制，2026-11-27）
+- **背景**：关键提交/审批节点需要触达提交人与一级/二级审批人；免审批直通必须跳过全部审批人、只通知提交人。通知依赖外部系统（飞书开放平台 + 内网通知网关），其可用性不受本项目控制。若把通知纳入业务事务，外部系统抖动会直接放大成"提交失败/审批失败"，与摆渡系统的核心可用性目标冲突。另需解决"通知发没发出去、失败在哪一环"的定位问题——否则运维只能靠猜。
+- **决策**：
+  1. **独立旁路**：通知与业务事务**完全解耦**，异步发送（线程池/队列），**绝不阻塞**提交、审批、下载主流程；通知失败不改变任何业务状态机。
+  2. **固定触发点（7 类，不多不少）**：①提交成功（需审批）→ 当前待办层级审批人；②提交成功（免审批直通）→ **仅提交人**；③一级通过（内部/合作方直接摆渡）→ 提交人；④一级通过（同人具备二级权限、自动跳过二级）→ 提交人；⑤一级通过（非合作方进入二级）→ 提交人 + 二级审批人；⑥二级通过 → 提交人；⑦任一环节驳回 → 提交人（含驳回意见）。
+  3. **失败语义**：统一写审计 `notify_sent` / `notify_failed` / `notify_skipped`；`notify_failed` 触发告警（日志 WARN + 界面标红），**不抛出、不回滚、不重试到阻塞**；有限重试（默认 3 次、指数退避）后置 failed。
+  4. **可观测性（强制）**：提交列表 / 审批界面在对应记录上直接显示飞书通知状态（成功/失败/跳过/已关闭 + 时间 + 错误摘要），使"通知异常"可在业务界面第一时间发现，用于快速区分是飞书服务器、开放平台权限还是网络问题。
+  5. **收件人解析**：提交人取 `local_users.email`；审批人按 `approvers.username → local_users.email` 解析；解析不到（如纯 AD 用户未落本地表）→ 记 `notify_skipped` 并跳过，**不阻塞业务**。
+  6. **开关与降级**：`FEISHU_NOTIFY_ENABLED=false` 时全链路静默（仍记 `notify_skipped`），用于网关不可用时的应急降级。
+- **落点（v2.8.0 待实现）**：
+  - 配置项（`.env`）：`FEISHU_NOTIFY_ENABLED`、`FEISHU_GATEWAY_URL`、`FEISHU_NOTIFY_TOKEN`、`FEISHU_NOTIFY_TIMEOUT`、`FEISHU_NOTIFY_RETRY`。
+  - 代码：`src/app.py` 新增 `notify_*` 旁路模块（发送在本进程外，异步）；提交 `app.py:1663-1673`、审批 `app.py:1785-1824` 插入事件点调用。
+  - 审计：新增 action `notify_sent` / `notify_failed` / `notify_skipped`（detail 只记模板名与结果，**不记消息正文/文件名**）。
+  - 界面：提交列表与审批页展示通知状态徽标；i18n 字典补中英文案。
+  - 测试：`tests/test_api.py` 新增通知组（mock 网关：成功/失败/超时/跳过/开关关闭/免审批仅发提交人）。
+
+### ADR-052：关键服务器零出网 + 专用单向通知网关（安全，强制，2026-11-27）
+- **背景**：SecureTrans 生产（10.10.30.8）是公司关键文件摆渡节点，其可用性与数据安全优先级最高。若业务机自行直连互联网出站，一旦被攻破即具备外传与反连能力，且出站面分散、审计困难、飞书凭据需落在业务机。改为"业务机零出网 + 单台专用网关出网"后，攻击面、审计面、凭据面三处同时收敛。
+- **决策**：
+  1. **业务机零出网**：SecureTrans 生产容器不配置互联网出站；唯一外部调用路径 = 内网 POST 到 `feishu-sdk-server-securetrans`（10.10.30.114）。
+  2. **网关单向最小化**：网关仅放行 `open.feishu.cn:443`（**已在防火墙上落地**），**禁止**任意 URL 转发/透传——防止退化为 SSRF 跳板或开放代理。
+  3. **网关鉴权（已在防火墙上落地源 IP 限制）**：源 IP 白名单仅 `10.10.30.8` + 预共享 token（`FEISHU_NOTIFY_TOKEN`，请求头校验），双重校验缺一不可。
+  4. **凭据最小化（强制）**：飞书 App Secret 只允许存在于**两处**——开发机本地凭据文件（`server_credential.md` / `~/.securetrans/`，均已 gitignore）与网关 `.env`；**禁止**出现在业务机、git 仓库、Gitea/GitHub、聊天/工单/邮件。
+  5. **网关职责边界**：只做「鉴权 → 模板渲染 → 调 lark-oapi 发送 → 记账」四件事；**不做业务决策**（不判断该不该审批、不改业务状态），**不落业务正文**（不存文件名/文件内容）。
+  6. **脱敏日志**：网关侧只记元数据（时间、收件人标识哈希或掩码、模板、结果、飞书错误码），保留期限与业务审计一致。
+- **落点**：
+  - ✅ 已落地（2026-11-27）：网关防火墙 443 白名单（仅 `open.feishu.cn`）+ 源 IP 白名单（仅 `10.10.30.8`）；主机改名 `feishu-sdk-server-securetrans`。
+  - ⏳ 待落地：网关新增独立通知服务（端口与 CICD 的 8080 分离，如 8090）；token 生成与双端配置；SecureTrans 容器出站策略显式拒绝互联网；token 轮换流程（建议 180 天，与飞书 App Secret 同步）。
+  - 关联：ADR-042（凭据只存本地）、ADR-051（失败不阻塞与界面可观测）。
