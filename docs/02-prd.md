@@ -509,3 +509,60 @@ app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024 * 1024  # 1GB 上限
 - 实测（WSL Rocky 10）：venv/bin/python3 为非符号链接普通文件，隔离成立；本地 + WSL 全量回归 172 项 100%。
 
 *文档结束 | SecureTrans PRD v2.1 | 2026-09-06*
+
+---
+
+## 11. 飞书审批通知（v2.7.x 新增，ADR-051~056）
+
+### 11.1 定位
+通知是**独立旁路通道**，不是业务状态机的一部分：异步派发（daemon 线程），失败只记录不改单据状态、不阻塞提交/审批。
+
+### 11.2 事件与收件人（7 事件固定）
+
+| 事件 | 收件人 |
+|------|--------|
+| 提交需审批（`submission_pending_l1`） | 提交人 + 全部一级审批人 |
+| 免审批直通（`submission_auto_approved`） | 仅提交人 |
+| 一级通过进二级（`submission_pending_l2`） | 提交人 + 全部二级审批人 |
+| 一级即终审 / 自动跳过二级 | 提交人 |
+| 二级通过 | 提交人 |
+| 驳回 | 提交人（含原因） |
+| 状态变更（`submission_status`） | 提交人 |
+
+收件人解析三级：本地 `local_users.email` → AD `mail` → 飞书 `receive_id_type=email`；解析不到记 `skipped`，不报错。
+
+### 11.3 通知正文要素
+提交单号（**短号 `#8位hex`**，详情页仍显示完整 ID）、文件名、事由、提交时间（**服务器本地时区 Asia/Shanghai**）、
+审批层级、提交人部门（取飞书通讯录**主部门**）与"请部门负责人进行审批"提示、处理入口 URL。
+
+> 设计取舍（ADR-056）：不引入 `ST-YYYYMMDD-NNN` 业务流水号；单号就是提交单 ID 的短前缀，保证唯一且可回查。
+
+### 11.4 配置与凭据
+- 配置页"飞书通知"独立卡片（与 AD 配置同构）：开关、网关 host/port/path/完整 URL、预共享 token、超时、入口 URL、App ID，DB 权威、`.env` 播种、留空回退。
+- **App Secret 只存网关 `.env`（600）**，业务机不落库不落盘不回显；界面可一次性"下发到网关"（`POST /api/admin/feishu-config/secret`），网关验签后原子写 `.env` 并热重建客户端。
+- 网关 `/health` 暴露 `app_configured / app_id_masked / token_configured / contact_readable`，配置页显示状态灯。
+
+### 11.5 网络与安全
+生产机零互联网出站，唯一外部路径=内网 `POST http://10.10.30.114:8090/notify`；网关仅放行 `open.feishu.cn:443`、
+源 IP 白名单（仅 10.10.30.8）+ 预共享 token；网关只做「鉴权→渲染→发送→记账」，不落业务正文、不做业务决策。
+
+### 11.6 可观测
+`notification_logs`（成功/失败/跳过）+ 提交/审批列表"飞书通知"列 + 详情"通知记录" + 失败审计 `notify_failed`；提示语明示"异步发送"。
+
+## 12. 运行口径补充（v2.7.6 定稿）
+
+### 12.1 时间
+服务器（宿主与容器）统一 `Asia/Shanghai`；审计、单据时间、通知正文均按该时区渲染。容器不设 `TZ` 会退回 UTC（已修复并在 `docker-deploy.sh` 固化）。
+
+### 12.2 外网下载可见性（有意设计，ADR-056）
+外网面"已摆渡文件列表"按 **`submitter = 当前登录用户`** 过滤：**自己提交 → 审批通过 → 自己下载**。
+接收方字段（`receiver_name/email`）仅作业务记录与审计，不作为可见性依据；不需要为他人下载开放视角。
+
+### 12.3 部署形态
+生产默认 podman 容器（`securetrans-docker`，8000）；原生 systemd 为回退通道；两者共享同一 SQLite/NAS，**严禁同时运行**。
+容器与宿主共享数据目录，需 `--user` 匹配数据属主。
+
+### 12.4 health 回显
+`/api/health` 保留 `resetPassword` 字段（既有行为）：reset 语义=回到初始密码，admin 登录后应立即改密；该字段不再扩大暴露面。
+
+*PRD v2.3 | 2026-11-27（v2.7.6 正式发布）*

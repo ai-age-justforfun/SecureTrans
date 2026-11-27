@@ -1,9 +1,9 @@
 # SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.7.0 | 阶段：PSF→RC（Release Candidate）— 发布候选，beta 验收通过后进入正式 release
+> 版本：v2.7.6 | 阶段：Release（正式发布）— RC 验收通过，生产运行观察期 1 周（2026-11-27 起）
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main + AI 辅助人机协同（AGENTS v2.0）
-> 部署：Rocky Linux 8.10 单网卡（10.10.30.8），gunicorn + systemd，Python 3.12 venv；Docker 蓝绿（18000，ADR-038/039）
+> 部署：Rocky Linux 8.10 单网卡（10.10.30.8），**podman 容器 `securetrans-docker` 监听 8000**（ADR-043），Python 3.12 venv，容器 TZ=Asia/Shanghai；原生 gunicorn+systemd 保留为回退通道
 
 ---
 
@@ -18,8 +18,9 @@ SecureTrans 是面向中小企业的轻量级单向跨网文件审批摆渡系�
 - **免审批机制**：特征码匹配的文件自动通过（支持压缩包/Vivado Bitstream 等规则，可手工配置；v2.4.0 起支持组合规则 = 特征码 AND 后缀，如 tar.gz/Vivado .bin,.bit）
 - **分级审批**：合作方一级审批，非合作方二级审批（二级审批人已在一级审批过则自动跳过）
 - **轻量级部署**：单服务器 + SQLite + NAS，支撑50人到200人
-- **双模式部署**：测试环境（本地文件系统+Flask）/ 生产环境（NAS+gunicorn+systemd），`.env` 一个开关切换
+- **双模式部署**：测试环境（本地文件系统+Flask）/ 生产环境（NAS + 容器内 gunicorn），`.env` 一个开关切换；生产默认 podman 容器形态，原生 systemd 为回退
 - **双 OS 支持**：Windows（waitress）与 Linux（gunicorn）均可一键部署，离线依赖随发布包内置
+- **飞书审批通知（v2.7.x，ADR-051~055）**：提交/审批/驳回 7 个事件异步推送飞书，失败不阻塞业务；独立配置域（开关/网关地址/token/超时/App ID 可配），App Secret 只存网关 `.env` 可经界面一次性下发；待审批通知自动补"提交人部门 + 请部门负责人审批"
 - **网络面隔离（业务语义）**：内/外网均属公司内部网络分区（内网=提交/审批区，外网=接收/下载区），无 NAT、不向互联网开放、无攻击威胁；分面隔离为**单向摆渡流程管控**而非防攻击——外网面仅登录+下载，管理接口 403。单网卡按来源网段（`INTERNAL_CIDRS`）识别，双网卡可绑内网 IP 物理隔离
 
 ---
@@ -59,11 +60,11 @@ python test_api.py
 tar xzf securetrans-v2.6.0.tar.gz -C /opt/securetrans --strip-components=1
 cd /opt/securetrans
 
-# 2. 一键部署（9步自动化：Python 3.12 获取 → venv → 依赖 → .env → systemd → 启动验证）
+# 2. 一键部署（容器形态：podman load 镜像 → docker-deploy.sh；原生回退用 deploy.sh）
 sudo bash infra/deploy.sh
 
-# 3. 部署验证（380项全量测试；admin 凭据自动取 .env RESET_PASSWORD；BASE_URL 自动适配 .env HOST/PORT；若 admin 密码已手工修改，用 VERIFY_ADMIN_PASS 显式传入）
-bash infra/verify.sh
+# 3. 部署验证（510 项全量测试；admin 凭据自动取 .env RESET_PASSWORD；BASE_URL 自动适配 .env HOST/PORT；若 admin 密码已手工修改，用 VERIFY_ADMIN_PASS 显式传入）
+bash infra/verify.sh   # 510 项全量；admin 凭据自动取 .env RESET_PASSWORD
 
 # 4. 防火墙放行 8000（Alpha 内测：内网 + 办公外网访问）
 sudo firewall-cmd --permanent --add-port=8000/tcp && sudo firewall-cmd --reload
@@ -92,7 +93,7 @@ SecureTrans/
 │   │   ├── dev.env           # 开发环境配置（Windows 本地 + AD mock）
 │   └── static/               # 前端静态文件（SPA + 登录页）
 ├── tests/                    # 自动化测试
-│   └── test_api.py           # 全量API测试脚本（433项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
+│   └── test_api.py           # 全量API测试脚本（510项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
 ├── docs/                     # 统一文档（数字前缀排序，持续刷新）
 │   ├── 00-lean-startup-phase-map.md   # Lean Startup三阶段映射与决策门
 │   ├── 01-scrum-io-definition.md      # AI时代人机协同Agile方法论模板(v3.0，SE 3.0+变更分级+三重范式+防眩晕)
@@ -100,7 +101,7 @@ SecureTrans/
 │   ├── 03-psf-process.md              # PSF阶段标准流程
 │   ├── 04-pmf-process.md              # PMF阶段标准流程（下一阶段准备）
 │   ├── 05-test-cases.md               # 测试用例
-│   ├── 06-test-report.md              # 测试报告（433项全通过）
+│   ├── 06-test-report.md              # 测试报告（510项全通过 + 生产实测记录）
 │   ├── 07-psf-sprint4-retrospective.md # PSF阶段迭代小结
 │   ├── 08-cicd-gitops-architecture.md # CICD/GitOps架构规划
 │   ├── 09-preprod-verification.md     # 生产预验收清单
@@ -112,7 +113,9 @@ SecureTrans/
 └── infra/                    # 基础设施配置
     ├── deploy.sh             # 一键部署脚本（9步自动化, Linux）
     ├── deploy.ps1            # 一键部署脚本（Windows）
-    ├── verify.sh             # 部署验证脚本（433项，BASE_URL 自适应 + 凭据自动取 .env RESET_PASSWORD）
+    ├── verify.sh             # 部署验证脚本（510项，BASE_URL 自适应 + 凭据自动取 .env RESET_PASSWORD）
+    ├── smoke.sh              # 生产只读冒烟（11 项，部署门禁，ADR-053）
+    ├── feishu-gateway/       # 飞书单向通知网关（10.10.30.114:8090，ADR-052/055）
     ├── get-offline-python.sh # 离线 Python 3.12 RPM 获取（联网 Rocky8 跑一次）
     ├── nginx-securetrans.conf        # Nginx双网卡配置
     ├── nginx-securetrans-single.conf # Nginx单网卡配置
@@ -186,11 +189,11 @@ SecureTrans/
 ## 发布与版本
 
 - **版本号单一来源**：`src/app.py` 的 `APP_VERSION`（前端 index.html 同步），文档内版本号统一
-- **发布阶段（.env APP_STAGE，显示 vX.Y.Z-stage）**：alpha=自测 → beta=内部测试 → rc=发布候选（Release Candidate）→ release=正式发布；`/api/health` 返回 `stage`，登录页/品牌副标题/页面显示 `vX.Y.Z-stage`，运维期可随时改 .env 切换阶段。**v2.7.0 定为 rc**（ADR-039）
+- **发布阶段（.env APP_STAGE，显示 vX.Y.Z-stage）**：alpha=自测 → beta=内部测试 → rc=发布候选 → release=正式发布；`/api/health` 返回 `stage`，登录页/品牌副标题/页面显示 `vX.Y.Z-stage`，运维期可随时改 .env 切换阶段。**v2.7.6 起生产 APP_STAGE=release**
 - **打包**：`bash infra/package.sh <版本>` → `packages/securetrans-<版本>.tar.gz`（含 offline-deps 离线 wheel）
 - **发布**：`powershell -File infra/release.ps1 -Version v<版本>` → Gitea Release（源码包 + 离线依赖包）
 - **Docker 双通道（v2.7.0 起，ADR-038/039）**：Gitea Release 第 5 资产 `securetrans-vX.Y.Z-image.tar.gz`（离线 `docker load` / `podman load`）；GitHub 走 GHCR（`ghcr.io/ai-age-justforfun/SecureTrans`，在线 pull）
-- **版本记录**：Git tag（`v2.7.0`）+ Gitea Release 资产 + SHA256 校验
+- **版本记录**：Git tag（`v2.7.6`）+ Gitea Release 资产 + SHA256 校验
 - **变更记录**：文档内部版本号（如 PRD v2.2）独立演进，关键需求变更用 Git tag
 - **发布触发规则**：
   - **文档-only 变更**（README/AGENTS/docs/*.md）：commit + push main 即可，**不 bump 版本、不打包、不建 Release**——文档随仓库持续演进，代码发布时包内自动带入最新
@@ -222,7 +225,7 @@ main ────●────●────●────●────  �
 - **Commit 规范**：`<type>(<scope>): <描述>`，不强制带 Sprint 编号，可关联 Story 编号
 
 ### 当前阶段
-**PSF → RC（v2.7.0 发布候选）**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，
+**PSF → Release（v2.7.6 正式发布）**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，
 510 项自动化测试 100%（Windows dev）+ CI 容器全量 TDD + 800MB 性能压力测试 + 3-5 用户并发测试通过
 （MD5 端到端一致）+ CD 全自动部署打通（Release 发布 → 生产自动升级）+ **Docker 双通道发布（Gitea image.tar.gz + GitHub GHCR，ADR-038/039）**；
 beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署验证），通过后正式 release。全项目复盘见 [项目复盘总结](docs/12-project-retrospective.md)。
@@ -233,7 +236,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（510项全通过）](docs/06-test-report.md)
+- [测试报告（510项全通过 + 生产实测）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
 - [版本结果汇总（v1.5.0→v2.7.6 全量）](docs/17-version-summary.md)
@@ -311,6 +314,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 053 | 生产部署只读冒烟全量通过=发布门禁：`smoke.sh` 任一失败即 `exit 1`（禁"警告继续"假绿），docker/原生两通道一致；冒烟用内网 IP、凭据取 RESET_PASSWORD（改密用 VERIFY_ADMIN_PASS）；断言须容错、登录失败明示凭据原因 | v2.7.3 |
 | 054 | 飞书通知=独立配置域（外挂式 channel）：`feishu_config` 表（DB 权威、`.env` 播种/回退），配置页独立卡片可配 9 项（开关/网关 IP·端口·路径·完整 URL/token/超时/入口/AppID）；App Secret 仍只存网关；保存即时生效；`NOTIFY_HOOKS` hook 化（业务 8 处调用点零改动，可并接钉钉/邮件）；`POST /api/admin/feishu-config/test` 可单测通知，配置页显示网关 /health 状态灯；测试基线 467→496 | v2.7.3 |
 | 055 | 飞书 App Secret 受控下发 + 部门补全：网关 `POST /admin/secret`（白名单 IP + token，先验凭据再原子写 `.env` 600 并热重建客户端）；业务侧只做内存转发不落库/不落盘/不回显（审计只记动作）；`deploy-gateway.sh` 支持 `--secret-file` 且升级沿用本机 `.env`（不依赖 AI）；待审批通知经飞书通讯录补"提交人部门 + 请部门负责人审批"（缺权限自动省略不阻塞）；`/health` 增 `app_id_masked/contact_readable`；测试基线 496→510 | v2.7.6 |
+| 056 | 通知可读性收口 + 生产时区：通知单号只显示短号 `#8位hex`（不引入流水号，A 方案）；部门取主部门（`is_primary_dept`）；`submission_status` 无审批人不再渲染"审批人：-"；容器时区 `Asia/Shanghai`（`-e TZ` 固化进 docker-deploy.sh，同时带 `PATH=/venv/bin:...`）；**外网下载可见性=提交人本人，有意设计不修改**；`/api/health` 回显 `resetPassword` 保留（reset 即回初始密码） | v2.7.6 |
 
 > **使用方式**：决策冲突时以 docs/ADR.md 对应条目为准；新增决策只追加编号（ADR-0xx），不修改历史条目。
 > 最新落点摘要（ADR-031/032/033/034 核心）：合作方全量编辑+联系人必填；WSL 测试收敛为 dev+CI 两环境；生产只读冒烟=业界标准；
@@ -329,4 +333,4 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 
 ---
 
-*SecureTrans v2.7.0（RC）| 2026-09-15*
+*SecureTrans v2.7.6（Release）| 2026-11-27*

@@ -685,3 +685,22 @@
 | 网关版本 | 0.2.1（并发投递生效） |
 | 多审批人投递（6 位一级审批人） | `notification_logs`=`sent / sent=6`，**1 秒内完成**（修复前 5s 超时误记 failed） |
 | 部门补全 | 仍未生效：`GET contact/v3/users/:id` 返回 99991672，需开放平台勾选 `contact:contact.base:readonly` 并**创建并发布版本**（当前自动省略部门行，不阻塞） |
+
+---
+
+## v2.7.6 正式发布（2026-11-27）
+
+| 项 | 结果 |
+|----|------|
+| 全量 TDD（Windows dev，干净库） | **510 / 510 通过（100%）** |
+| 生产只读冒烟 `infra/smoke.sh` | **11 / 11 通过，exit 0**（ADR-053 门禁） |
+| 生产健康 | `version=v2.7.6 / stage=release / status=ok / time=2026-11-27 23:39 CST` |
+| 容器时区 | `Fri Nov 27 23:39:47 CST 2026`（`TZ=Asia/Shanghai`） |
+| 飞书端到端 | 提交人状态通知 `sent=1`；一级 6 人 `sent=6 failed=0`；部门=软件开发部 |
+| 外网面下载 | 提交人 `jintao` 外网登录可见自己 2 单（`approved`）；`admin` 无提交故为空（设计如此，ADR-056） |
+| 版本一致性 | `src/app.py` / `src/static/index.html` / 文档 均为 v2.7.6 |
+
+**遗留与观察项**：容器内代码为热更新（基础镜像 v2.7.3），正式 tag 发布由 CD 重建镜像；观察期 1 周关注
+飞书投递成功率、部门解析命中率、`approved` 超期未下载归档。
+
+*2026-11-27 | v2.7.6 Release*

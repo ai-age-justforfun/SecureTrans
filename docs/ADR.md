@@ -841,3 +841,26 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
     ③TDD 增补「一级审批人多人时全员投递（收件人=全部一级审批人）」，基线 509→**510**。
     教训：外部投递类旁路的超时必须按"最多收件人 × 单次 RTT"估算，否则会出现"已送达却记失败"的假失败。
   - **落点补充 2（v2.7.6）**：①通知单号改短号 `#<8位hex>`（详情页仍全 ID，A 方案，不引入流水号）；②待审批通知部门取**主部门**（`orders.is_primary_dept`，回退 `department_ids[0]`），名称缺失回退 `i18n_name.zh_cn`；③`submission_status` 模板仅在确有审批人时渲染"X 级审批已通过"，修复提交提示出现"1 级审批已通过（审批人：-）"；④生产容器时区 UTC→`Asia/Shanghai`（`-e TZ` 入 `docker-deploy.sh`，避免 CD 重建后又回 UTC），容器重建需同时带 `SECURETRANS_DATA=/data`、`NAS_ROOT=/nas`、`PATH=/venv/bin:...`（漏 PATH 会 `gunicorn not found`）。
+
+---
+
+## ADR-056 通知可读性收口 + 生产时区 + 外网下载可见性（2026-11-27，v2.7.6，强制）
+
+- **背景**：v2.7.5 上线飞书通知后，生产验收发现四处体验问题——
+  ① 通知里"单号"是 `uuid8位_时间戳` 整串，看着像乱码，用户问"我们真有单号吗"；
+  ② 一级审批通知缺"提交人部门"行（通讯录 99991672 缺 `contact:contact.base:readonly`），且取的是 `department_ids[0]` 而非主部门；
+  ③ 生产容器时区是 UTC（宿主机 CST），通知与审计时间差 8 小时；
+  ④ 提交提示出现"1 级审批已通过（审批人：-）"——模板硬写审批人行，而提交事件本就没有审批人。
+- **决策**：
+  1. 单号采用 **A 案短号**：通知只显示 `#<8位hex>`，不引入 `ST-YYYYMMDD-NNN` 流水号；详情页保留完整 ID。
+  2. 部门取 **主部门**：`orders.is_primary_dept` 优先，回退 `department_ids[0]`；名称 `name` 为空回退 `i18n_name.zh_cn`；查不到则整行省略、不阻塞。
+  3. `submission_status` 模板**仅在确有审批人时**渲染"X 级审批已通过"，否则只输出"当前状态：…"。
+  4. 容器 **`TZ=Asia/Shanghai`**，并固化进 `infra/docker-deploy.sh`（含 `PATH=/venv/bin:...` 与数据卷路径覆盖），避免 CD 重建后退回 UTC 或 `gunicorn not found`。
+  5. **外网下载可见性＝提交人本人**（`submitter = current_user`）：业务模型是"自己提交→审批→自己下载"，接收方字段只作记录；**有意不改**为接收方视角。
+  6. `/api/health` 的 `resetPassword` 字段保留：reset 语义=回到初始密码，admin 登录后立即改密；不视为漏洞扩大面。
+- **落点**：`infra/feishu-gateway/notify_app.py` 0.2.2（短号/主部门/条件模板）、`infra/docker-deploy.sh`（TZ/PATH）、
+  生产 `.env`（`TZ=Asia/Shanghai`、`APP_STAGE=release`）、`infra/feishu-gateway/deploy-gateway.sh`（无变更）；
+  文档：ADR-055 落点补充 2、PRD §11–§12、docs/05–06、docs/13 D1–D6、README/AGENTS/DEPLOY 同步。
+- **验证**：全量 TDD 510/510；生产冒烟 11/11；容器 `date`=CST；`submission_pending_l1 sent=6 failed=0`、`department=软件开发部`；
+  外网面 `jintao` 可见自己 2 单（`admin` 为空属正常）。
+- **教训**：①"看起来像乱码"往往不是显示 bug 而是**标识设计**缺一层；②外部依赖的权限按官方返回的**最小必要**申请，别把错误串里的所有 scope 当清单（本次误报 3 个不存在的 scope）；③容器形态下时区/路径/PATH 是**部署参数**，不写进脚本就会在下次重建时复发。
