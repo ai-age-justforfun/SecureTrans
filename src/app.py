@@ -16,6 +16,9 @@ import secrets
 import ipaddress
 import logging
 import datetime
+import threading
+import urllib.request
+import urllib.error
 from pathlib import Path
 from functools import wraps
 
@@ -113,6 +116,14 @@ AD_ENV_MAP = {
 EXTERNAL_EXPIRY_DAYS = int(os.getenv("EXTERNAL_EXPIRY_DAYS", "7"))  # external 文件默认 7 天过期
 RESET_PASSWORD = os.getenv("RESET_PASSWORD", "Init@123456").strip()  # 重置密码默认值，可配置(.env)
 AUTO_APPROVAL_ENABLED = os.getenv("AUTO_APPROVAL_ENABLED", "false").strip().lower()  # 免审批总开关默认关闭
+
+# ---- 飞书通知（ADR-051：独立旁路通道，失败绝不阻塞提交/审批）----
+# 关闭时（默认）所有通知记为 skipped，业务照常；开启后走通知网关（ADR-052），不在本机直连飞书。
+FEISHU_NOTIFY_ENABLED = os.getenv("FEISHU_NOTIFY_ENABLED", "false").strip().lower() == "true"
+FEISHU_NOTIFY_URL = os.getenv("FEISHU_NOTIFY_URL", "").strip()          # 例：http://<网关>:8090/notify
+FEISHU_NOTIFY_TOKEN = os.getenv("FEISHU_NOTIFY_TOKEN", "").strip()      # 预共享 token（网关 .env 同值）
+FEISHU_NOTIFY_TIMEOUT = float(os.getenv("FEISHU_NOTIFY_TIMEOUT", "5") or 5)
+FEISHU_NOTIFY_APP_URL = os.getenv("FEISHU_NOTIFY_APP_URL", "").strip()  # 消息里的系统入口，默认按请求 Host 推出
 
 # 网络面识别（单网卡模式按网段区分内外网；逗号分隔 CIDR，留空则不启用网段识别）
 INTERNAL_CIDRS = os.getenv("INTERNAL_CIDRS", "").strip()
@@ -433,6 +444,17 @@ def init_db():
         download_time TEXT,
         ip TEXT,
         md5 TEXT
+    );
+
+    -- 飞书通知投递记录（ADR-051：旁路通道，独立于业务状态；失败只影响本条记录）
+    CREATE TABLE IF NOT EXISTS notification_logs (
+        id TEXT PRIMARY KEY,
+        submission_id TEXT,
+        event TEXT,
+        recipients TEXT,   -- 脱敏后的收件人清单（逗号分隔）
+        status TEXT,       -- sent / partial / failed / skipped（disabled 归入 skipped）
+        detail TEXT,       -- 失败原因或跳过原因，供界面定位
+        created_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS ad_config (
@@ -984,17 +1006,21 @@ def check_auto_approval(files: list) -> dict:
 # 用户认证（Flask-Login）
 # ============================================================
 class User(UserMixin):
-    def __init__(self, user_id, username, display_name, role, source):
+    def __init__(self, user_id, username, display_name, role, source, email=""):
         self.id = user_id
         self.username = username
         self.display_name = display_name
         self.role = role
         self.source = source  # local / ad
+        # 工作邮箱（AD 登录时取 mail 属性；本地用户取 local_users.email）。
+        # 用于飞书通知收件人解析（ADR-051），缺失不影响登录与业务。
+        self.email = email or ""
 
     def to_dict(self):
         return {
             "id": self.id, "username": self.username,
-            "displayName": self.display_name, "role": self.role, "source": self.source
+            "displayName": self.display_name, "role": self.role, "source": self.source,
+            "email": self.email
         }
 
 @login_manager.user_loader
@@ -1008,7 +1034,8 @@ def load_user(user_id):
         username=user_data["username"],
         display_name=user_data.get("displayName", user_data.get("display_name", "")),
         role=user_data["role"],
-        source=user_data["source"]
+        source=user_data["source"],
+        email=user_data.get("email", "")
     )
 
 def authenticate_local(username: str, password: str):
@@ -1359,7 +1386,8 @@ def api_login():
     user = authenticate_local(username, password)
     if user:
         role = get_user_role(username, "local")
-        user_obj = User(user["id"], username, user["display_name"] or username, role, "local")
+        user_obj = User(user["id"], username, user["display_name"] or username, role, "local",
+                        email=user.get("email") or "")
         login_user(user_obj)
         session["user_data"] = user_obj.to_dict()
         add_audit_log(username, "login", "", "本地用户登录成功", ip)
@@ -1373,7 +1401,8 @@ def api_login():
         user, ad_reason = authenticate_ad(username, password)
         if user:
             role = get_user_role(username, "ad")
-            user_obj = User(str(uuid.uuid4()), username, user.get("display_name", username), role, "ad")
+            user_obj = User(str(uuid.uuid4()), username, user.get("display_name", username), role, "ad",
+                            email=user.get("email") or "")
             login_user(user_obj)
             session["user_data"] = user_obj.to_dict()
             add_audit_log(username, "login", "",
@@ -1672,6 +1701,29 @@ def api_create_submission():
     add_audit_log(current_user.username, "create_submission", sub_id,
                   f"提交{len(files_info)}个文件，{'免审批自动通过' if auto_approved else '待审批'}", get_client_ip())
 
+    # ---- 飞书通知（ADR-051）：旁路异步，任何通知故障不影响提交结果 ----
+    try:
+        app_url = _notify_app_url()
+        if auto_approved:
+            # 免审批直通：跳过所有审批人，只通知提交人
+            notify_event(sub_id, "submission_auto_approved", [current_user.username],
+                         {"operator": "系统", "status_text": "免审批自动通过，文件已摆渡至外网下载区",
+                          "app_url": app_url})
+        else:
+            # 通知提交人：已受理
+            notify_event(sub_id, "submission_status", [current_user.username],
+                         {"status_text": "已提交，待一级审批", "app_url": app_url, "operator": "系统"})
+            # 通知当前节点审批人（一级）；非合作方需二级，待一级通过后再通知二级
+            approvers1 = [r["username"] for r in db.execute(
+                "SELECT username FROM approvers WHERE level=1").fetchall()]
+            if approvers1:
+                notify_event(sub_id, "submission_pending_l1", approvers1,
+                             {"level": "一级", "status_text": "待一级审批", "app_url": app_url})
+            else:
+                logger.warning(f"提交单 {sub_id} 未解析到一级审批人邮箱（approvers level=1 为空）")
+    except Exception as ex:
+        logger.warning(f"提交单 {sub_id} 通知派发失败（不影响业务）: {ex}")
+
     return jsonify({"id": sub_id, "status": status, "autoApproved": bool(auto_approved), "fileCount": len(files_info),
                     "expiry_days": expiry_days, "receiver_type": receiver_type})
 
@@ -1692,7 +1744,12 @@ def api_list_submissions():
         params.append(status)
     query += " ORDER BY submit_time DESC LIMIT 200"
     rows = db.execute(query, params).fetchall()
-    return jsonify(rows_to_list(rows))
+    data = rows_to_list(rows)
+    # 附最近一次飞书通知状态（界面展示"飞书通知"列，便于发现网关/开放平台异常）
+    nmap = get_notify_map([r["id"] for r in data])
+    for d in data:
+        d["notify"] = nmap.get(d["id"])
+    return jsonify(data)
 
 @app.route("/api/admin/submissions/all")
 @login_required
@@ -1709,7 +1766,11 @@ def api_admin_all_submissions():
         params.append(status)
     query += " ORDER BY submit_time DESC LIMIT 500"
     rows = db.execute(query, params).fetchall()
-    return jsonify(rows_to_list(rows))
+    data = rows_to_list(rows)
+    nmap = get_notify_map([r["id"] for r in data])
+    for d in data:
+        d["notify"] = nmap.get(d["id"])
+    return jsonify(data)
 
 @app.route("/api/submissions/<sub_id>")
 @login_required
@@ -1726,7 +1787,13 @@ def api_get_submission(sub_id):
             return jsonify({"error": "权限不足"}), 403
     files = db.execute("SELECT * FROM submission_files WHERE submission_id=?", (sub_id,)).fetchall()
     approvals = db.execute("SELECT * FROM approvals WHERE submission_id=? ORDER BY level,time", (sub_id,)).fetchall()
-    return jsonify({**row_to_dict(sub), "files": rows_to_list(files), "approvals": rows_to_list(approvals)})
+    # 飞书通知投递记录（近 20 条，供界面对账；不含完整邮箱，已脱敏）
+    notifies = db.execute(
+        "SELECT event,recipients,status,detail,created_at FROM notification_logs "
+        "WHERE submission_id=? ORDER BY rowid DESC LIMIT 20", (sub_id,)
+    ).fetchall()
+    return jsonify({**row_to_dict(sub), "files": rows_to_list(files), "approvals": rows_to_list(approvals),
+                    "notifications": rows_to_list(notifies)})
 
 @app.route("/api/submissions/pending/my")
 @login_required
@@ -1743,7 +1810,11 @@ def api_my_pending():
     if can2:
         conds.append("status='pending_approval_2'")
     rows = db.execute("SELECT * FROM submissions WHERE " + " OR ".join(conds) + " ORDER BY submit_time DESC").fetchall()
-    return jsonify(rows_to_list(rows))
+    data = rows_to_list(rows)
+    nmap = get_notify_map([r["id"] for r in data])
+    for d in data:
+        d["notify"] = nmap.get(d["id"])
+    return jsonify(data)
 
 # ============================================================
 # 路由：审批
@@ -1822,6 +1893,38 @@ def api_approve(sub_id):
     db.commit()
     add_audit_log(current_user.username, f"approval_{action}", sub_id,
                   f"{'通过' if action=='approve' else '驳回'}，级别{level}，备注：{comment}", get_client_ip())
+
+    # ---- 飞书通知（ADR-051）：按节点通知提交人与下一级审批人（旁路异步）----
+    try:
+        app_url = _notify_app_url()
+        submitter = sub["submitter"]
+        operator = current_user.display_name or current_user.username
+        if action == "reject":
+            notify_event(sub_id, "submission_rejected", [submitter],
+                         {"status_text": "已驳回", "reason": comment or "未填写驳回原因",
+                          "operator": operator, "level": f"{level}级", "app_url": app_url})
+        elif level == 1 and new_status == "pending_approval_2":
+            # 一级通过 → 进入二级：通知提交人（中间过程实时可见）+ 二级审批人
+            notify_event(sub_id, "submission_status", [submitter],
+                         {"status_text": "一级审批通过，待二级审批", "operator": operator,
+                          "level": "一级", "app_url": app_url})
+            approvers2 = [r["username"] for r in db.execute(
+                "SELECT username FROM approvers WHERE level=2").fetchall()]
+            if approvers2:
+                notify_event(sub_id, "submission_pending_l2", approvers2,
+                             {"level": "二级", "status_text": "待二级审批", "app_url": app_url})
+        elif level == 1 and new_status == "approved" and sub["receiver_type"] not in ("partner", "internal"):
+            # 语义B：一级审批人同时具备二级权限，二级自动跳过（只在非合作方场景）
+            notify_event(sub_id, "approval_level_skipped", [submitter],
+                         {"status_text": "一级审批通过，二级自动跳过（审批人同时具备一二级权限）",
+                          "operator": operator, "level": "二级", "app_url": app_url})
+        else:
+            # 终审通过（一级直通 / 二级通过）
+            notify_event(sub_id, "submission_approved", [submitter],
+                         {"status_text": "审批通过，文件已摆渡至外网下载区",
+                          "operator": operator, "level": f"{level}级", "app_url": app_url})
+    except Exception as ex:
+        logger.warning(f"审批通知派发失败 sub={sub_id}（不影响业务）: {ex}")
 
     return jsonify({"status": new_status, "message": "审批完成"})
 
@@ -2130,6 +2233,199 @@ def _ad_search_users(keyword, limit=20):
             conn.unbind()
         except Exception:
             pass
+
+# ============================================================
+# 飞书通知（ADR-051 旁路通道 / ADR-052 网关边界）
+#   链路：本机 → 通知网关（唯一出网口）→ 飞书开放平台；本机不直连飞书
+#   纪律：异步旁路，失败绝不阻塞提交/审批；每次投递落 notification_logs，
+#         失败额外落审计 notify_failed，界面据此定位网关/开放平台/网络问题
+# ============================================================
+
+NOTIFY_EVENTS = (
+    "submission_pending_l1", "submission_pending_l2", "submission_status",
+    "submission_approved", "submission_rejected", "submission_auto_approved",
+    "approval_level_skipped",
+)
+
+
+def _mask_email(email: str) -> str:
+    """收件人脱敏（t***@n***）：入库与审计不留完整工作邮箱"""
+    email = (email or "").strip()
+    if "@" not in email:
+        return (email[:1] + "***") if email else "-"
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}***@{domain[:1]}***"
+
+
+def _local_email_of(username: str) -> str:
+    """本地用户邮箱（local_users.email）"""
+    db = get_db()
+    row = db.execute("SELECT email FROM local_users WHERE username=?", (username,)).fetchone()
+    return (row["email"] or "").strip() if row and row["email"] else ""
+
+
+def resolve_email(username: str, fallback: str = "") -> tuple:
+    """AD 账号 → 工作邮箱：local_users 优先，其次 AD 精确查询（同源 ad_config）。
+    返回 (email, source)；找不到返回 (fallback, "")。
+    设计意图：用户登录名=AD 姓名全拼，mail 属性为唯一工作邮箱，飞书按邮箱解析人员。"""
+    username = (username or "").strip()
+    if not username:
+        return fallback or "", ""
+    email = _local_email_of(username)
+    if email:
+        return email, "local_users"
+    ad_enabled = (get_ad_config_value("ad_enabled", os.getenv("AD_ENABLED", "false")) or "").lower()
+    if ad_enabled in ("true", "1", "yes"):
+        try:
+            users, _err = _ad_search_users(username, limit=1)
+            for u in users or []:
+                if (u.get("username") or "").lower() == username.lower() and u.get("email"):
+                    return u["email"].strip(), "ad"
+        except Exception as ex:  # AD 不可用不应影响通知链路本身
+            logger.warning(f"resolve_email AD 查询失败 username={username}: {ex}")
+    return fallback or "", ""
+
+
+def _notify_record(sub_id: str, event: str, recipients: str, status: str, detail: str):
+    """落通知投递记录（独立于业务状态，业务不回滚）"""
+    db = get_db()
+    db.execute(
+        "INSERT INTO notification_logs (id,submission_id,event,recipients,status,detail,created_at) VALUES (?,?,?,?,?,?,?)",
+        (str(uuid.uuid4()), sub_id, event, recipients, status, (detail or "")[:500], now_str())
+    )
+    db.commit()
+
+
+def notify_event(sub_id: str, event: str, recipients: list, extra: dict = None):
+    """通知入口：异步派发，永不抛异常、永不阻塞请求线程。
+    recipients 为用户名列表（AD 账号/本地用户名），邮箱在后台线程解析。"""
+    try:
+        if event not in NOTIFY_EVENTS:
+            logger.warning(f"忽略未知通知事件: {event}")
+            return
+        names = [n for n in (recipients or []) if n]
+        if not names or not sub_id:
+            return
+        threading.Thread(
+            target=_notify_worker,
+            args=(app, sub_id, event, names, dict(extra or {})),
+            daemon=True,
+            name=f"notify-{event}",
+        ).start()
+    except Exception as ex:  # 兜底：通知故障不得影响业务主流程
+        logger.warning(f"notify_event 派发失败 {event}/{sub_id}: {ex}")
+
+
+def _notify_worker(app_obj, sub_id: str, event: str, names: list, extra: dict):
+    """后台线程：解析邮箱 → 调网关 → 落记录（全程自吞异常）"""
+    status, detail, masked = "failed", "", "-"
+    with app_obj.app_context():
+        try:
+            db = get_db()
+            sub = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
+            files = db.execute("SELECT name FROM submission_files WHERE submission_id=? ORDER BY rowid",
+                               (sub_id,)).fetchall()
+            filenames = [f["name"] for f in files]
+            filename_text = (filenames[0] + (f" 等{len(filenames)}个文件" if len(filenames) > 1 else "")) if filenames else ""
+            base = {
+                "submission_id": sub_id,
+                "filename": filename_text,
+                "submitter": sub["submitter"] if sub else "",
+                "note": (sub["reason"] if sub and sub["reason"] else ""),
+                "reason": "",
+                "approver": "",
+                "level": "",
+                "status_text": "",
+                "app_url": extra.get("app_url") or FEISHU_NOTIFY_APP_URL or "",
+                "external_url": extra.get("external_url") or "",
+                "operator": extra.get("operator") or "",
+                "time": now_str(),
+            }
+            extra_vars = {k: v for k, v in (extra or {}).items() if k in base and v}
+            base.update(extra_vars)
+
+            emails, missing = [], []
+            for name in names:
+                email, _src = resolve_email(name)
+                if email:
+                    emails.append((name, email))
+                else:
+                    missing.append(name)
+            if emails:
+                masked = ",".join(_mask_email(e) for _, e in emails)
+
+            if not emails:
+                status, detail = "skipped", "收件人无可用工作邮箱：" + ",".join(missing)
+            elif not FEISHU_NOTIFY_ENABLED or not FEISHU_NOTIFY_URL:
+                status, detail = "skipped", "飞书通知未启用或未配置网关地址（FEISHU_NOTIFY_ENABLED / FEISHU_NOTIFY_URL）"
+            else:
+                payload = {
+                    "event": event,
+                    "recipients": [e for _, e in emails],
+                    # 幂等键：同一提交单 + 同一事件 + 同一节点状态，网关重复投递只发一次
+                    "request_id": f"{sub_id}:{event}:{base.get('status_text') or ''}",
+                    "vars": base,
+                }
+                req = urllib.request.Request(
+                    FEISHU_NOTIFY_URL,
+                    data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "X-Notify-Token": FEISHU_NOTIFY_TOKEN},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=FEISHU_NOTIFY_TIMEOUT) as resp:
+                    body = resp.read().decode("utf-8", errors="ignore")
+                result = json.loads(body or "{}")
+                sent = int(result.get("sent") or 0)
+                failed = int(result.get("failed") or 0)
+                if sent and not failed:
+                    status, detail = "sent", f"sent={sent}"
+                elif sent:
+                    status, detail = "partial", f"sent={sent} failed={failed}"
+                else:
+                    status, detail = "failed", f"网关返回失败 code={result.get('code')} msg={result.get('msg') or ''}"
+                if missing:
+                    detail += f"；缺邮箱跳过：{','.join(missing)}"
+        except Exception as ex:
+            status, detail = "failed", f"通知调用异常：{type(ex).__name__}: {ex}"
+        finally:
+            try:
+                _notify_record(sub_id, event, masked, status, detail)
+                if status in ("failed", "partial"):
+                    add_audit_log("system", "notify_failed", sub_id, f"{event} {status} {detail}")
+                logger.info(f"notify {event} {sub_id} -> {status} {detail}")
+            except Exception as ex:
+                logger.warning(f"通知记录落库失败 {event}/{sub_id}: {ex}")
+
+
+def _notify_app_url() -> str:
+    """消息里的系统入口地址：显式配置优先，否则按当前请求推导（请求线程内调用）"""
+    if FEISHU_NOTIFY_APP_URL:
+        return FEISHU_NOTIFY_APP_URL
+    try:
+        return request.host_url.rstrip("/")
+    except Exception:
+        return ""
+
+
+def get_notify_map(sub_ids: list) -> dict:
+    """批量取每个提交单最近一条通知记录（列表页展示，避免 N+1 查询）"""
+    ids = [s for s in (sub_ids or []) if s]
+    if not ids:
+        return {}
+    db = get_db()
+    ph = ",".join("?" for _ in ids)
+    rows = db.execute(
+        f"SELECT submission_id,event,status,detail,created_at FROM notification_logs "
+        f"WHERE submission_id IN ({ph}) ORDER BY rowid", ids
+    ).fetchall()
+    result = {}
+    for r in rows:  # 按写入顺序覆盖，最后一条即最新
+        result[r["submission_id"]] = {
+            "status": r["status"], "event": r["event"],
+            "detail": r["detail"], "time": r["created_at"]
+        }
+    return result
+
 
 @app.route("/api/admin/ad/search", methods=["POST"])
 @login_required

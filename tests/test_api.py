@@ -86,6 +86,62 @@ class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         return None
 no_redirect_opener = urllib.request.build_opener(NoRedirectHandler, urllib.request.HTTPCookieProcessor(cookie_jar))
 
+# ============================================================
+# 飞书通知测试桩（ADR-051 旁路通道）
+#   服务端 FEISHU_NOTIFY_URL 指向 http://127.0.0.1:18099/notify，
+#   本桩记录真实到达的请求（event/recipients/header token），供断言：
+#     - 通知是否发出、发给谁、token 是否正确
+#     - 通知失败是否被吞掉（桩返回失败/不可达时业务仍成功）
+#   仅 dev/test 全量模式启动；生产/冒烟模式不启动（生产只用真实网关）。
+# ============================================================
+NOTIFY_REQUESTS = []
+notify_stub_fail = False  # 置 True 后桩返回 502，用于验证"通知失败不阻塞业务"
+_notify_stub = None
+if ENV_ROLE != 'prod' and not SMOKE_MODE:
+    try:
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        class _NotifyStubHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                if notify_stub_fail:
+                    payload = json.dumps({"code": 502, "sent": 0, "failed": 0, "msg": "stub forced failure"}).encode('utf-8')
+                    self.send_response(502)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
+                try:
+                    n = int(self.headers.get('Content-Length') or 0)
+                    body = self.rfile.read(n).decode('utf-8', errors='ignore')
+                    data = json.loads(body or '{}')
+                    NOTIFY_REQUESTS.append({
+                        'event': data.get('event'),
+                        'recipients': data.get('recipients') or [],
+                        'vars': data.get('vars') or {},
+                        'requestId': data.get('request_id') or '',
+                        'token': self.headers.get('X-Notify-Token') or '',
+                    })
+                    resp = {"code": 0, "sent": len(data.get('recipients') or []), "failed": 0}
+                except Exception as ex:
+                    resp = {"code": 400, "sent": 0, "failed": 0, "msg": str(ex)}
+                payload = json.dumps(resp).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *args):
+                pass
+
+        _notify_stub = ThreadingHTTPServer(('127.0.0.1', 18099), _NotifyStubHandler)
+        threading.Thread(target=_notify_stub.serve_forever, daemon=True).start()
+        print("[通知桩] 已启动 http://127.0.0.1:18099/notify（服务端 FEISHU_NOTIFY_URL 需指向此处）")
+    except Exception as ex:
+        print(f"[通知桩] 启动失败（端口占用或权限不足，通知断言将降级）：{ex}")
+
 def request(method, path, data=None, json_data=None, headers=None):
     """发送 HTTP 请求
     ADR-017 fail-safe 前置护栏：SMOKE_MODE 或 ENV_ROLE=prod 时，白名单组（组24）之外的
@@ -135,6 +191,42 @@ def test(name, condition, detail=""):
     status = "✅ PASS" if condition else "❌ FAIL"
     results.append({"name": name, "status": status, "detail": detail})
     print(f"{status} | {name}" + (f" | {detail}" if detail and not condition else ""))
+
+def notify_mark():
+    """记录桩当前的请求条数（用于只看本段新增通知）"""
+    return len(NOTIFY_REQUESTS)
+
+
+def notify_since(mark, event=None, timeout=8.0):
+    """轮询等待异步通知到达测试桩；返回匹配的第一条（可按 event 过滤），超时返回 None"""
+    end = time.time() + timeout
+    while time.time() < end:
+        for item in NOTIFY_REQUESTS[mark:]:
+            if event is None or item.get('event') == event:
+                return item
+        time.sleep(0.2)
+    return None
+
+
+def notify_records(sub_id):
+    """读取服务端落库的通知投递记录（提交单详情接口返回的权威状态）"""
+    code, data = request('GET', f'/api/submissions/{sub_id}')
+    if isinstance(data, dict):
+        return data.get('notifications') or []
+    return []
+
+
+def notify_wait_events(sub_id, events, timeout=8.0):
+    """轮询等待提交单落库记录中出现指定事件（异步线程写库需等待）"""
+    end = time.time() + timeout
+    rows = []
+    while time.time() < end:
+        rows = notify_records(sub_id)
+        if any(r.get('event') in events for r in rows):
+            return rows
+        time.sleep(0.2)
+    return rows
+
 
 def _cleanup_custom_rules():
     """清理历史中断运行残留的"测试自定义规则*"（enabled 可能为 1，污染后续禁用/启用断言）
@@ -2528,6 +2620,211 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
         test("AD模拟: 恢复 admin 登录态", _c6 == 200, f"code={_c6}")
     else:
         print("  [跳过] 当前服务 AD_MOCK_MODE=false（生产/真实 AD 模式），本组不执行")
+
+    # ============================================================
+    # 25. 飞书通知（ADR-051 旁路通道 / ADR-052 网关边界）
+    # 覆盖：
+    #   1) 提交 → 通知一级审批人 + 提交人（含网关鉴权 token）
+    #   2) 一级通过 → 通知二级审批人 + 提交人（中间过程实时）
+    #   3) 二级通过 → 通知提交人
+    #   4) 驳回 → 通知提交人并带原因
+    #   5) 免审批直通 → 只通知提交人，跳过全部审批人（反向断言无 pending 事件）
+    #   6) 网关 5xx → 业务不阻塞（提交仍成功，落库 failed + 审计 notify_failed）
+    # 依赖：服务端 FEISHU_NOTIFY_URL 指向本脚本启动的桩 127.0.0.1:18099（env/dev.env、env/test.env）
+    # ============================================================
+    print("\n--- 25. 飞书通知（ADR-051 旁路通道） ---")
+    _set_group("25. 飞书通知（ADR-051）")
+
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+
+    # 幂等清理：通知链路专用用户与审批人配置
+    _code0, _data0 = request('GET', '/api/admin/approvers')
+    for _a in (_data0 if isinstance(_data0, list) else []):
+        if _a.get('username') in ("nt_l1", "nt_l2"):
+            request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
+    for _u in ("nt_sub", "nt_l1", "nt_l2"):
+        request('DELETE', f'/api/admin/local-users/{_u}')
+
+    code, _ = request('POST', '/api/admin/local-users', json_data={
+        "username": "nt_sub", "password": "Test@123456", "displayName": "通知提交人",
+        "email": "nt_sub@company.com", "role": "internal-user"})
+    test("通知: 创建提交人 nt_sub（带工作邮箱）", code == 200, f"code={code}")
+    code, _ = request('POST', '/api/admin/local-users', json_data={
+        "username": "nt_l1", "password": "Test@123456", "displayName": "通知一级",
+        "email": "nt_l1@company.com", "role": "internal-user"})
+    test("通知: 创建一级审批人 nt_l1（带工作邮箱）", code == 200, f"code={code}")
+    code, _ = request('POST', '/api/admin/local-users', json_data={
+        "username": "nt_l2", "password": "Test@123456", "displayName": "通知二级",
+        "email": "nt_l2@company.com", "role": "internal-user"})
+    test("通知: 创建二级审批人 nt_l2（带工作邮箱）", code == 200, f"code={code}")
+
+    code, _ = request('POST', '/api/admin/approvers', json_data={
+        "level": 1, "username": "nt_l1", "displayName": "通知一级", "scope": "all"})
+    test("通知: 配置 nt_l1 为一级审批人", code == 200, f"code={code}")
+    code, _ = request('POST', '/api/admin/approvers', json_data={
+        "level": 2, "username": "nt_l2", "displayName": "通知二级", "scope": "all"})
+    test("通知: 配置 nt_l2 为二级审批人", code == 200, f"code={code}")
+
+    # ---- 场景 1：提交（非合作方，需一/二级）→ 通知一级 + 提交人 ----
+    request('POST', '/api/auth/login', json_data={"username": "nt_sub", "password": "Test@123456"})
+    _nt_exe = os.path.join(test_dir, "notify_flow.exe")
+    with open(_nt_exe, 'wb') as _f:
+        _f.write(b"MZ" + b"\x00" * 800)
+    _mk = notify_mark()
+    code, data = upload_file(_nt_exe, "notify_flow.exe")
+    _nt_tid = data.get('tempId') if isinstance(data, dict) else None
+    code, data = request('POST', '/api/submissions', json_data={
+        "tempIds": [_nt_tid], "receiverName": "外部接收方", "receiverEmail": "ext@x.com",
+        "receiverOrg": "通知测试外部公司", "receiverType": "non-partner",
+        "securityLevel": "secret", "reason": "飞书通知链路验证", "expiryDays": 7})
+    _nt_sub = data.get('id') if isinstance(data, dict) else None
+    test("通知: 非合作方提交成功（pending）", code == 200 and data.get('status') == 'pending',
+         f"code={code}, status={data.get('status')}")
+
+    _req_l1 = notify_since(_mk, "submission_pending_l1")
+    test("通知: 提交即通知一级审批人（网关收到 submission_pending_l1）", _req_l1 is not None,
+         f"req={_req_l1}")
+    test("通知: 一级收件人包含 nt_l1 工作邮箱",
+         bool(_req_l1) and "nt_l1@company.com" in (_req_l1.get('recipients') or []),
+         f"recipients={_req_l1.get('recipients') if _req_l1 else None}")
+    test("通知: 网关鉴权 token 与配置一致",
+         bool(_req_l1) and _req_l1.get('token') == "test-notify-token",
+         f"token={_req_l1.get('token') if _req_l1 else None}")
+    _req_st = notify_since(_mk, "submission_status")
+    test("通知: 提交人收到已受理状态",
+         bool(_req_st) and "nt_sub@company.com" in (_req_st.get('recipients') or []),
+         f"recipients={_req_st.get('recipients') if _req_st else None}")
+    _rows = notify_wait_events(_nt_sub, ("submission_pending_l1", "submission_status"))
+    test("通知: 投递结果落库为 sent（界面可展示）",
+         any(r.get('status') == 'sent' for r in _rows), f"rows={_rows}")
+
+    # ---- 场景 2：一级通过 → 通知二级 + 提交人（中间过程） ----
+    request('POST', '/api/auth/login', json_data={"username": "nt_l1", "password": "Test@123456"})
+    _mk2 = notify_mark()
+    code, data = request('POST', f'/api/submissions/{_nt_sub}/approve', json_data={
+        "action": "approve", "comment": "一级通过（通知测试）"})
+    test("通知: 一级通过进入二级审批", code == 200 and data.get('status') == 'pending_approval_2',
+         f"code={code}, status={data.get('status')}")
+    _req_l2 = notify_since(_mk2, "submission_pending_l2")
+    test("通知: 一级通过后通知二级审批人",
+         bool(_req_l2) and "nt_l2@company.com" in (_req_l2.get('recipients') or []),
+         f"recipients={_req_l2.get('recipients') if _req_l2 else None}")
+    _req_mid = notify_since(_mk2, "submission_status")
+    test("通知: 中间过程实时通知提交人（一级已通过）",
+         bool(_req_mid) and "nt_sub@company.com" in (_req_mid.get('recipients') or []),
+         f"recipients={_req_mid.get('recipients') if _req_mid else None}")
+
+    # ---- 场景 3：二级通过 → 通知提交人 ----
+    request('POST', '/api/auth/login', json_data={"username": "nt_l2", "password": "Test@123456"})
+    _mk3 = notify_mark()
+    code, data = request('POST', f'/api/submissions/{_nt_sub}/approve', json_data={
+        "action": "approve", "comment": "二级通过（通知测试）"})
+    test("通知: 二级通过终态 approved", code == 200 and data.get('status') == 'approved',
+         f"code={code}, status={data.get('status')}")
+    _req_ap = notify_since(_mk3, "submission_approved")
+    test("通知: 终审通过通知提交人",
+         bool(_req_ap) and "nt_sub@company.com" in (_req_ap.get('recipients') or []),
+         f"recipients={_req_ap.get('recipients') if _req_ap else None}")
+
+    # ---- 场景 4：驳回 → 通知提交人并带原因 ----
+    request('POST', '/api/auth/login', json_data={"username": "nt_sub", "password": "Test@123456"})
+    _nt_exe2 = os.path.join(test_dir, "notify_reject.exe")
+    with open(_nt_exe2, 'wb') as _f:
+        _f.write(b"MZ" + b"\x01" * 700)
+    code, data = upload_file(_nt_exe2, "notify_reject.exe")
+    _nt_tid2 = data.get('tempId') if isinstance(data, dict) else None
+    code, data = request('POST', '/api/submissions', json_data={
+        "tempIds": [_nt_tid2], "receiverName": "外部接收方", "receiverEmail": "ext@x.com",
+        "receiverOrg": "通知测试外部公司", "receiverType": "non-partner",
+        "securityLevel": "secret", "reason": "驳回通知验证", "expiryDays": 7})
+    _nt_sub2 = data.get('id') if isinstance(data, dict) else None
+    request('POST', '/api/auth/login', json_data={"username": "nt_l1", "password": "Test@123456"})
+    _mk4 = notify_mark()
+    code, data = request('POST', f'/api/submissions/{_nt_sub2}/approve', json_data={
+        "action": "reject", "comment": "材料不齐，请补充说明"})
+    test("通知: 驳回成功（rejected）", code == 200 and data.get('status') == 'rejected',
+         f"code={code}, status={data.get('status')}")
+    _req_rj = notify_since(_mk4, "submission_rejected")
+    _rj_text = json.dumps(_req_rj.get('vars') if _req_rj else {}, ensure_ascii=False)
+    test("通知: 驳回通知提交人且携带驳回原因",
+         bool(_req_rj) and "nt_sub@company.com" in (_req_rj.get('recipients') or [])
+         and "材料不齐" in _rj_text,
+         f"recipients={_req_rj.get('recipients') if _req_rj else None}, vars={_rj_text}")
+
+    # ---- 场景 5：免审批直通 → 只通知提交人（跳过全部审批人） ----
+    # 自包含：显式开启免审批总开关 + 确保 GZIP 组合规则启用（不依赖历史测试状态）
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    request('PUT', '/api/config/system', json_data={"auto_approval_enabled": "true"})
+    request('POST', '/api/auth/login', json_data={"username": "nt_sub", "password": "Test@123456"})
+    _nt_gz = os.path.join(test_dir, "notify_auto.gz")
+    with open(_nt_gz, 'wb') as _f:
+        _f.write(b"\x1f\x8b\x08\x00" + b"notify-auto-approval" * 50)
+    _mk5 = notify_mark()
+    code, data = upload_file(_nt_gz, "notify_auto.gz")
+    if isinstance(data, dict) and not data.get('matched'):
+        request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+        _rules5 = request('GET', '/api/config/feature-rules')[1]
+        for _r5 in (_rules5 if isinstance(_rules5, list) else []):
+            _txt5 = (str(_r5.get('name', '')) + str(_r5.get('pattern', ''))).upper()
+            if 'GZIP' in _txt5 or '.GZ' in _txt5:
+                request('PUT', f"/api/admin/feature-rules/{_r5['id']}", json_data={"enabled": True})
+        request('POST', '/api/auth/login', json_data={"username": "nt_sub", "password": "Test@123456"})
+        code, data = upload_file(_nt_gz, "notify_auto.gz")
+    _nt_tid3 = data.get('tempId') if isinstance(data, dict) else None
+    code, data = request('POST', '/api/submissions', json_data={
+        "tempIds": [_nt_tid3], "receiverName": "合作方接收", "receiverEmail": "p@x.com",
+        "receiverOrg": "通知测试合作方", "receiverType": "partner",
+        "securityLevel": "internal", "reason": "免审批通知验证", "expiryDays": 7})
+    test("通知: 免审批直通提交（autoApproved=true）",
+         code == 200 and data.get('autoApproved') is True,
+         f"code={code}, autoApproved={data.get('autoApproved') if isinstance(data, dict) else None}")
+    _req_auto = notify_since(_mk5, "submission_auto_approved")
+    test("通知: 免审批只通知提交人（收件人仅 nt_sub）",
+         bool(_req_auto) and (_req_auto.get('recipients') or []) == ["nt_sub@company.com"],
+         f"recipients={_req_auto.get('recipients') if _req_auto else None}")
+    _pending_in_seg = [x for x in NOTIFY_REQUESTS[_mk5:]
+                       if x.get('event') in ("submission_pending_l1", "submission_pending_l2")]
+    test("通知: 免审批跳过审批人（本段无任何待审批通知）", len(_pending_in_seg) == 0,
+         f"pending={_pending_in_seg}")
+    # 恢复免审批总开关默认（防污染后续组）
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    request('PUT', '/api/config/system', json_data={"auto_approval_enabled": "false"})
+
+    # ---- 场景 6：网关 5xx → 业务不阻塞，失败落库 + 审计 notify_failed ----
+    notify_stub_fail = True
+    request('POST', '/api/auth/login', json_data={"username": "nt_sub", "password": "Test@123456"})
+    _nt_exe3 = os.path.join(test_dir, "notify_fail.exe")
+    with open(_nt_exe3, 'wb') as _f:
+        _f.write(b"MZ" + b"\x02" * 700)
+    code, data = upload_file(_nt_exe3, "notify_fail.exe")
+    _nt_tid4 = data.get('tempId') if isinstance(data, dict) else None
+    code, data = request('POST', '/api/submissions', json_data={
+        "tempIds": [_nt_tid4], "receiverName": "外部接收方", "receiverEmail": "ext@x.com",
+        "receiverOrg": "通知测试外部公司", "receiverType": "non-partner",
+        "securityLevel": "secret", "reason": "通知失败不阻塞验证", "expiryDays": 7})
+    _nt_sub3 = data.get('id') if isinstance(data, dict) else None
+    test("通知: 网关 5xx 时提交仍然成功（业务不阻塞）",
+         code == 200 and data.get('status') == 'pending', f"code={code}, status={data.get('status')}")
+    _rows_fail = notify_wait_events(_nt_sub3, ("submission_pending_l1", "submission_status"),
+                                    timeout=10)
+    test("通知: 失败投递落库为 failed（界面可定位）",
+         any(r.get('status') == 'failed' for r in _rows_fail), f"rows={_rows_fail}")
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    code, _audits = request('GET', '/api/audit-logs?action=notify_failed')
+    _audit_hit = isinstance(_audits, list) and any(
+        isinstance(a, dict) and a.get('action') == 'notify_failed' for a in _audits)
+    test("通知: 失败写审计 notify_failed", code == 200 and _audit_hit, f"code={code}")
+    notify_stub_fail = False
+
+    # 清理：撤掉通知专用审批人配置与用户，避免污染后续/重跑
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    _code0, _data0 = request('GET', '/api/admin/approvers')
+    for _a in (_data0 if isinstance(_data0, list) else []):
+        if _a.get('username') in ("nt_l1", "nt_l2"):
+            request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
+    for _u in ("nt_sub", "nt_l1", "nt_l2"):
+        request('DELETE', f'/api/admin/local-users/{_u}')
+    test("通知: 清理通知测试用户/审批人配置", True, "nt_sub/nt_l1/nt_l2 已清理")
 
     # ============================================================
 
