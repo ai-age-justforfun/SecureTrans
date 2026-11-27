@@ -330,6 +330,14 @@ const I18N = {
     'adConfig.test': '测试连接', 'adConfig.testPh': '输入用户名精确验证（可选，留空仅测 bind）', 'adConfig.testing': '测试中...', 'adConfig.testResult': '测试结果',
     'ad.testHint': '服务器手工验证需先安装：sudo dnf install -y openldap-clients',
     'adConfig.imported': '已从 .env 导入 AD 配置', 'adConfig.saved': 'AD 配置已保存（即时生效）',
+    'fsConfig.title': '飞书通知（外挂服务，数据库权威）', 'fsConfig.import': '从 .env 导入', 'fsConfig.save': '保存飞书配置',
+    'fsConfig.enabled': '启用飞书通知', 'fsConfig.host': '网关主机（IP/域名）', 'fsConfig.port': '网关端口', 'fsConfig.path': '网关路径',
+    'fsConfig.url': '完整 URL（覆盖主机/端口）', 'fsConfig.token': '预共享 token（**** 表示不修改）',
+    'fsConfig.timeout': '网关超时（秒）', 'fsConfig.appUrl': '处理入口（消息里的系统地址）', 'fsConfig.appId': 'App ID（仅展示/核对）',
+    'fsConfig.test': '发送测试通知', 'fsConfig.testing': '发送中...', 'fsConfig.testOk': '测试通知已送达', 'fsConfig.testFail': '测试通知失败',
+    'fsConfig.gwOk': '网关可达', 'fsConfig.gwDown': '网关不可达', 'fsConfig.saved': '飞书配置已保存（即时生效）', 'fsConfig.imported': '已从 .env 导入飞书配置',
+    'fsConfig.hint': '通知是旁路通道：发送失败只告警不阻塞提交/审批，界面会显示每条通知的投递状态。保存后即时生效（无需重启）。',
+    'fsConfig.secretPolicy': 'App Secret 只存网关 .env（600），本系统不保存、不展示；此处仅通过网关 /health 校验应用是否已配置。',
     'overview.title': '配置总览（来源标记，防遗忘）', 'overview.deploy': '部署级配置（.env，只读，改后需重启）', 'overview.runtime': '运行时配置（数据库，界面可改，即时生效）',
     'overview.key': '配置项', 'overview.value': '值', 'overview.source': '来源', 'overview.env': 'env', 'overview.db': 'db', 'overview.updated': '更新时间',
     'audit.titleDetail': '📋 明细', 'audit.titleStats': '📊 统计',
@@ -481,6 +489,14 @@ const I18N = {
     'ad.testHint': 'Server-side manual check requires: sudo dnf install -y openldap-clients',
     'adConfig.hint': 'Saved values take effect immediately (no restart); empty falls back to .env; AD login success/failure reasons are in audit logs.',
     'adConfig.imported': 'Imported AD config from .env', 'adConfig.saved': 'AD config saved (effective now)',
+    'fsConfig.title': 'Feishu Notification (external service, DB authority)', 'fsConfig.import': 'Import from .env', 'fsConfig.save': 'Save Feishu Config',
+    'fsConfig.enabled': 'Enable Feishu notifications', 'fsConfig.host': 'Gateway host (IP/domain)', 'fsConfig.port': 'Gateway port', 'fsConfig.path': 'Gateway path',
+    'fsConfig.url': 'Full URL (overrides host/port)', 'fsConfig.token': 'Pre-shared token (**** = keep unchanged)',
+    'fsConfig.timeout': 'Gateway timeout (sec)', 'fsConfig.appUrl': 'App entry URL (in message)', 'fsConfig.appId': 'App ID (display/verify only)',
+    'fsConfig.test': 'Send test notification', 'fsConfig.testing': 'Sending...', 'fsConfig.testOk': 'Test notification delivered', 'fsConfig.testFail': 'Test notification failed',
+    'fsConfig.gwOk': 'Gateway reachable', 'fsConfig.gwDown': 'Gateway unreachable', 'fsConfig.saved': 'Feishu config saved (effective now)', 'fsConfig.imported': 'Imported Feishu config from .env',
+    'fsConfig.hint': 'Notifications are a side channel: delivery failure never blocks submit/approve; each delivery status is shown in the UI. Saved values take effect immediately.',
+    'fsConfig.secretPolicy': 'App Secret lives only in the gateway .env (600). This system never stores or displays it; here we only verify app_configured via gateway /health.',
     'overview.title': 'Config Overview (source-tagged, anti-forgetting)', 'overview.deploy': 'Deploy-level config (.env, read-only, restart required)', 'overview.runtime': 'Runtime config (database, editable, immediate)',
     'overview.key': 'Key', 'overview.value': 'Value', 'overview.source': 'Source', 'overview.env': 'env', 'overview.db': 'db', 'overview.updated': 'Updated',
     'audit.titleDetail': '📋 Details', 'audit.titleStats': '📊 Statistics',
@@ -1955,6 +1971,38 @@ async function renderConfig() {
         <p class="text-sm text-muted mt-8" data-i18n="ad.testHint">服务器手工验证需先安装：sudo dnf install -y openldap-clients</p>
       </div>
 
+      <!-- 飞书通知外挂配置卡片（ADR-054：独立配置域，与 AD 域同级；Secret 不落业务机） -->
+      <div class="card">
+        <div class="card-title"><span data-i18n="fsConfig.title">飞书通知（外挂服务，数据库权威）</span>
+          <button class="btn btn-secondary btn-sm" style="float:right;" onclick="importFeishuConfig()" data-i18n="fsConfig.import">从 .env 导入</button>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label data-i18n="fsConfig.enabled">启用飞书通知</label>
+            <select id="feishu_enabled"><option value="false">关闭</option><option value="true">开启</option></select>
+          </div>
+          <div class="form-group"><label data-i18n="fsConfig.host">网关主机（IP/域名）</label><input type="text" id="feishu_gateway_host" placeholder="10.10.30.114"></div>
+          <div class="form-group"><label data-i18n="fsConfig.port">网关端口</label><input type="text" id="feishu_gateway_port" placeholder="8090"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label data-i18n="fsConfig.path">网关路径</label><input type="text" id="feishu_gateway_path" placeholder="/notify"></div>
+          <div class="form-group"><label data-i18n="fsConfig.url">完整 URL（覆盖主机/端口）</label><input type="text" id="feishu_gateway_url" placeholder="http://10.10.30.114:8090/notify"></div>
+          <div class="form-group"><label data-i18n="fsConfig.token">预共享 token（**** 表示不修改）</label><input type="password" id="feishu_notify_token"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label data-i18n="fsConfig.timeout">网关超时（秒）</label><input type="text" id="feishu_timeout" placeholder="5"></div>
+          <div class="form-group"><label data-i18n="fsConfig.appUrl">处理入口（消息里的系统地址）</label><input type="text" id="feishu_app_url" placeholder="http://<内网IP>:8000"></div>
+          <div class="form-group"><label data-i18n="fsConfig.appId">App ID（仅展示/核对）</label><input type="text" id="feishu_app_id" placeholder="cli_xxx"></div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="saveFeishuConfig()" data-i18n="fsConfig.save">保存飞书配置</button>
+          <button class="btn btn-secondary" onclick="testFeishuNotify()" data-i18n="fsConfig.test">发送测试通知</button>
+          <span id="fsStatus" class="text-sm"></span>
+        </div>
+        <div id="fsTestResult" class="text-sm mt-8" style="display:none;"></div>
+        <p class="text-sm text-muted mt-8" data-i18n="fsConfig.hint">通知是旁路通道：发送失败只告警不阻塞提交/审批，界面会显示每条通知的投递状态。保存后即时生效（无需重启）。</p>
+        <p class="text-sm text-muted mt-8" data-i18n="fsConfig.secretPolicy">App Secret 只存网关 .env（600），本系统不保存、不展示；此处仅通过网关 /health 校验应用是否已配置。</p>
+      </div>
+
       <!-- 配置总览卡片（ADR-010：来源标记，防遗忘） -->
       <div class="card">
         <div class="card-title" data-i18n="overview.title">配置总览（来源标记，防遗忘）</div>
@@ -1991,6 +2039,7 @@ async function renderConfig() {
     `;
     applyI18n();
     loadAdConfig();
+    loadFeishuConfig();
     loadConfigOverview();
   } catch (e) {
     document.getElementById('content').innerHTML = `<div class="empty">${t('toast.loadFail', e.message)}</div>`;
@@ -2075,6 +2124,63 @@ async function importAdConfig() {
     loadAdConfig(); loadConfigOverview();
   } catch (e) { toast(t('toast.saveFail', e.message), 'error'); }
 }
+
+// 飞书通知外挂配置（ADR-054：独立配置域，DB 权威，保存即时生效；Secret 不在本机）
+const _FS_ENV_KEY = { feishu_enabled: 'FEISHU_NOTIFY_ENABLED', feishu_gateway_host: 'FEISHU_GATEWAY_HOST', feishu_gateway_port: 'FEISHU_GATEWAY_PORT', feishu_gateway_path: 'FEISHU_GATEWAY_PATH', feishu_gateway_url: 'FEISHU_NOTIFY_URL', feishu_notify_token: 'FEISHU_NOTIFY_TOKEN', feishu_timeout: 'FEISHU_NOTIFY_TIMEOUT', feishu_app_url: 'FEISHU_NOTIFY_APP_URL', feishu_app_id: 'FEISHU_APP_ID' };
+async function loadFeishuConfig() {
+  try {
+    const d = await api('/api/admin/feishu-config');
+    const dbv = d.db || {}, envv = d.env || {}, eff = d.effective || {}, gw = d.gateway || {};
+    for (const k of Object.keys(_FS_ENV_KEY)) {
+      const el = document.getElementById(k);
+      if (!el) continue;
+      const db = dbv[k];
+      let v = (db && db.value !== '') ? db.value : (envv[_FS_ENV_KEY[k]] || '');
+      if (k === 'feishu_enabled') el.value = String(v).toLowerCase() === 'true' ? 'true' : 'false';
+      else el.value = v;
+    }
+    const box = document.getElementById('fsStatus');
+    if (box) {
+      box.innerHTML = gw.reachable
+        ? `<span style="color:#16a34a;">✔ ${t('fsConfig.gwOk')} · app=${gw.app_configured ? '✔' : '✘'} · token=${gw.token_configured ? '✔' : '✘'} · ${escapeHtml(String(gw.allow_cidrs || ''))}</span>`
+        : `<span style="color:#dc2626;">✘ ${t('fsConfig.gwDown')}：${escapeHtml(String(gw.reason || ''))}</span>`;
+    }
+  } catch (e) { toast(t('toast.loadFail', e.message), 'error'); }
+}
+async function saveFeishuConfig() {
+  try {
+    const body = {};
+    for (const k of Object.keys(_FS_ENV_KEY)) {
+      const el = document.getElementById(k);
+      if (el) body[k] = el.value;
+    }
+    await api('/api/admin/feishu-config', { method: 'PUT', body });
+    toast(t('fsConfig.saved'), 'success');
+    loadFeishuConfig(); loadConfigOverview();
+  } catch (e) { toast(t('toast.saveFail', e.message), 'error'); }
+}
+async function importFeishuConfig() {
+  if (!confirm(t('fsConfig.import'))) return;
+  try {
+    await api('/api/admin/feishu-config/import', { method: 'POST' });
+    toast(t('fsConfig.imported'), 'success');
+    loadFeishuConfig(); loadConfigOverview();
+  } catch (e) { toast(t('toast.saveFail', e.message), 'error'); }
+}
+async function testFeishuNotify() {
+  const box = document.getElementById('fsTestResult');
+  box.style.display = 'block';
+  box.innerHTML = `<span class="text-sm text-muted">${t('fsConfig.testing')}</span>`;
+  try {
+    const r = await api('/api/admin/feishu-config/test', { method: 'POST' });
+    box.innerHTML = r.ok
+      ? `<span style="color:#16a34a;">✔ ${t('fsConfig.testOk')} · sent=${r.sent} · ${escapeHtml(String(r.detail || ''))} · ${escapeHtml(String(r.recipient || ''))}</span>`
+      : `<span style="color:#dc2626;">✘ ${t('fsConfig.testFail')} · ${escapeHtml(String(r.detail || ''))}</span>`;
+    loadFeishuConfig();
+  } catch (e) {
+    box.innerHTML = `<span style="color:#dc2626;">✘ ${t('fsConfig.testFail')}：${escapeHtml(e.message)}</span>`;
+  }
+}
 async function loadConfigOverview() {
   try {
     const d = await api('/api/admin/config-overview');
@@ -2084,7 +2190,8 @@ async function loadConfigOverview() {
     deploy.innerHTML = Object.entries(d.deploy_env || {}).map(([k, v]) => `<tr><td class="text-sm">${k}</td><td class="text-sm">${escapeHtml(String(v))}</td></tr>`).join('');
     const sys = Object.entries(d.runtime_db?.system_config || {}).map(([k, v]) => ({ k, v, src: 'db' }));
     const ad = Object.entries(d.runtime_db?.ad_config || {}).map(([k, o]) => ({ k, v: o.value, src: o.source || 'db', upd: o.updated_at || '' }));
-    const all = [...sys, ...ad];
+    const fs = Object.entries(d.runtime_db?.feishu_config || {}).map(([k, o]) => ({ k, v: o.value, src: o.source || 'db', upd: o.updated_at || '' }));
+    const all = [...sys, ...ad, ...fs];
     runtime.innerHTML = all.map(r => `<tr><td class="text-sm">${r.k}</td><td class="text-sm">${escapeHtml(String(r.v))}</td><td class="text-sm">${r.src}</td><td class="text-sm">${escapeHtml(r.upd || '')}</td></tr>`).join('');
   } catch (e) { toast(t('toast.loadFail', e.message), 'error'); }
 }

@@ -18,6 +18,7 @@ import logging
 import datetime
 import threading
 import urllib.request
+import urllib.parse
 import urllib.error
 from pathlib import Path
 from functools import wraps
@@ -112,18 +113,38 @@ AD_ENV_MAP = {
     "ad_mail_field": "AD_MAIL_FIELD", "ad_group_field": "AD_GROUP_FIELD",
 }
 
+# 飞书通知外挂配置键映射（ADR-054：独立配置域，与 AD 域同级；SQLite feishu_config 优先，
+# .env 为播种源/回退；管理页可配、保存即时生效）。
+# 安全边界（ADR-052）：App Secret 只存网关 .env，本系统不保存、不下发、不落库、不展示明文；
+# 本系统只持有“网关地址 + 预共享 token”，App ID 仅作展示/核对。
+FEISHU_ENV_MAP = {
+    "feishu_enabled": "FEISHU_NOTIFY_ENABLED",
+    "feishu_gateway_host": "FEISHU_GATEWAY_HOST",
+    "feishu_gateway_port": "FEISHU_GATEWAY_PORT",
+    "feishu_gateway_path": "FEISHU_GATEWAY_PATH",
+    "feishu_gateway_url": "FEISHU_NOTIFY_URL",
+    "feishu_notify_token": "FEISHU_NOTIFY_TOKEN",
+    "feishu_timeout": "FEISHU_NOTIFY_TIMEOUT",
+    "feishu_app_url": "FEISHU_NOTIFY_APP_URL",
+    "feishu_app_id": "FEISHU_APP_ID",
+}
+# 首次播种用的默认值（非密钥，仅形态默认；地址不写死，留空由管理员填写）
+FEISHU_DEFAULTS = {
+    "feishu_enabled": "false",
+    "feishu_gateway_host": "",
+    "feishu_gateway_port": "8090",
+    "feishu_gateway_path": "/notify",
+    "feishu_timeout": "5",
+}
+
 # 过期清理配置
 EXTERNAL_EXPIRY_DAYS = int(os.getenv("EXTERNAL_EXPIRY_DAYS", "7"))  # external 文件默认 7 天过期
 RESET_PASSWORD = os.getenv("RESET_PASSWORD", "Init@123456").strip()  # 重置密码默认值，可配置(.env)
 AUTO_APPROVAL_ENABLED = os.getenv("AUTO_APPROVAL_ENABLED", "false").strip().lower()  # 免审批总开关默认关闭
 
-# ---- 飞书通知（ADR-051：独立旁路通道，失败绝不阻塞提交/审批）----
-# 关闭时（默认）所有通知记为 skipped，业务照常；开启后走通知网关（ADR-052），不在本机直连飞书。
-FEISHU_NOTIFY_ENABLED = os.getenv("FEISHU_NOTIFY_ENABLED", "false").strip().lower() == "true"
-FEISHU_NOTIFY_URL = os.getenv("FEISHU_NOTIFY_URL", "").strip()          # 例：http://<网关>:8090/notify
-FEISHU_NOTIFY_TOKEN = os.getenv("FEISHU_NOTIFY_TOKEN", "").strip()      # 预共享 token（网关 .env 同值）
-FEISHU_NOTIFY_TIMEOUT = float(os.getenv("FEISHU_NOTIFY_TIMEOUT", "5") or 5)
-FEISHU_NOTIFY_APP_URL = os.getenv("FEISHU_NOTIFY_APP_URL", "").strip()  # 消息里的系统入口，默认按请求 Host 推出
+# ---- 飞书通知（ADR-051 旁路通道 / ADR-052 零出网 / ADR-054 独立配置域）----
+# 配置不再用模块级常量：运行期一律读 feishu_config（DB 权威，.env 播种/回退），
+# 见 get_feishu_config_value / feishu_gateway_url / _feishu_enabled；管理页保存即时生效。
 
 # 网络面识别（单网卡模式按网段区分内外网；逗号分隔 CIDR，留空则不启用网段识别）
 INTERNAL_CIDRS = os.getenv("INTERNAL_CIDRS", "").strip()
@@ -463,6 +484,14 @@ def init_db():
         source TEXT DEFAULT 'db',
         updated_at TEXT
     );
+
+    -- 飞书通知外挂配置（ADR-054：与 ad_config 同构的独立配置域，管理页可配、运行期即时生效）
+    CREATE TABLE IF NOT EXISTS feishu_config (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        source TEXT DEFAULT 'db',
+        updated_at TEXT
+    );
     """)
 
     # ---- 数据库迁移（兼容已存在的旧库，补列）----
@@ -639,6 +668,19 @@ def init_db():
         conn.commit()
         logger.info("ad_config 已从 .env 播种（source=env），管理页可查看/导入/保存")
 
+    # 播种 feishu_config（ADR-054）：表空时写入默认形态 + .env 现有值（source=env），
+    # 此后以管理页保存值（source=db）为准；默认关闭（enabled=false），避免未配置即发消息。
+    _fs_rows = conn.execute("SELECT COUNT(*) as c FROM feishu_config").fetchone()
+    if _fs_rows["c"] == 0:
+        for k, envk in FEISHU_ENV_MAP.items():
+            envv = os.getenv(envk, "").strip()
+            conn.execute(
+                "INSERT OR REPLACE INTO feishu_config (key,value,source,updated_at) VALUES (?,?,?,?)",
+                (k, envv or FEISHU_DEFAULTS.get(k, ""), "env", now_str())
+            )
+        conn.commit()
+        logger.info("feishu_config 已从 .env 播种（source=env），管理页可查看/导入/保存")
+
     # 容量索引（3-5 年容量保障，幂等 CREATE INDEX IF NOT EXISTS）：
     # 高频查询键建索引，避免数据增长后全表扫描。容量测算：10 条业务/天 × 365 × 5 年
     # ≈ 提交单 1.8 万 + 文件 5 万 + 审批 3.6 万 + 审计日志 ~11 万 + 下载记录 4 万 ≈ 25-30 万行，
@@ -734,6 +776,77 @@ def get_ad_config_value(key: str, default: str = None) -> str:
     if row is not None and row["value"] != "":
         return row["value"]
     return default
+
+def get_feishu_config_value(key: str, default: str = None) -> str:
+    """读取飞书外挂配置：SQLite feishu_config 优先（ADR-054，管理页可配、即时生效），
+    未配置/为空时回退默认值（.env 或代码默认）。"""
+    db = get_db()
+    row = db.execute("SELECT value FROM feishu_config WHERE key=?", (key,)).fetchone()
+    if row is not None and row["value"] != "":
+        return row["value"]
+    return default
+
+
+def _compose_gateway_url(host: str, port: str, path: str) -> str:
+    """网关地址组装：host 可为裸 IP / host:port / 完整 URL；未显式端口时补 port。
+    空 host 返回 ""（未配置）。地址一律来自配置，不写死（ADR-005）。"""
+    host = (host or "").strip().rstrip("/")
+    if not host:
+        return ""
+    path = (path or "/notify").strip() or "/notify"
+    if not path.startswith("/"):
+        path = "/" + path
+    if not host.startswith(("http://", "https://")):
+        host = "http://" + host
+    parts = urllib.parse.urlsplit(host)
+    netloc = parts.netloc
+    if not parts.port and (port or "").strip():
+        netloc = f"{netloc}:{(port or '').strip()}"
+    return urllib.parse.urlunsplit((parts.scheme, netloc, path, "", ""))
+
+
+def feishu_gateway_url() -> str:
+    """生效的网关 /notify 地址：完整 URL 优先，否则 host+port+path 组装"""
+    url = (get_feishu_config_value("feishu_gateway_url", os.getenv("FEISHU_NOTIFY_URL", "")) or "").strip()
+    if url:
+        return url
+    return _compose_gateway_url(
+        get_feishu_config_value("feishu_gateway_host", ""),
+        get_feishu_config_value("feishu_gateway_port", "8090"),
+        get_feishu_config_value("feishu_gateway_path", "/notify"),
+    )
+
+
+def feishu_gateway_health_url() -> str:
+    """网关健康检查地址（由 /notify 地址派生同源 /health）"""
+    url = feishu_gateway_url()
+    if not url:
+        return ""
+    p = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunsplit((p.scheme, p.netloc, "/health", "", ""))
+
+
+def _feishu_gateway_probe(timeout: float = 2.0) -> dict:
+    """探测网关健康状态（配置页展示）：不可达只返回 reachable=false，绝不抛异常、不阻塞页面"""
+    health = feishu_gateway_health_url()
+    if not health:
+        return {"reachable": False, "reason": "未配置网关地址"}
+    try:
+        with urllib.request.urlopen(health, timeout=timeout) as resp:
+            data = json.loads((resp.read().decode("utf-8", errors="ignore") or "{}"))
+        return {
+            "reachable": True,
+            "status": data.get("status", ""),
+            "version": data.get("version", ""),
+            "service": data.get("service", ""),
+            "app_configured": bool(data.get("app_configured")),
+            "token_configured": bool(data.get("token_configured")),
+            "allow_cidrs": data.get("allow_cidrs", ""),
+            "uptime_sec": data.get("uptime_sec", 0),
+        }
+    except Exception as ex:
+        return {"reachable": False, "reason": f"{type(ex).__name__}: {ex}"}
+
 
 def mask_secret(v: str) -> str:
     """脱敏显示（密钥类配置只显示前 2 位 + ****）"""
@@ -2296,9 +2409,32 @@ def _notify_record(sub_id: str, event: str, recipients: str, status: str, detail
     db.commit()
 
 
+# 通知通道注册表（ADR-054：外挂式 hook，飞书只是其中一条通道；新增钉钉/邮件只需注册，
+# 不改业务代码。hook 签名 fn(sub_id, event, recipients, extra)，必须自吞异常、禁止阻塞）
+NOTIFY_HOOKS = []
+
+
+def register_notify_hook(name: str, fn):
+    """注册/替换通知通道（同名覆盖，幂等）"""
+    name = (name or "").strip()
+    if not name or not callable(fn):
+        raise ValueError("register_notify_hook 需要 name 与 callable")
+    for i, (n, _) in enumerate(NOTIFY_HOOKS):
+        if n == name:
+            NOTIFY_HOOKS[i] = (name, fn)
+            return name
+    NOTIFY_HOOKS.append((name, fn))
+    return name
+
+
+def list_notify_hooks() -> list:
+    """已注册通道名（配置页展示/测试断言）"""
+    return [n for n, _ in NOTIFY_HOOKS]
+
+
 def notify_event(sub_id: str, event: str, recipients: list, extra: dict = None):
-    """通知入口：异步派发，永不抛异常、永不阻塞请求线程。
-    recipients 为用户名列表（AD 账号/本地用户名），邮箱在后台线程解析。"""
+    """通知派发入口（hook 化）：遍历已注册通道逐个派发，永不抛异常、永不阻塞请求线程。
+    recipients 为用户名列表（AD 账号/本地用户名），邮箱在各通道后台线程解析。"""
     try:
         if event not in NOTIFY_EVENTS:
             logger.warning(f"忽略未知通知事件: {event}")
@@ -2306,14 +2442,38 @@ def notify_event(sub_id: str, event: str, recipients: list, extra: dict = None):
         names = [n for n in (recipients or []) if n]
         if not names or not sub_id:
             return
-        threading.Thread(
-            target=_notify_worker,
-            args=(app, sub_id, event, names, dict(extra or {})),
-            daemon=True,
-            name=f"notify-{event}",
-        ).start()
+        for hook_name, hook in list(NOTIFY_HOOKS):
+            try:
+                hook(sub_id, event, names, dict(extra or {}))
+            except Exception as ex:  # 单通道故障不影响其它通道与业务主流程
+                logger.warning(f"通知通道派发失败 {hook_name}/{event}/{sub_id}: {ex}")
     except Exception as ex:  # 兜底：通知故障不得影响业务主流程
         logger.warning(f"notify_event 派发失败 {event}/{sub_id}: {ex}")
+
+
+def feishu_notify_hook(sub_id: str, event: str, names: list, extra: dict):
+    """飞书通道 hook：只负责起后台线程，立即返回（业务零等待）"""
+    threading.Thread(
+        target=_notify_worker,
+        args=(app, sub_id, event, names, dict(extra or {})),
+        daemon=True,
+        name=f"notify-feishu-{event}",
+    ).start()
+
+
+def _feishu_enabled() -> bool:
+    """飞书通道开关（运行期读配置，改配置即时生效，无需重启）"""
+    raw = (get_feishu_config_value("feishu_enabled", os.getenv("FEISHU_NOTIFY_ENABLED", "false")) or "")
+    return raw.strip().lower() in ("true", "1", "yes", "on")
+
+
+def _feishu_timeout() -> float:
+    """网关调用超时（秒），非法值回退 5"""
+    try:
+        val = float(get_feishu_config_value("feishu_timeout", os.getenv("FEISHU_NOTIFY_TIMEOUT", "5")) or 5)
+    except (TypeError, ValueError):
+        return 5.0
+    return max(0.5, min(val, 60.0))
 
 
 def _notify_worker(app_obj, sub_id: str, event: str, names: list, extra: dict):
@@ -2321,6 +2481,12 @@ def _notify_worker(app_obj, sub_id: str, event: str, names: list, extra: dict):
     status, detail, masked = "failed", "", "-"
     with app_obj.app_context():
         try:
+            # 运行期读取配置（ADR-054）：管理页保存后下一次通知立即生效
+            enabled = _feishu_enabled()
+            gateway_url = feishu_gateway_url()
+            gateway_token = (get_feishu_config_value("feishu_notify_token", os.getenv("FEISHU_NOTIFY_TOKEN", "")) or "").strip()
+            gateway_timeout = _feishu_timeout()
+            cfg_app_url = (get_feishu_config_value("feishu_app_url", os.getenv("FEISHU_NOTIFY_APP_URL", "")) or "").strip()
             db = get_db()
             sub = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
             files = db.execute("SELECT name FROM submission_files WHERE submission_id=? ORDER BY rowid",
@@ -2336,7 +2502,7 @@ def _notify_worker(app_obj, sub_id: str, event: str, names: list, extra: dict):
                 "approver": "",
                 "level": "",
                 "status_text": "",
-                "app_url": extra.get("app_url") or FEISHU_NOTIFY_APP_URL or "",
+                "app_url": extra.get("app_url") or cfg_app_url or "",
                 "external_url": extra.get("external_url") or "",
                 "operator": extra.get("operator") or "",
                 "time": now_str(),
@@ -2356,8 +2522,8 @@ def _notify_worker(app_obj, sub_id: str, event: str, names: list, extra: dict):
 
             if not emails:
                 status, detail = "skipped", "收件人无可用工作邮箱：" + ",".join(missing)
-            elif not FEISHU_NOTIFY_ENABLED or not FEISHU_NOTIFY_URL:
-                status, detail = "skipped", "飞书通知未启用或未配置网关地址（FEISHU_NOTIFY_ENABLED / FEISHU_NOTIFY_URL）"
+            elif not enabled or not gateway_url:
+                status, detail = "skipped", "飞书通知未启用或未配置网关地址（配置项：飞书通知 → 启用 / 网关地址）"
             else:
                 payload = {
                     "event": event,
@@ -2367,12 +2533,12 @@ def _notify_worker(app_obj, sub_id: str, event: str, names: list, extra: dict):
                     "vars": base,
                 }
                 req = urllib.request.Request(
-                    FEISHU_NOTIFY_URL,
+                    gateway_url,
                     data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                    headers={"Content-Type": "application/json", "X-Notify-Token": FEISHU_NOTIFY_TOKEN},
+                    headers={"Content-Type": "application/json", "X-Notify-Token": gateway_token},
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=FEISHU_NOTIFY_TIMEOUT) as resp:
+                with urllib.request.urlopen(req, timeout=gateway_timeout) as resp:
                     body = resp.read().decode("utf-8", errors="ignore")
                 result = json.loads(body or "{}")
                 sent = int(result.get("sent") or 0)
@@ -2398,13 +2564,19 @@ def _notify_worker(app_obj, sub_id: str, event: str, names: list, extra: dict):
 
 
 def _notify_app_url() -> str:
-    """消息里的系统入口地址：显式配置优先，否则按当前请求推导（请求线程内调用）"""
-    if FEISHU_NOTIFY_APP_URL:
-        return FEISHU_NOTIFY_APP_URL
+    """消息里的系统入口地址：配置页显式配置优先，否则按当前请求推导（请求线程内调用）"""
+    cfg = (get_feishu_config_value("feishu_app_url", os.getenv("FEISHU_NOTIFY_APP_URL", "")) or "").strip()
+    if cfg:
+        return cfg
     try:
         return request.host_url.rstrip("/")
     except Exception:
         return ""
+
+
+# 注册默认通道：飞书（feishu）。新增通道（钉钉/邮件）只需再 register_notify_hook，
+# 业务代码（8 处 notify_event 调用点）无需修改 —— ADR-054 hook 化。
+register_notify_hook("feishu", feishu_notify_hook)
 
 
 def get_notify_map(sub_ids: list) -> dict:
@@ -2548,6 +2720,187 @@ def api_update_ad_config():
     add_audit_log(current_user.username, "update_ad_config", "", audit_detail, get_client_ip())
     return jsonify({"message": "AD 配置已保存（数据库权威，即时生效）"})
 
+
+# ============================================================
+# 路由：飞书通知外挂配置（ADR-054：独立配置域，与 AD 域同级）
+#   本系统只存“网关地址 + 预共享 token + App ID（仅展示）”；
+#   App Secret 只在网关 .env（600），此处一律不保存、不展示、不下发（ADR-052）。
+# ============================================================
+@app.route("/api/admin/feishu-config")
+@login_required
+@role_required("admin")
+def api_get_feishu_config():
+    """返回 DB 配置（token 掩码）+ .env 现值 + 生效值 + 网关健康探测"""
+    db = get_db()
+    rows = db.execute("SELECT key,value,source,updated_at FROM feishu_config").fetchall()
+    db_map = {}
+    for r in rows:
+        val = r["value"]
+        if r["key"] == "feishu_notify_token":
+            val = mask_secret(val)
+        db_map[r["key"]] = {"value": val, "source": r["source"], "updated_at": r["updated_at"]}
+    env_map = {}
+    for envk in FEISHU_ENV_MAP.values():
+        raw = os.getenv(envk, "")
+        env_map[envk] = mask_secret(raw) if envk == "FEISHU_NOTIFY_TOKEN" else raw
+    return jsonify({
+        "db": db_map,
+        "env": env_map,
+        "effective": {
+            "enabled": _feishu_enabled(),
+            "gateway_url": feishu_gateway_url(),
+            "health_url": feishu_gateway_health_url(),
+            "timeout": _feishu_timeout(),
+            "app_id": (get_feishu_config_value("feishu_app_id", os.getenv("FEISHU_APP_ID", "")) or "").strip(),
+            "app_url": (get_feishu_config_value("feishu_app_url", os.getenv("FEISHU_NOTIFY_APP_URL", "")) or "").strip(),
+        },
+        "gateway": _feishu_gateway_probe(),
+        "hooks": list_notify_hooks(),
+        "secret_policy": "App Secret 仅存网关 .env（600）：本系统不保存、不下发、不展示；此处仅通过 /health 校验网关 app_configured。",
+    })
+
+
+@app.route("/api/admin/feishu-config/import", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_import_feishu_config():
+    """从 .env 导入飞书配置到 DB（source=env）；用于首次把部署级 env 搬到页面可编辑"""
+    db = get_db()
+    now = now_str()
+    for k, envk in FEISHU_ENV_MAP.items():
+        envv = os.getenv(envk, "").strip()
+        if not envv and k in FEISHU_DEFAULTS:
+            envv = FEISHU_DEFAULTS[k]
+        db.execute("INSERT OR REPLACE INTO feishu_config (key,value,source,updated_at) VALUES (?,?,?,?)",
+                   (k, envv, "env", now))
+    db.commit()
+    add_audit_log(current_user.username, "import_feishu_config", "", "从 .env 导入飞书通知配置", get_client_ip())
+    return jsonify({"message": "已从 .env 导入飞书通知配置（source=env）"})
+
+
+@app.route("/api/admin/feishu-config", methods=["PUT"])
+@login_required
+@role_required("admin")
+def api_update_feishu_config():
+    """保存飞书配置到 DB（source=db，即时生效）；token 掩码值（含 ****）不覆盖原值"""
+    data = request.get_json() or {}
+    db = get_db()
+    now = now_str()
+    saved = {}
+    for k, v in data.items():
+        if k not in FEISHU_ENV_MAP:
+            continue
+        sv = str(v).strip()
+        if k == "feishu_notify_token" and "****" in sv:
+            continue  # 掩码回显，不当作新值写入
+        if k == "feishu_enabled":
+            sv = "true" if sv.lower() in ("true", "1", "yes", "on") else "false"
+        elif k == "feishu_timeout":
+            try:
+                sv = str(max(0.5, min(float(sv or 5), 60.0)))
+            except (TypeError, ValueError):
+                return jsonify({"error": "飞书通知超时必须是数字（秒）"}), 400
+        elif k == "feishu_gateway_port" and sv:
+            if not sv.isdigit() or not (0 < int(sv) < 65536):
+                return jsonify({"error": "网关端口必须是 1-65535 的数字"}), 400
+        db.execute("INSERT OR REPLACE INTO feishu_config (key,value,source,updated_at) VALUES (?,?,?,?)",
+                   (k, sv, "db", now))
+        saved[k] = sv
+    db.commit()
+    audit_detail = json.dumps(
+        {k: (mask_secret(v) if k == "feishu_notify_token" else v) for k, v in saved.items()},
+        ensure_ascii=False)
+    add_audit_log(current_user.username, "update_feishu_config", "", audit_detail, get_client_ip())
+    return jsonify({
+        "message": "飞书通知配置已保存（数据库权威，即时生效）",
+        "effective": {"enabled": _feishu_enabled(), "gateway_url": feishu_gateway_url(), "timeout": _feishu_timeout()},
+    })
+
+
+@app.route("/api/admin/feishu-config/test", methods=["POST"])
+@login_required
+@role_required("admin")
+def api_test_feishu_config():
+    """管理员自测：给当前登录管理员发一条真实飞书消息（同步等待网关结果，失败不抛 500）"""
+    if not _feishu_enabled():
+        return jsonify({"ok": False, "detail": "飞书通知未启用：请勾选“启用飞书通知”并保存后再测试"}), 400
+    gateway_url = feishu_gateway_url()
+    if not gateway_url:
+        return jsonify({"ok": False, "detail": "未配置网关地址（主机/端口/路径或完整 URL）"}), 400
+    email, src = resolve_email(current_user.username)
+    if not email:
+        return jsonify({"ok": False, "detail": f"账号 {current_user.username} 无可用工作邮箱，无法自测"}), 400
+    ts = now_str()
+    test_id = f"TEST-{int(time.time() * 1000)}"
+    payload = {
+        "event": "submission_status",
+        "recipients": [email],
+        "request_id": f"{test_id}:test:{current_user.username}",
+        "vars": {
+            "submission_id": test_id,
+            "filename": "飞书通知联通测试",
+            "submitter": current_user.username,
+            "note": "配置页自测",
+            "status_text": "飞书通知测试（管理员自测）",
+            "operator": current_user.username,
+            "app_url": _notify_app_url(),
+            "time": ts,
+        },
+    }
+    token = (get_feishu_config_value("feishu_notify_token", os.getenv("FEISHU_NOTIFY_TOKEN", "")) or "").strip()
+    result, code, detail = {}, 0, ""
+    try:
+        req = urllib.request.Request(
+            gateway_url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json", "X-Notify-Token": token},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=_feishu_timeout()) as resp:
+            result = json.loads((resp.read().decode("utf-8", errors="ignore") or "{}"))
+            code = resp.status
+        sent = int(result.get("sent") or 0)
+        failed = int(result.get("failed") or 0)
+        ok = bool(sent) and not failed
+        detail = f"sent={sent} failed={failed}" if ok or sent else f"网关返回 code={result.get('code')} msg={result.get('msg') or ''}"
+    except urllib.error.HTTPError as ex:
+        code = ex.code
+        try:
+            body = json.loads((ex.read().decode("utf-8", errors="ignore") or "{}"))
+        except Exception:
+            body = {}
+        hint = {
+            401: "预共享 token 与网关不一致（请核对“预共享 token”，网关侧 600 权限 .env）",
+            403: "源 IP 不在网关白名单（应仅放行本机内网 IP）",
+            502: "网关已收到请求但飞书投递全部失败（查网关日志与飞书应用权限）",
+        }.get(code, "网关返回异常")
+        detail = f"HTTP {code}: {body.get('msg') or hint}"
+    except Exception as ex:
+        detail = f"网关不可达或超时：{type(ex).__name__}: {ex}"
+    ok = bool(int(result.get("sent") or 0)) and not int(result.get("failed") or 0)
+    try:
+        _notify_record(test_id, "submission_status", _mask_email(email),
+                       "sent" if ok else "failed", f"管理员自测：{detail}")
+        if not ok:
+            add_audit_log(current_user.username, "notify_failed", test_id, f"管理员自测失败 {detail}")
+    except Exception:
+        pass
+    add_audit_log(current_user.username, "test_feishu_notify", "",
+                  f"{'成功' if ok else '失败'} {detail} 收件人={_mask_email(email)}", get_client_ip())
+    return jsonify({
+        "ok": ok, "sent": int(result.get("sent") or 0), "failed": int(result.get("failed") or 0),
+        "http_code": code, "detail": detail, "recipient": _mask_email(email),
+        "email_source": src, "gateway_url": gateway_url, "gateway": result,
+    })
+
+
+@app.route("/api/admin/feishu-config/hooks")
+@login_required
+@role_required("admin")
+def api_feishu_hooks():
+    """已注册通知通道（hook 化验证：飞书只是其中一条，可并列扩展）"""
+    return jsonify({"hooks": list_notify_hooks()})
+
 @app.route("/api/admin/config-overview")
 @login_required
 @role_required("admin")
@@ -2568,7 +2921,14 @@ def api_config_overview():
     sys_cfg = {r["key"]: r["value"] for r in sys_rows}
     ad_rows = db.execute("SELECT key,value,source,updated_at FROM ad_config").fetchall()
     ad_cfg = {r["key"]: {"value": r["value"], "source": r["source"], "updated_at": r["updated_at"]} for r in ad_rows}
-    return jsonify({"deploy_env": deploy_env, "runtime_db": {"system_config": sys_cfg, "ad_config": ad_cfg}})
+    fs_rows = db.execute("SELECT key,value,source,updated_at FROM feishu_config").fetchall()
+    fs_cfg = {}
+    for r in fs_rows:
+        val = mask_secret(r["value"]) if r["key"] == "feishu_notify_token" else r["value"]
+        fs_cfg[r["key"]] = {"value": val, "source": r["source"], "updated_at": r["updated_at"]}
+    return jsonify({"deploy_env": deploy_env,
+                    "runtime_db": {"system_config": sys_cfg, "ad_config": ad_cfg, "feishu_config": fs_cfg},
+                    "feishu_effective": {"enabled": _feishu_enabled(), "gateway_url": feishu_gateway_url()}})
 
 # ============================================================
 # 路由：合作方白名单（admin）

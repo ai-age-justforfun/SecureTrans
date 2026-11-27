@@ -1,3 +1,13 @@
+## ◎ 飞书通知外挂配置域（ADR-054，2026-11-27）
+**总计 496 项测试（Windows dev，干净库）全部通过，通过率 100%。**
+
+**本轮变更（第 ③ 步：飞书作为独立可配外挂，hook 化对接）：**
+1. **组 27（新增，29 项）**：`feishu_config` 独立配置域与配置页"飞书通知"卡片——9 项配置齐备（开关/网关 host·port·path·完整 URL/token/超时/入口 URL/App ID）、token 仅回显掩码且掩码回存不覆盖真实值、App Secret 不在业务机（策略显式声明）、网关 `GET /health` 探活（app_configured/token_configured/allow_cidrs）、`NOTIFY_HOOKS` 枚举（feishu 已注册）、非法端口/超时 400、保存后 host+port+path 正确组装 URL 且来源标 `db`、**运行期生效**（改 DB 地址后下一次通知实际到达桩且携带原 token）、关闭开关后通知落 `skipped` 且**不再向网关发请求**、管理员自测（未启用 400 / 成功 200+sent / 普通用户 403 / 读取 403 / 网关不可达 200+ok=false 不 500）、审计三动作（`update_feishu_config` / `test_feishu_notify` / 导入）、配置总览含飞书组且脱敏、配置页含独立配置组（可见可配）。
+2. **实现要点**：`NOTIFY_HOOKS` + `register_notify_hook` 使 `notify_event` 成为派发器（飞书=默认通道，业务 8 处调用点零改动，后续钉钉/邮件只需再注册）；通知读取全部改运行期配置，删除模块级 `FEISHU_NOTIFY_*` 常量（单一来源）；App Secret 仍只存网关 `.env`（ADR-052 不放宽）。
+3. **基线修正**：467 → 496（质量门禁 `>= 300` 不变，测试只增不减）。
+
+---
+
 ## ◎ 飞书通知独立功能验证（2026-11-27）
 **总计 467 项测试（Windows dev，出厂重置干净库）全部通过，通过率 100%。**
 

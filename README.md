@@ -223,7 +223,7 @@ main ────●────●────●────●────  �
 
 ### 当前阶段
 **PSF → RC（v2.7.0 发布候选）**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，
-467 项自动化测试 100%（Windows dev）+ CI 容器全量 TDD + 800MB 性能压力测试 + 3-5 用户并发测试通过
+496 项自动化测试 100%（Windows dev）+ CI 容器全量 TDD + 800MB 性能压力测试 + 3-5 用户并发测试通过
 （MD5 端到端一致）+ CD 全自动部署打通（Release 发布 → 生产自动升级）+ **Docker 双通道发布（Gitea image.tar.gz + GitHub GHCR，ADR-038/039）**；
 beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署验证），通过后正式 release。全项目复盘见 [项目复盘总结](docs/12-project-retrospective.md)。
 
@@ -233,7 +233,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（467项全通过）](docs/06-test-report.md)
+- [测试报告（496项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
 - [版本结果汇总（v1.5.0→v2.7.3 全量）](docs/17-version-summary.md)
@@ -309,6 +309,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 051 | 飞书审批通知=独立旁路通道：异步派发、失败不阻塞业务；7 事件固定（免审批直通仅发提交人）；账号→AD 邮箱→飞书三级解析；界面三列表+详情可观测（成功/失败/跳过） | v2.7.3 |
 | 052 | 关键服务器零出网 + 专用单向通知网关（10.10.30.114:8090）：仅放行 open.feishu.cn:443 + 源 IP 白名单（仅生产机）+ 预共享 token；网关只做鉴权→渲染→发送→记账，不做业务决策/不落正文；App ID/Secret 只存两处且禁入 git | v2.7.3 |
 | 053 | 生产部署只读冒烟全量通过=发布门禁：`smoke.sh` 任一失败即 `exit 1`（禁"警告继续"假绿），docker/原生两通道一致；冒烟用内网 IP、凭据取 RESET_PASSWORD（改密用 VERIFY_ADMIN_PASS）；断言须容错、登录失败明示凭据原因 | v2.7.3 |
+| 054 | 飞书通知=独立配置域（外挂式 channel）：`feishu_config` 表（DB 权威、`.env` 播种/回退），配置页独立卡片可配 9 项（开关/网关 IP·端口·路径·完整 URL/token/超时/入口/AppID）；App Secret 仍只存网关；保存即时生效；`NOTIFY_HOOKS` hook 化（业务 8 处调用点零改动，可并接钉钉/邮件）；`POST /api/admin/feishu-config/test` 可单测通知，配置页显示网关 /health 状态灯；测试基线 467→496 | v2.7.3 |
 
 > **使用方式**：决策冲突时以 docs/ADR.md 对应条目为准；新增决策只追加编号（ADR-0xx），不修改历史条目。
 > 最新落点摘要（ADR-031/032/033/034 核心）：合作方全量编辑+联系人必填；WSL 测试收敛为 dev+CI 两环境；生产只读冒烟=业界标准；

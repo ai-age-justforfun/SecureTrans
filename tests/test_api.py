@@ -151,6 +151,24 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
                 self.end_headers()
                 self.wfile.write(payload)
 
+            def do_GET(self):
+                # 组27：配置页网关健康探测（契约与线上 /health 一致）
+                if self.path.split('?')[0] in ('/health',):
+                    resp = {
+                        "status": "ok", "service": "securetrans-notify", "version": "stub-1.0",
+                        "app_configured": True, "token_configured": True,
+                        "uptime_sec": 42, "allow_cidrs": "10.10.30.8/32",
+                    }
+                    payload = json.dumps(resp).encode('utf-8')
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
+                self.send_response(404)
+                self.end_headers()
+
             def log_message(self, *args):
                 pass
 
@@ -3075,6 +3093,198 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
     for _u in ("nt2_sub", "nt2_l1", "nt2_l2", "nt2_nomail"):
         request('DELETE', f'/api/admin/local-users/{_u}')
     test("通知独立: 清理独立验证用户/审批人配置", True, "nt2_* 已清理")
+
+# ============================================================
+    # 27. 飞书通知外挂配置域（ADR-054：独立配置组 / hook 化 / 运行期生效 / 管理员自测）
+    #    验证要点：
+    #      1) 配置组与 AD 域同级、独立成组：enabled/host/port/path/url/token/timeout/app_url/app_id
+    #      2) token 只回显掩码，掩码回存不覆盖真实值；App Secret 不在业务机（策略显式声明）
+    #      3) 保存后运行期即时生效（无需重启）：改地址/开关后下一次通知按新配置走
+    #      4) 网关 /health 探测（配置页状态灯）与管理员自测接口（含 400/403 边界）
+    #      5) hook 化：已注册通道可枚举（飞书只是其中一条，便于后续钉钉/邮件并列）
+    # ============================================================
+    print("\n--- 27. 飞书通知外挂配置域（ADR-054） ---")
+    _set_group("27. 飞书通知外挂配置域")
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+
+    _FS_KEYS = ("feishu_enabled", "feishu_gateway_host", "feishu_gateway_port",
+                "feishu_gateway_path", "feishu_gateway_url", "feishu_notify_token",
+                "feishu_timeout", "feishu_app_url", "feishu_app_id")
+
+    # ---- 27-A：配置组可读 / 脱敏 / 网关探活 / hook 枚举 ----
+    code, cfg = request('GET', '/api/admin/feishu-config')
+    _cfg_db = (cfg.get('db') or {}) if isinstance(cfg, dict) else {}
+    test("飞书配置: 独立配置组可读且 9 项齐备",
+         code == 200 and all(k in _cfg_db for k in _FS_KEYS),
+         f"code={code}, keys={sorted(_cfg_db.keys())}")
+    _token_disp = str((_cfg_db.get('feishu_notify_token') or {}).get('value', ''))
+    test("飞书配置: 预共享 token 只回显掩码（无明文）",
+         '****' in _token_disp and 'test-notify-token' not in json.dumps(cfg, ensure_ascii=False),
+         f"token_display={_token_disp}")
+    test("飞书配置: App Secret 不在业务机（策略显式声明）",
+         'App Secret' in str(cfg.get('secret_policy', '')) and 'FEISHU_APP_SECRET' not in json.dumps(cfg),
+         f"secret_policy={str(cfg.get('secret_policy'))[:40]}")
+    _gw = (cfg.get('gateway') or {}) if isinstance(cfg, dict) else {}
+    test("飞书配置: 网关 /health 探活（状态灯数据源）",
+         _gw.get('reachable') is True and _gw.get('app_configured') is True and _gw.get('token_configured') is True,
+         f"gateway={_gw}")
+    test("飞书配置: hook 通道可枚举（feishu 已注册）",
+         isinstance(cfg.get('hooks'), list) and 'feishu' in cfg.get('hooks', []),
+         f"hooks={cfg.get('hooks')}")
+    code, _hooks = request('GET', '/api/admin/feishu-config/hooks')
+    test("飞书配置: hook 枚举接口可用（外挂扩展位）",
+         code == 200 and isinstance(_hooks, dict) and _hooks.get('hooks') == ['feishu'],
+         f"code={code}, hooks={_hooks.get('hooks') if isinstance(_hooks, dict) else None}")
+
+    # ---- 27-B：保存校验（端口/超时非法拒绝）+ 掩码不覆盖 ----
+    code, r = request('PUT', '/api/admin/feishu-config',
+                      json_data={"feishu_gateway_port": "abc", "feishu_timeout": "3"})
+    test("飞书配置: 非法端口被拒（400）", code == 400, f"code={code}")
+    code, r = request('PUT', '/api/admin/feishu-config',
+                      json_data={"feishu_gateway_port": "18099", "feishu_timeout": "abc"})
+    test("飞书配置: 非法超时被拒（400）", code == 400, f"code={code}")
+
+    code, r = request('PUT', '/api/admin/feishu-config', json_data={
+        "feishu_enabled": "true", "feishu_gateway_host": "127.0.0.1",
+        "feishu_gateway_port": "18099", "feishu_gateway_path": "/notify",
+        "feishu_gateway_url": "", "feishu_timeout": "3",
+        "feishu_app_url": "http://127.0.0.1:8000", "feishu_app_id": "cli_test_only",
+    })
+    test("飞书配置: 保存成功且返回生效值（host+port+path 组装 URL）",
+         code == 200 and (r.get('effective') or {}).get('gateway_url') == 'http://127.0.0.1:18099/notify'
+         and (r.get('effective') or {}).get('enabled') is True,
+         f"code={code}, effective={r.get('effective') if isinstance(r, dict) else None}")
+    code, cfg2 = request('GET', '/api/admin/feishu-config')
+    test("飞书配置: 保存后持久化且来源标 db",
+         (cfg2.get('db', {}).get('feishu_gateway_host', {}) or {}).get('value') == '127.0.0.1'
+         and (cfg2.get('db', {}).get('feishu_gateway_host', {}) or {}).get('source') == 'db',
+         f"db={cfg2.get('db', {}).get('feishu_gateway_host') if isinstance(cfg2, dict) else None}")
+
+    code, r = request('PUT', '/api/admin/feishu-config', json_data={"feishu_notify_token": "te****"})
+    test("飞书配置: 掩码回存不覆盖真实 token", code == 200, f"code={code}")
+
+    # ---- 27-C：运行期生效（改配置后下一次通知按新配置走，无需重启） ----
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    _c, _a27 = request('GET', '/api/admin/approvers')
+    for _a in (_a27 if isinstance(_a27, list) else []):
+        if _a.get('username') in ("nt3_l1",):
+            request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
+    for _u in ("nt3_sub", "nt3_l1"):
+        request('DELETE', f'/api/admin/local-users/{_u}')
+    for _un, _em, _dn in (("nt3_sub", "nt3_sub@company.com", "配置域提交人"),
+                          ("nt3_l1", "nt3_l1@company.com", "配置域一级")):
+        _c, _ = request('POST', '/api/admin/local-users', json_data={
+            "username": _un, "password": "Test@123456", "displayName": _dn,
+            "role": "internal-user", "email": _em})
+        test(f"飞书配置: 创建测试用户 {_un}", _c == 200, f"code={_c}")
+    _c, _ = request('POST', '/api/admin/approvers', json_data={
+        "level": 1, "username": "nt3_l1", "displayName": "配置域一级", "scope": "all"})
+    test("飞书配置: 配置 nt3_l1 为一级审批人", _c == 200, f"code={_c}")
+
+    def _nt3_submit(tag):
+        _fp = os.path.join(test_dir, f"nt3_{tag}.exe")
+        with open(_fp, 'wb') as _f:
+            _f.write(b"MZ" + tag.encode('utf-8') * 60)
+        _c, _d = upload_file(_fp, f"nt3_{tag}.exe")
+        _tid = _d.get('tempId') if isinstance(_d, dict) else None
+        _c2, _d2 = request('POST', '/api/submissions', json_data={
+            "tempIds": [_tid], "receiverName": "接收人", "receiverEmail": "r@x.com",
+            "receiverType": "internal", "securityLevel": "internal", "reason": f"配置域验证-{tag}"})
+        return (_d2.get('id') if isinstance(_d2, dict) else None), _c2, _d2
+
+    request('POST', '/api/auth/login', json_data={"username": "nt3_sub", "password": "Test@123456"})
+    _mk27 = notify_mark()
+    _sub27, _c27, _d27 = _nt3_submit("A")
+    _req27 = notify_since(_mk27, "submission_pending_l1")
+    test("飞书配置: 运行期配置生效（DB 地址发起通知，token 原值未被掩码覆盖）",
+         _c27 == 200 and bool(_req27) and _req27.get('token') == 'test-notify-token'
+         and 'nt3_l1@company.com' in (_req27.get('recipients') or []),
+         f"code={_c27}, token={_req27.get('token') if _req27 else None}, req={_req27.get('recipients') if _req27 else None}")
+
+    # 关闭开关 → 下一次通知落 skipped，业务照常 200（旁路不阻塞）
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    request('PUT', '/api/admin/feishu-config', json_data={"feishu_enabled": "false"})
+    request('POST', '/api/auth/login', json_data={"username": "nt3_sub", "password": "Test@123456"})
+    _mk27b = notify_mark()
+    _sub27b, _c27b, _d27b = _nt3_submit("B")
+    _rows27b = notify_wait_events(_sub27b, ("submission_pending_l1", "submission_status"))
+    test("飞书配置: 关闭开关后通知记 skipped 但业务成功",
+         _c27b == 200 and bool(_rows27b) and all(r.get('status') == 'skipped' for r in _rows27b),
+         f"code={_c27b}, rows={_rows27b}")
+    test("飞书配置: 关闭开关后不再向网关发请求", notify_since(_mk27b, "submission_pending_l1") is None,
+         "桩未收到新请求")
+
+    # ---- 27-D：管理员自测接口（启用/未启用/权限边界） ----
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    code, r = request('POST', '/api/admin/feishu-config/test')
+    test("飞书配置: 未启用时自测被拒（400 且提示启用）",
+         code == 400 and '未启用' in str((r or {}).get('detail', '')),
+         f"code={code}, detail={(r or {}).get('detail')}")
+    request('PUT', '/api/admin/feishu-config', json_data={"feishu_enabled": "true"})
+    _mk27t = notify_mark()
+    code, r = request('POST', '/api/admin/feishu-config/test')
+    test("飞书配置: 自测发送成功（ok/sent 且收件人脱敏）",
+         code == 200 and (r or {}).get('ok') is True and int((r or {}).get('sent') or 0) >= 1
+         and '***' in str((r or {}).get('recipient', '')),
+         f"code={code}, resp={r}")
+    test("飞书配置: 自测事件复用已知事件并携带系统入口",
+         bool(notify_since(_mk27t, "submission_status")),
+         f"stub={notify_since(_mk27t, 'submission_status')}")
+    request('POST', '/api/auth/login', json_data={"username": "nt3_sub", "password": "Test@123456"})
+    code, r = request('POST', '/api/admin/feishu-config/test')
+    test("飞书配置: 普通用户自测被拒（403）", code == 403, f"code={code}")
+    code, r = request('GET', '/api/admin/feishu-config')
+    test("飞书配置: 普通用户读配置被拒（403）", code == 403, f"code={code}")
+
+    # 网关不可达 → 自测返回 ok=false（HTTP 200，不 500），配置页据此提示排障方向
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    request('PUT', '/api/admin/feishu-config', json_data={"feishu_gateway_url": "http://127.0.0.1:1/notify"})
+    code, r = request('POST', '/api/admin/feishu-config/test')
+    test("飞书配置: 网关不可达时自测优雅失败（200 + ok=false）",
+         code == 200 and (r or {}).get('ok') is False and '不可达' in str((r or {}).get('detail', '')),
+         f"code={code}, detail={(r or {}).get('detail')}")
+
+    # ---- 27-E：审计留痕 / 配置总览 / 前端配置菜单可见 ----
+    code, _rows = request('GET', '/api/audit-logs?action=update_feishu_config')
+    test("飞书配置: 保存动作写审计", code == 200 and isinstance(_rows, list) and len(_rows) > 0,
+         f"code={code}, count={len(_rows) if isinstance(_rows, list) else 0}")
+    code, _rows = request('GET', '/api/audit-logs?action=test_feishu_notify')
+    test("飞书配置: 自测动作写审计", code == 200 and isinstance(_rows, list) and len(_rows) > 0,
+         f"code={code}, count={len(_rows) if isinstance(_rows, list) else 0}")
+    code, _ov = request('GET', '/api/admin/config-overview')
+    _fs_ov = ((_ov or {}).get('runtime_db') or {}).get('feishu_config') or {}
+    test("飞书配置: 配置总览含飞书组且 token 脱敏",
+         code == 200 and bool(_fs_ov) and '****' in str((_fs_ov.get('feishu_notify_token') or {}).get('value', ''))
+         and str((_ov or {}).get('feishu_effective', {}).get('gateway_url', '')).endswith('/notify'),
+         f"code={code}, feishu_keys={sorted(_fs_ov.keys())}, effective={(_ov or {}).get('feishu_effective')}")
+    code, _html = request('GET', '/')
+    test("飞书配置: 配置页含飞书独立配置组（可见可配）",
+         code == 200 and isinstance(_html, str) and 'fsConfig.title' in _html
+         and 'feishu_gateway_host' in _html and 'feishu_notify_token' in _html,
+         f"code={code}, has_title={'fsConfig.title' in _html if isinstance(_html, str) else None}")
+
+    # ---- 27-F：恢复现场（启用 + 桩地址，供后续组/本地开发直接可用） ----
+    request('PUT', '/api/admin/feishu-config', json_data={
+        "feishu_enabled": "true", "feishu_gateway_host": "127.0.0.1",
+        "feishu_gateway_port": "18099", "feishu_gateway_path": "/notify",
+        "feishu_gateway_url": "", "feishu_timeout": "3",
+        "feishu_app_url": "http://127.0.0.1:8000", "feishu_notify_token": "test-notify-token",
+        "feishu_app_id": ""})
+    code, cfg3 = request('GET', '/api/admin/feishu-config')
+    test("飞书配置: 恢复现场（启用 + 桩地址 + 原 token）",
+         code == 200 and (cfg3.get('effective') or {}).get('gateway_url') == 'http://127.0.0.1:18099/notify'
+         and (cfg3.get('effective') or {}).get('enabled') is True,
+         f"effective={cfg3.get('effective') if isinstance(cfg3, dict) else None}")
+
+    # 清理测试账号/审批人
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    _c, _a27f = request('GET', '/api/admin/approvers')
+    for _a in (_a27f if isinstance(_a27f, list) else []):
+        if _a.get('username') in ("nt3_l1",):
+            request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
+    for _u in ("nt3_sub", "nt3_l1"):
+        request('DELETE', f'/api/admin/local-users/{_u}')
+    test("飞书配置: 清理配置域测试用户/审批人", True, "nt3_* 已清理")
 
     # ============================================================
 

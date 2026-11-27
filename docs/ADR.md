@@ -792,3 +792,22 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   - `tests/test_api.py` 组 24：`24-2` 登录断言增加 `isinstance(data, dict)` 保护并输出凭据提示；`24-3`/`24-4` 统一安全取值，避免登录失败时后续断言连锁崩溃。
   - 本地全量回归：**467/467 通过**（干净库）。
   - 关联：ADR-017（冒烟白名单）、ADR-009（部署凭据）、ADR-024（CD 流程）、ADR-007（发布门禁）。
+
+### ADR-054：飞书通知=独立配置域（外挂式 channel，DB 权威/运行期生效/hook 化，2026-11-27）
+- **背景**：飞书通知落地后（ADR-051/052）配置仍是模块级 env 常量（`FEISHU_NOTIFY_*`），带来三个问题：
+  ① 运维期没有 AI 参与时，改地址/token/开关必须改 `.env` 并重启，无法在界面自查；② 生产部署后若网关换机/换端口，只能手工改文件；
+  ③ 通知逻辑硬编码在 8 处业务调用点，将来接钉钉/邮件要改业务代码。同时用户明确要求"飞书当外挂看，IP 等作为完整配置统一体现，和 AD 域一样是独立一组配置"。
+- **决策**：
+  1. **独立配置域**：新增 `feishu_config` 表（与 `ad_config` 同构：key/value/source/updated_at），配置页"飞书通知"独立成卡片，与 AD 域同级；首次空表从 `.env` 播种一次（source=env），此后 DB 权威（source=db），留空回退 `.env`（沿用 ADR-010 配置权威口径）。
+  2. **配置项完整**：`feishu_enabled`（开关）、`feishu_gateway_host` / `feishu_gateway_port` / `feishu_gateway_path`（网关地址，IP 显式可见）、`feishu_gateway_url`（完整 URL 覆盖，兼容旧 env）、`feishu_notify_token`（预共享 token）、`feishu_timeout`、`feishu_app_url`（消息里的系统入口）、`feishu_app_id`（仅展示/核对）。
+  3. **Secret 边界不放宽（ADR-052 不变）**：App Secret **不落业务机、不入库、不下发、不展示**；配置页只通过网关 `GET /health` 展示 `app_configured/token_configured/allow_cidrs`，用于确认"应用已配置"，并给出策略说明。
+  4. **运行期生效**：所有通知读取改走 `get_feishu_config_value / feishu_gateway_url / _feishu_enabled`，保存即生效（无需重启）；删除了模块级 `FEISHU_NOTIFY_*` 常量，杜绝双源。
+  5. **hook 化（外挂式）**：`NOTIFY_HOOKS` + `register_notify_hook(name, fn)`；`notify_event` 退化为派发器，遍历已注册通道逐个调用并自吞异常；飞书作为默认通道 `feishu` 注册，业务 8 处调用点零改动。新增钉钉/邮件只需再注册一条通道。
+  6. **可单独测试**：`POST /api/admin/feishu-config/test` 给当前管理员发一条真实飞书消息（同步等待网关，失败返 `ok=false` 而不 500），配合 `/api/admin/feishu-config/hooks` 与配置页"发送测试通知"按钮，实现"飞书功能可单独验证、再与 SecureTrans 对接"。
+  7. **凭据/审计**：token 只回显掩码（`te****`），掩码回存不覆盖真实值；保存写审计 `update_feishu_config`（token 掩码）、导入写 `import_feishu_config`、自测写 `test_feishu_notify`（失败另记 `notify_failed`）。
+- **落点**：
+  - `src/app.py`：`FEISHU_ENV_MAP` / `FEISHU_DEFAULTS`、`feishu_config` 表与播种、`get_feishu_config_value`、`_compose_gateway_url` / `feishu_gateway_url` / `feishu_gateway_health_url` / `_feishu_gateway_probe`、`_feishu_enabled` / `_feishu_timeout`、`NOTIFY_HOOKS` 注册表与 `notify_event` 派发器、4 个 admin 接口（GET/PUT/import/test）与 hooks 枚举、`config-overview` 增 `feishu_config` 段。
+  - `src/static/index.html`：配置页新增"飞书通知（外挂服务，数据库权威）"卡片（9 字段 + 网关状态灯 + 保存/导入/发送测试通知），i18n 中英双语 `fsConfig.*`；配置总览并入飞书组。
+  - `tests/test_api.py`：新增组 27（29 项）——配置组可读/9 项齐备、token 掩码不泄明文、Secret 不在业务机、网关探活、hook 枚举、非法端口/超时 400、保存后 host+port+path 组装、来源标 db、掩码回存不覆盖、运行期生效（DB 地址+原 token 实际到达桩）、关闭开关→skipped 且不发请求、自测 400/200/403 边界、网关不可达优雅失败、审计留痕、配置总览脱敏、配置页可配可见；**全量基线 467 → 496**（496/496 通过，干净库）。
+  - 关联：ADR-051（旁路不阻塞/界面可观测）、ADR-052（零出网与网关边界）、ADR-010（配置权威与来源标记）、ADR-005（非硬编码）。
+
