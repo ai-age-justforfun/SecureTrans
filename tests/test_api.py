@@ -3437,13 +3437,49 @@ if ENV_ROLE != 'prod' and not SMOKE_MODE:
          and 'fsConfig.pushSecret' in _html28 and 'fsConfig.deptHint' in _html28,
          f"code={code}")
 
+    # v2.7.5（P1 回归）：一级审批人多人时必须全员投递
+    # 背景：生产实测 6 位一级审批人，网关串行送达 6 条耗时 ~5.6s，业务侧 5s 超时先到 →
+    # 消息其实已送达却记 failed。修复=网关并发投递（0.2.1）+ 业务侧默认超时 5s→10s。
+    request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
+    _c, _a28c = request('GET', '/api/admin/approvers')
+    for _a in (_a28c if isinstance(_a28c, list) else []):
+        if _a.get('username') in ("nt5l1a", "nt5l1b"):
+            request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
+    for _u in ("nt5_sub", "nt5l1a", "nt5l1b"):
+        request('DELETE', f'/api/admin/local-users/{_u}')
+    for _un, _dn, _em in (("nt5_sub", "多批提交人", "nt5_sub@company.com"),
+                          ("nt5l1a", "多批一级A", "nt5l1a@company.com"),
+                          ("nt5l1b", "多批一级B", "nt5l1b@company.com")):
+        request('POST', '/api/admin/local-users', json_data={
+            "username": _un, "password": "Test@123456", "displayName": _dn,
+            "role": "internal-user", "email": _em})
+    for _un in ("nt5l1a", "nt5l1b"):
+        request('POST', '/api/admin/approvers', json_data={
+            "level": 1, "username": _un, "displayName": _un, "scope": "all"})
+    request('POST', '/api/auth/login', json_data={"username": "nt5_sub", "password": "Test@123456"})
+    _mk28d = notify_mark()
+    _fp28b = os.path.join(test_dir, "nt5_multi.exe")
+    with open(_fp28b, 'wb') as _f:
+        _f.write(b"MZ" + b"multi" * 80)
+    _c, _d = upload_file(_fp28b, "nt5_multi.exe")
+    _c2, _d2 = request('POST', '/api/submissions', json_data={
+        "tempIds": [_d.get('tempId') if isinstance(_d, dict) else None],
+        "receiverName": "接收人", "receiverEmail": "r@x.com", "receiverType": "internal",
+        "securityLevel": "internal", "reason": "多审批人全员通知验证"})
+    _req28d = notify_since(_mk28d, "submission_pending_l1")
+    _rcpt28 = (_req28d or {}).get('recipients') or []
+    test("通知: 一级审批人多人时全员投递（收件人=全部一级审批人）",
+         _c2 == 200 and bool(_rcpt28)
+         and {"nt5l1a@company.com", "nt5l1b@company.com"}.issubset(set(_rcpt28)),
+         f"code={_c2}, recipients={_rcpt28}")
+
     # 清理组28测试账号
     request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
     _c, _a28b = request('GET', '/api/admin/approvers')
     for _a in (_a28b if isinstance(_a28b, list) else []):
-        if _a.get('username') in ("nt4_l1",):
+        if _a.get('username') in ("nt4_l1", "nt5l1a", "nt5l1b"):
             request('DELETE', f"/api/admin/approvers/{_a.get('id')}")
-    for _u in ("nt4_sub", "nt4_l1"):
+    for _u in ("nt4_sub", "nt4_l1", "nt5_sub", "nt5l1a", "nt5l1b"):
         request('DELETE', f'/api/admin/local-users/{_u}')
 
     # ============================================================

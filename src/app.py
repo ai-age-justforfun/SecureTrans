@@ -62,7 +62,7 @@ STATIC_DIR = BASE_DIR / "static"
 
 # 统一时间格式（now_str 与解析共用，避免多处不一致）
 TS_FMT = "%Y-%m-%d %H:%M:%S"
-APP_VERSION = "v2.7.4"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
+APP_VERSION = "v2.7.5"  # 系统版本号（唯一来源，与前端 APP_VERSION 一致）
 # 发布阶段（.env APP_STAGE 可配）：alpha=自测 / beta=内部测试 / rtm=内部使用 / release=正式发布
 # 显示为 vX.Y.Z-<stage>，用于页面/健康检查标识当前交付阶段
 APP_STAGE = os.getenv("APP_STAGE", "alpha").strip().lower()
@@ -2479,11 +2479,16 @@ def _feishu_enabled() -> bool:
 
 
 def _feishu_timeout() -> float:
-    """网关调用超时（秒），非法值回退 5"""
+    """网关调用超时（秒），非法值回退 10。
+
+    v2.7.5：默认 5s 偏短——一级/二级审批人多人时网关需逐个投递，
+    实测 6 人约 5.6s，业务侧先超时但消息其实已送达（误记 failed）。
+    默认提为 10s，配置域仍可覆盖（0.5~60s）。
+    """
     try:
-        val = float(get_feishu_config_value("feishu_timeout", os.getenv("FEISHU_NOTIFY_TIMEOUT", "5")) or 5)
+        val = float(get_feishu_config_value("feishu_timeout", os.getenv("FEISHU_NOTIFY_TIMEOUT", "10")) or 10)
     except (TypeError, ValueError):
-        return 5.0
+        return 10.0
     return max(0.5, min(val, 60.0))
 
 

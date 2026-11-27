@@ -134,3 +134,8 @@ bash deploy-gateway.sh
 - **部门补全**：`/notify` 对待审批事件用 `submitter_email` 查飞书通讯录（用户 → `department_ids` → 部门名），
   渲染“提交人部门：X / 请部门负责人进行审批”；缺 `contact:contact.base:readonly` + `contact:department.base:readonly`
   或查不到时该行自动省略，**不影响消息发送**。权限变更后必须在飞书“版本管理与发布”里**创建并发布版本**才生效。
+
+### 6.1 并发投递（v0.2.1）
+
+一级/二级审批人可能有多个。早期串行投递 6 人约 5.6s，业务侧 5s 超时先到 → **消息已送达却记 failed**。
+现改为 `ThreadPoolExecutor(max_workers=min(8, 收件人数))` 并发发送，结果顺序与收件人一致；业务侧默认超时同步提到 10s。

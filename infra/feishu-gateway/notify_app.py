@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import concurrent.futures
 import hmac
 import ipaddress
 import json
@@ -29,7 +30,7 @@ from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 STARTED_AT = time.time()
 
 ENV_PATH = os.getenv("NOTIFY_ENV_FILE", "/opt/securetrans-notify/.env")
@@ -447,11 +448,16 @@ def notify(payload: Dict[str, Any], request: Request, x_notify_token: str = Head
 
     results = []
     sent = failed = 0
-    for email in emails:
-        ok, code, msg, mid = _send_one(email, text)
-        sent += 1 if ok else 0
-        failed += 0 if ok else 1
-        results.append({"recipient": _mask_email(email), "ok": ok, "code": code, "msg": msg, "message_id": mid})
+    # 并发投递（v0.2.1）：一级/二级审批人可能有多个，串行会让业务侧 5s 超时先到（
+    # 实际已送达但业务侧记 failed）。并发上限 8，结果顺序与收件人一致。
+    if emails:
+        workers = min(8, len(emails))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            outs = list(pool.map(lambda e: _send_one(e, text), emails))
+        for email, (ok, code, msg, mid) in zip(emails, outs):
+            sent += 1 if ok else 0
+            failed += 0 if ok else 1
+            results.append({"recipient": _mask_email(email), "ok": ok, "code": code, "msg": msg, "message_id": mid})
 
     body: Dict[str, Any] = {
         "code": 0 if sent else 502,
