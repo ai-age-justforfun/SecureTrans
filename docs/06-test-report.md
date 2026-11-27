@@ -704,3 +704,20 @@
 飞书投递成功率、部门解析命中率、`approved` 超期未下载归档。
 
 *2026-11-27 | v2.7.6 Release*
+
+## v2.7.6 发布与部署记录（2026-11-28 00:12 CST）
+
+| 项 | 结果 |
+|----|------|
+| 代码 | `dd915e8`（docs 全量刷新）+ `f31490a`（通知/时区修复），tag `v2.7.6` |
+| Gitea Release | id=441，4 资产（主包 30,131,766B / md5 / sha256 / offline-deps）；**镜像资产暂缺** |
+| GitHub Release | 同名 4 资产（云端 CI 构建）；`CI-TDD` + `RELEASE` + `CD-SIM` 全绿 |
+| 生产部署 | 容器 `securetrans-docker` 重建（`TZ=Asia/Shanghai`、`SECURETRANS_DATA=/data`、`NAS_ROOT=/nas`、`PATH=/venv/bin:...`、`--user 973:972`），再灌入 v2.7.6 `app.py`/`index.html` |
+| 生产健康 | `version=v2.7.6 / stage=release / envRole=prod / time=2026-11-28 00:12 CST` |
+| 生产冒烟 | **11/11 通过，exit 0** |
+| 数据 | 沿用 `/opt/securetrans/data` + `/mnt/nas/securetrans`，未迁移未清空 |
+
+**Gitea 流水线状态**：`ci.yml / release.yml / cd.yml`（run 1011–1013）全部 `queued` —— 本地 WSL 发行版
+`rocky10-ci` 当前未注册、`act_runner` 停机，标签 `securetrans-ci` 无 runner 消费；镜像构建设计依赖该宿主 docker。
+处理：本版用 GitHub 云端 CI 验证 + 手工等价部署；恢复 runner 后补 `image.tar.gz` 并由 CD 重建（见 docs/13 D7）。
+
