@@ -92,7 +92,7 @@ SecureTrans/
 │   │   ├── dev.env           # 开发环境配置（Windows 本地 + AD mock）
 │   └── static/               # 前端静态文件（SPA + 登录页）
 ├── tests/                    # 自动化测试
-│   └── test_api.py           # 全量API测试脚本（361项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
+│   └── test_api.py           # 全量API测试脚本（433项，标准库urllib无额外依赖；凭据参数化 TEST_ADMIN_USER/TEST_ADMIN_PASS）
 ├── docs/                     # 统一文档（数字前缀排序，持续刷新）
 │   ├── 00-lean-startup-phase-map.md   # Lean Startup三阶段映射与决策门
 │   ├── 01-scrum-io-definition.md      # AI时代人机协同Agile方法论模板(v3.0，SE 3.0+变更分级+三重范式+防眩晕)
@@ -100,7 +100,7 @@ SecureTrans/
 │   ├── 03-psf-process.md              # PSF阶段标准流程
 │   ├── 04-pmf-process.md              # PMF阶段标准流程（下一阶段准备）
 │   ├── 05-test-cases.md               # 测试用例
-│   ├── 06-test-report.md              # 测试报告（361项全通过）
+│   ├── 06-test-report.md              # 测试报告（433项全通过）
 │   ├── 07-psf-sprint4-retrospective.md # PSF阶段迭代小结
 │   ├── 08-cicd-gitops-architecture.md # CICD/GitOps架构规划
 │   ├── 09-preprod-verification.md     # 生产预验收清单
@@ -112,7 +112,7 @@ SecureTrans/
 └── infra/                    # 基础设施配置
     ├── deploy.sh             # 一键部署脚本（9步自动化, Linux）
     ├── deploy.ps1            # 一键部署脚本（Windows）
-    ├── verify.sh             # 部署验证脚本（361项，BASE_URL 自适应 + 凭据自动取 .env RESET_PASSWORD）
+    ├── verify.sh             # 部署验证脚本（433项，BASE_URL 自适应 + 凭据自动取 .env RESET_PASSWORD）
     ├── get-offline-python.sh # 离线 Python 3.12 RPM 获取（联网 Rocky8 跑一次）
     ├── nginx-securetrans.conf        # Nginx双网卡配置
     ├── nginx-securetrans-single.conf # Nginx单网卡配置
@@ -223,7 +223,7 @@ main ────●────●────●────●────  �
 
 ### 当前阶段
 **PSF → RC（v2.7.0 发布候选）**：服务器（Rocky 8.10 单网卡 10.10.30.8）部署完成，
-403 项自动化测试 100%（Windows dev）+ CI 容器全量 TDD + 800MB 性能压力测试 + 3-5 用户并发测试通过
+433 项自动化测试 100%（Windows dev）+ CI 容器全量 TDD + 800MB 性能压力测试 + 3-5 用户并发测试通过
 （MD5 端到端一致）+ CD 全自动部署打通（Release 发布 → 生产自动升级）+ **Docker 双通道发布（Gitea image.tar.gz + GitHub GHCR，ADR-038/039）**；
 beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署验证），通过后正式 release。全项目复盘见 [项目复盘总结](docs/12-project-retrospective.md)。
 
@@ -233,7 +233,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 - [产品需求文档 PRD v2.2](docs/02-prd.md)
 - [PSF阶段标准流程](docs/03-psf-process.md)
 - [测试用例](docs/05-test-cases.md)
-- [测试报告（361项全通过）](docs/06-test-report.md)
+- [测试报告（433项全通过）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
 - [版本结果汇总（v1.5.0→v2.7.3 全量）](docs/17-version-summary.md)
@@ -306,6 +306,8 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 048 | AI 时代人机协同 Agile 方法论采纳（v2.0→v3.0）：SE 3.0 范式 + L1/L2/L3 变更分级 + HITL/HOTL/HOOTL + PDCA 微循环 + RTM 缓冲并入 Agile + 防眩晕 | v2.7.1 |
 | 049 | GitLab 隔离——双开发域分离：个人域=本地+Gitea+GitHub，公司域=GitLab（另一 AI 工具）；**隔离终态 4a7ffe6 不再使用**：gitlabcicotest 已合并删除、CI 触发改 push main、tags=runner 标签非分支、Release=仅 4 sources 源码包（有意简化）、main 全链实证全绿、已与 Gitea/GitHub 对齐；GitHub 认证=PAT token（2FA） | v2.7.3 |
 | 050 | CICD Workflow 组织方式——总分式（入口+明细）vs 单文件：触发即作用域/权限最小化/失败隔离/跨平台迁移优，传值与配置共享劣；单文件适用纯 CI 单平台线性项目；本项目保持总分式（薄壳+infra/*.sh+secret 最小作用域）；GitLab 根 .gitlab-ci.yml=平台硬性入口（不扫描 .gitlab/，删根文件则不执行流水线，根文件 include 明细非冗余） | v2.7.2 |
+| 051 | 飞书审批通知=独立旁路通道：异步派发、失败不阻塞业务；7 事件固定（免审批直通仅发提交人）；账号→AD 邮箱→飞书三级解析；界面三列表+详情可观测（成功/失败/跳过） | v2.7.3 |
+| 052 | 关键服务器零出网 + 专用单向通知网关（10.10.30.114:8090）：仅放行 open.feishu.cn:443 + 源 IP 白名单（仅生产机）+ 预共享 token；网关只做鉴权→渲染→发送→记账，不做业务决策/不落正文；App ID/Secret 只存两处且禁入 git | v2.7.3 |
 
 > **使用方式**：决策冲突时以 docs/ADR.md 对应条目为准；新增决策只追加编号（ADR-0xx），不修改历史条目。
 > 最新落点摘要（ADR-031/032/033/034 核心）：合作方全量编辑+联系人必填；WSL 测试收敛为 dev+CI 两环境；生产只读冒烟=业界标准；

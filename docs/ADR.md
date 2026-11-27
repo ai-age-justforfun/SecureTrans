@@ -746,16 +746,19 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
 - **决策**：
   1. **独立旁路**：通知与业务事务**完全解耦**，异步发送（线程池/队列），**绝不阻塞**提交、审批、下载主流程；通知失败不改变任何业务状态机。
   2. **固定触发点（7 类，不多不少）**：①提交成功（需审批）→ 当前待办层级审批人；②提交成功（免审批直通）→ **仅提交人**；③一级通过（内部/合作方直接摆渡）→ 提交人；④一级通过（同人具备二级权限、自动跳过二级）→ 提交人；⑤一级通过（非合作方进入二级）→ 提交人 + 二级审批人；⑥二级通过 → 提交人；⑦任一环节驳回 → 提交人（含驳回意见）。
-  3. **失败语义**：统一写审计 `notify_sent` / `notify_failed` / `notify_skipped`；`notify_failed` 触发告警（日志 WARN + 界面标红），**不抛出、不回滚、不重试到阻塞**；有限重试（默认 3 次、指数退避）后置 failed。
-  4. **可观测性（强制）**：提交列表 / 审批界面在对应记录上直接显示飞书通知状态（成功/失败/跳过/已关闭 + 时间 + 错误摘要），使"通知异常"可在业务界面第一时间发现，用于快速区分是飞书服务器、开放平台权限还是网络问题。
-  5. **收件人解析**：提交人取 `local_users.email`；审批人按 `approvers.username → local_users.email` 解析；解析不到（如纯 AD 用户未落本地表）→ 记 `notify_skipped` 并跳过，**不阻塞业务**。
-  6. **开关与降级**：`FEISHU_NOTIFY_ENABLED=false` 时全链路静默（仍记 `notify_skipped`），用于网关不可用时的应急降级。
-- **落点（v2.8.0 待实现）**：
-  - 配置项（`.env`）：`FEISHU_NOTIFY_ENABLED`、`FEISHU_GATEWAY_URL`、`FEISHU_NOTIFY_TOKEN`、`FEISHU_NOTIFY_TIMEOUT`、`FEISHU_NOTIFY_RETRY`。
-  - 代码：`src/app.py` 新增 `notify_*` 旁路模块（发送在本进程外，异步）；提交 `app.py:1663-1673`、审批 `app.py:1785-1824` 插入事件点调用。
-  - 审计：新增 action `notify_sent` / `notify_failed` / `notify_skipped`（detail 只记模板名与结果，**不记消息正文/文件名**）。
-  - 界面：提交列表与审批页展示通知状态徽标；i18n 字典补中英文案。
-  - 测试：`tests/test_api.py` 新增通知组（mock 网关：成功/失败/超时/跳过/开关关闭/免审批仅发提交人）。
+  3. **失败语义**：成功/失败/跳过统一落 `notification_logs`（每单每节点一条，供界面与详情读取）；仅失败额外写一条审计 `notify_failed`（detail 只记错误摘要，不记正文/文件内容）；**不抛异常、不回滚业务、不做阻塞式重试**。
+  4. **可观测性（强制）**：提交列表 / 待审批列表 / 所有提交记录直接显示飞书通知状态（成功/失败/跳过/无记录 + 事件 + 时间 + 错误摘要）；详情页展示最近 20 条通知记录；提交/审批成功提示中注明"飞书通知异步发送，状态见列表"。目的是让"通知异常"在业务界面第一时间被发现，从而快速区分是飞书网关、开放平台权限还是网络问题。
+  5. **收件人解析（AD → 邮箱 → 飞书，三级）**：统一"账号 → 工作邮箱 → 飞书人员"——`local_users.email` 优先；未命中再查 AD `mail`（生产 AD 字段名 `mail`）；仍解析不到则记 `skipped` 并继续，不阻塞业务。实证（2026-11-27）：AD 账号 `jintao` → `tonyj@nexskysemi.com` → 飞书按 `receive_id_type=email` 投递成功；结论=**最小权限 `im:message` + `im:message:send_as_bot` 足够，无需 `contact:user.base:readonly`**，也不需要 open_id。
+  6. **开关与降级**：`FEISHU_NOTIFY_ENABLED=false` 时全链路静默（记 `skipped`），用于网关不可用时的应急降级。
+- **落点（v2.7.3 已实现，2026-11-27）**：
+  - 配置项（`.env`，全部非硬编码）：`FEISHU_NOTIFY_ENABLED`、`FEISHU_NOTIFY_URL`、`FEISHU_NOTIFY_TOKEN`、`FEISHU_NOTIFY_TIMEOUT`（默认 5s）、`FEISHU_NOTIFY_APP_URL`（通知正文中的处理入口）；模板见 `env/dev.env`、`env/test.env`、`env/prod.env.template`，生产真实 token 只写生产 `.env`（不入库）。
+  - 代码（`src/app.py`）：新增 7 事件白名单 `NOTIFY_EVENTS`、`resolve_email()`（本地表→AD `mail`）、`notify_event()`（daemon 线程派发、永不抛异常）、`_notify_worker()`（app_context 内解析邮箱→POST 网关→落库→失败写审计 `notify_failed`）、`get_notify_map()`（列表批量取最新一条，避免 N+1）、`_mask_email()`（`t***@n***`）；新增表 `notification_logs(submission_id,event,recipients,status,detail,created_at)`；`User` 类新增 `email` 并贯通 session（修复 AD 用户登录不落库导致"提交人无邮箱"的缺口）。
+  - 触发点：提交（免审批→`submission_auto_approved` 仅提交人；需审批→`submission_status` 提交人 + `submission_pending_l1` 一级审批人）；一级通过（进入二级→`submission_status` 提交人 + `submission_pending_l2` 二级；内部/合作方直接通过→`submission_approved` 提交人；自动跳过二级→`approval_level_skipped` 提交人）；终审→`submission_approved`；驳回→`submission_rejected`（含原因）。
+  - 接口：`/api/submissions`、`/api/admin/submissions/all`、`/api/submissions/pending/my` 每条附 `notify`（最新 status/event/detail/time）；`/api/submissions/<id>` 附 `notifications`（近 20 条，收件人已掩码）。
+  - 界面（`src/static/index.html`）：三个列表新增"飞书通知"列（成功/失败/跳过/无记录徽标 + 事件名），详情页新增"通知记录"区块，提交/审批成功提示注明异步发送；i18n 中英双语键 `notify.*` 完整。
+  - 网关：`infra/feishu-gateway/`（FastAPI，8090），7 事件模板 + `X-Notify-Token` 鉴权 + `request_id` 幂等 + JSONL 记账。
+  - 测试：`tests/test_api.py` 组 25（通知桩 `127.0.0.1:18099`），21 条断言覆盖七事件、AD/本地邮箱、免审批"仅提交人"强断言、网关 502 不阻塞 + `notify_failed` 审计；全量 **433/433 通过**（干净库基线）。
+  - 已知边界：收件人无可用邮箱→`skipped`（不回退通知管理员）；生产 `.env` 与容器出站策略属部署步骤（见 ADR-052 落点）。
 
 ### ADR-052：关键服务器零出网 + 专用单向通知网关（安全，强制，2026-11-27）
 - **背景**：SecureTrans 生产（10.10.30.8）是公司关键文件摆渡节点，其可用性与数据安全优先级最高。若业务机自行直连互联网出站，一旦被攻破即具备外传与反连能力，且出站面分散、审计困难、飞书凭据需落在业务机。改为"业务机零出网 + 单台专用网关出网"后，攻击面、审计面、凭据面三处同时收敛。
@@ -767,6 +770,7 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   5. **网关职责边界**：只做「鉴权 → 模板渲染 → 调 lark-oapi 发送 → 记账」四件事；**不做业务决策**（不判断该不该审批、不改业务状态），**不落业务正文**（不存文件名/文件内容）。
   6. **脱敏日志**：网关侧只记元数据（时间、收件人标识哈希或掩码、模板、结果、飞书错误码），保留期限与业务审计一致。
 - **落点**：
-  - ✅ 已落地（2026-11-27）：网关防火墙 443 白名单（仅 `open.feishu.cn`）+ 源 IP 白名单（仅 `10.10.30.8`）；主机改名 `feishu-sdk-server-securetrans`。
-  - ⏳ 待落地：网关新增独立通知服务（端口与 CICD 的 8080 分离，如 8090）；token 生成与双端配置；SecureTrans 容器出站策略显式拒绝互联网；token 轮换流程（建议 180 天，与飞书 App Secret 同步）。
-  - 关联：ADR-042（凭据只存本地）、ADR-051（失败不阻塞与界面可观测）。
+  - ✅ 已落地（2026-11-27）：网关防火墙 443 白名单（仅 `open.feishu.cn`）+ 源 IP 白名单（仅 `10.10.30.8`）；主机改名 `feishu-sdk-server-securetrans`；通知服务独立于 CICD 的 8080，绑定 `10.10.30.114:8090`（只监内网 IP，`127.0.0.1` 被拒属预期）；`securetrans-notify` systemd active+enabled；venv 复用网关机既有站点包（出网只放行 443，无法在线 pip 装包）；`.env` 600（`FEISHU_APP_ID`/`FEISHU_APP_SECRET`/`FEISHU_NOTIFY_TOKEN`/`NOTIFY_BIND`/`NOTIFY_PORT`/`NOTIFY_DATA_DIR`/`SECURETRANS_APP_URL`）；审计 `/var/lib/securetrans-notify/notify.jsonl`（含 `client` 源 IP、收件人掩码）。
+  - ✅ 端到端实证（2026-11-27）：生产机 `10.10.30.8` → `POST http://10.10.30.114:8090/notify`（`event=submission_pending_l1`）→ `HTTP 200 / sent=1 / message_id=om_x100b7fa1e02864b0df13d5f36785be8`；网关审计 `client=10.10.30.8`，用户收到消息原文确认标题/单号/提交人/文件名/事由/时间/入口正确。
+  - ⏳ 待落地（属部署步骤，非代码缺陷）：生产 `.env` 写入 `FEISHU_NOTIFY_URL=http://10.10.30.114:8090/notify` 与真实 `FEISHU_NOTIFY_TOKEN` 并重启容器；SecureTrans 容器出站策略显式拒绝互联网（仅内网放行到 10.10.30.114:8090）；token 轮换流程（建议 180 天，与飞书 App Secret 同步）。
+  - 关联：ADR-042（凭据只存本地/受控服务端两处）、ADR-051（失败不阻塞与界面可观测）。
