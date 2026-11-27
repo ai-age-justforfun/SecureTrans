@@ -1,0 +1,23 @@
+[Unit]
+Description=SecureTrans Feishu Notify Gateway (one-way notify only, ADR-052)
+Documentation=https://github.com/ai-age-justforfun/SecureTrans
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/securetrans-notify/srv
+EnvironmentFile=/opt/securetrans-notify/.env
+ExecStart=/opt/securetrans-notify/venv/bin/python -m uvicorn notify_app:app --host ${NOTIFY_BIND} --port ${NOTIFY_PORT} --workers 1 --no-server-header
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/securetrans-notify.log
+StandardError=append:/var/log/securetrans-notify.err.log
+# 只写审计目录，其余系统路径只读
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
