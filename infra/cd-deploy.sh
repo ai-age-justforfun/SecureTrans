@@ -88,7 +88,7 @@ if [ "$DOCKER_MODE" = "1" ]; then
   echo "[冒烟] 目标 http://${HOST_IP}:${PORT}（内网面）"
   if [ -f "${INSTALL_DIR}/infra/smoke.sh" ] && [ -n "${HOST_IP}" ]; then
     cd "${INSTALL_DIR}" && bash infra/smoke.sh "http://${HOST_IP}:${PORT}" && echo "  SMOKE-OK" \
-      || echo "  [警告] 冒烟有失败项，详见输出（服务已启动，请人工复核）"
+      || { echo "  [错误] 生产冒烟未通过（只读冒烟全量通过是部署门禁，见 ADR-017/053）"; exit 1; }
   else
     echo "  冒烟脚本/HOST_IP 不可用，以健康检查为准（docker-deploy.sh 已做 health + 登录探测）"
   fi
@@ -125,7 +125,8 @@ else
   }
   echo "[6/6] 只读冒烟..."
   if [ -f "${INSTALL_DIR}/infra/smoke.sh" ]; then
-    cd "${INSTALL_DIR}" && bash infra/smoke.sh && echo "  SMOKE-OK" || echo "  [警告] 冒烟有失败项，详见输出（服务已启动，请人工复核）"
+    cd "${INSTALL_DIR}" && bash infra/smoke.sh && echo "  SMOKE-OK" \
+      || { echo "  [错误] 生产冒烟未通过（只读冒烟全量通过是部署门禁，见 ADR-017/053）"; exit 1; }
   else
     echo "  冒烟脚本缺失，健康检查已通过（服务可用）"
   fi

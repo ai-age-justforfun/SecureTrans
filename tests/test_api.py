@@ -3092,13 +3092,17 @@ test("冒烟: 健康检查含版本/阶段/envRole",
      f"code={code}, version={data.get('version')}, stage={data.get('stage')}, envRole={data.get('envRole')}")
 # 24-2 admin 登录（生产标准凭据；产生会话/审计属系统正常运行数据）
 code, data = request('POST', '/api/auth/login', json_data={"username": ADMIN_USER, "password": ADMIN_PASS})
-test("冒烟: admin 登录成功", code == 200 and data.get('user', {}).get('role') == 'admin', f"code={code}")
+test("冒烟: admin 登录成功",
+     code == 200 and isinstance(data, dict) and data.get('user', {}).get('role') == 'admin',
+     f"code={code}（凭据取 .env RESET_PASSWORD；若已手工改密，用 VERIFY_ADMIN_PASS='<当前密码>' 重跑）")
 # 24-3 当前用户
 code, data = request('GET', '/api/auth/me')
-test("冒烟: 获取当前用户", code == 200 and data.get('username') == ADMIN_USER, f"code={code}")
+_d = data if isinstance(data, dict) else {}
+test("冒烟: 获取当前用户", code == 200 and _d.get('username') == ADMIN_USER, f"code={code}")
 # 24-4 外网面识别（X-Network-Zone 模拟，应用层只读）
 code, data = request('GET', '/api/auth/me', headers={"X-Network-Zone": "external"})
-test("冒烟: 外网面识别 networkZone=external", code == 200 and data.get('networkZone') == 'external', f"code={code}")
+_d = data if isinstance(data, dict) else {}
+test("冒烟: 外网面识别 networkZone=external", code == 200 and _d.get('networkZone') == 'external', f"code={code}")
 # 24-5 外网面访问管理接口 403
 code, data = request('GET', '/api/admin/local-users', headers={"X-Network-Zone": "external"})
 test("冒烟: 外网面访问管理接口 403", code == 403, f"code={code}")

@@ -779,3 +779,16 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   - ✅ 开机自恢复（2026-11-27）：生产 `podman-restart.service` 原为 disabled（容器 `RestartPolicy=unless-stopped` 只在 podman 运行期间有效，rootful 无守护进程 → 主机重启后容器不自启），已 `enable --now`，`is-enabled=enabled`、`is-active=active`。
   - ⏳ 待落地（属部署步骤，非代码缺陷）：生产 `.env` 写入 `FEISHU_NOTIFY_URL=http://10.10.30.114:8090/notify` 与真实 `FEISHU_NOTIFY_TOKEN` 并重启容器；SecureTrans 容器出站策略显式拒绝互联网（仅内网放行到 10.10.30.114:8090）；token 轮换流程（建议 180 天，与飞书 App Secret 同步）。
   - 关联：ADR-042（凭据只存本地/受控服务端两处）、ADR-051（失败不阻塞与界面可观测）。
+
+### ADR-053：生产部署只读冒烟全量通过 = 发布门禁（强制，2026-11-27）
+- **背景**：CD 落地（`cd-deploy.sh`）此前在冒烟失败时只打印"警告"后继续，退出码仍为 0——流水线显示绿色，但生产实际存在失败项（假绿）。对关键摆渡节点，冒烟是唯一在真实部署形态下验证"装上去还能用"的自动化手段，若允许"警告即通过"，等于门禁失效。
+- **决策**：
+  1. **硬门禁**：生产只读冒烟（`infra/smoke.sh`，组 24 白名单 + 质量门禁）**全量通过**才视为部署成功；任一失败 → CD 任务失败（`exit 1`），docker 通道与原生回退通道一致，不允许告警式放行。
+  2. **凭据单一来源**：冒烟凭据取 `.env RESET_PASSWORD`（ADR-009）；生产若已手工改密，用 `VERIFY_ADMIN_PASS='<当前密码>' bash infra/smoke.sh <BASE_URL>`，不在脚本内硬编码第二份默认密码。
+  3. **断言必须容错**：冒烟断言不得因响应体非 JSON 而抛栈——登录失败要给出"凭据不匹配/是否改密"的明确提示，否则真实原因被 `AttributeError` 掩盖（2026-11-27 首次生产冒烟即命中该缺陷）。
+  4. **目标地址**：生产冒烟必须用内网 IP（`http://<内网IP>:8000`）；`127.0.0.1` 不在 `INTERNAL_CIDRS` 被判外网面、管理接口 403 属正确行为（ADR-043）。
+- **落点**：
+  - `infra/cd-deploy.sh`：docker 通道与原生通道的 `smoke.sh` 调用由 `|| echo "[警告]…"` 改为 `|| { echo "[错误] 生产冒烟未通过（发布门禁）"; exit 1; }`。
+  - `tests/test_api.py` 组 24：`24-2` 登录断言增加 `isinstance(data, dict)` 保护并输出凭据提示；`24-3`/`24-4` 统一安全取值，避免登录失败时后续断言连锁崩溃。
+  - 本地全量回归：**467/467 通过**（干净库）。
+  - 关联：ADR-017（冒烟白名单）、ADR-009（部署凭据）、ADR-024（CD 流程）、ADR-007（发布门禁）。
