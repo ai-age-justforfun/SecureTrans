@@ -874,6 +874,10 @@ ohup act_runner daemon --config /opt/securetrans/config.yaml > /var/log/securetr
   3. 生产部署通道固定为：资产 scp → `sha256sum` 校验 → `podman load` → `podman run`（保留 `--env-file`、`-e TZ/SECURETRANS_DATA/NAS_ROOT/PATH`、`--user <uid>:<gid>`）→ 只读冒烟 11/11。
   4. GHCR 继续保留为在线分发通道；`image.tar.gz` 只作封闭数据中心兜底，两者同源同 tag。
 - **落点（v2.7.7）**：`.github/workflows/release.yml`（构建/保存/上传顺序调整，7 个资产文件）；`src/app.py` + `src/static/index.html` 版本 v2.7.7；`docs/13` D7 关闭；`docs/17` 增加 v2.7.7 行；`docs/DEPLOY.md` 部署速览补"镜像离线资产"步骤。
+- **落点（2026-11-28 实跑，v2.7.7）**：GitHub `RELEASE` run `46104671637` 成功，Release id `461281228` 7 资产齐全
+  （`securetrans-2.7.7-image.tar.gz` 60,919,943B / `.md5` / `.sha256`、主包 30,141,895B / `.md5` / `.sha256`、offline-deps 2,557,546B），
+  本地回读 md5+sha256 全部 OK；Gitea Release id `442` 补齐同名 7 资产（另存 2 个飞书网关归档，共 9 资产）；
+  生产 `podman load` → `localhost/securetrans:v2.7.7` → 容器重建 → `v2.7.7 / release / ok` → 冒烟 **11/11 exit 0**（镜像 ID `1032dba620d5`，174MB）。
 - **代价**：每次发布多一次 `docker save`（约 1-2 分钟）与约 60-70MB 上传；Release 资产数量由 4 → 7。
 - **验证口径**：`gh release view` 资产齐全且大小非零 → 生产 `podman load` 成功、`podman images` 出现同 tag → 容器 `APP_VERSION` 与 tag 一致 → 冒烟 11/11。
 

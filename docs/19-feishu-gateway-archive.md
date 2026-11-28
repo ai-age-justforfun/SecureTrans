@@ -89,3 +89,9 @@
 - 复现：见 `infra/feishu-gateway/ENVIRONMENT.md` §4（代码包 + venv 快照 + systemd 三步）；
 - 回退：网关机保留 `notify_app.py.bak-20261127233230`（0.2.2 前版本）与 `.env.bak-20261127`，`systemctl restart securetrans-notify` 即回退；
 - 本次未改动线上任何文件，只在 `/opt/securetrans-notify/archive/` 增加归档与 `/tmp/gw-dryrun` 增加隔离实例（已停）。
+
+## 7. Gitea Release 存档现状（v2.7.7，2026-11-28）
+
+- Release id `442` 共 **9 个资产**：7 个发布资产（主包 + md5 + sha256 + offline-deps + image.tar.gz + md5 + sha256）+ 2 个网关归档（`securetrans-feishu-gateway-0.2.2.tar.gz` 15,424B、`…-venv-py311.tar.gz` 25,390,827B）。
+- GitHub 对应 Release id `461281228`（同一 7 个发布资产，云端构建）；网关归档不进 GitHub，只存 Gitea。
+- 归档可复制性验证：本地下载回读 md5/sha256 **全部 OK**；网关侧原始文件仍在 `/opt/securetrans-notify/archive/`。

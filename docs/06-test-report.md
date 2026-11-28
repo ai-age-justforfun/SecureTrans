@@ -729,3 +729,22 @@
 `rocky10-ci` 当前未注册、`act_runner` 停机，标签 `securetrans-ci` 无 runner 消费；镜像构建设计依赖该宿主 docker。
 处理：本版用 GitHub 云端 CI 验证 + 手工等价部署；恢复 runner 后补 `image.tar.gz` 并由 CD 重建（见 docs/13 D7）。
 
+
+## v2.7.7 发布与生产部署记录（2026-11-28 11:53 CST）
+
+| 项 | 结果 |
+|----|------|
+| 代码 | `ea1c4cc`（第 5 资产 + ADR-058）、`c73b7bc`（发布前回归记录），tag `v2.7.7` |
+| GitHub CI-TDD | run `46104671646` **success**（push tag 触发，ubuntu 全量） |
+| GitHub RELEASE | run `46104671637` **success**，Release id `461281228`，资产 **7/7**（含 `image.tar.gz` 60,919,943B） |
+| 资产校验 | 本地回读：主包 md5/sha256 **OK**、镜像 md5 `278d9b01…` / sha256 `77c9abb6…` **OK** |
+| Gitea Release | id `442`，补齐 7 个发布资产（+2 个飞书网关归档，共 9 个） |
+| 生产镜像 | `podman load` → `ghcr.io/ai-age-justforfun/securetrans:2.7.7` → retag `localhost/securetrans:v2.7.7`（ID `1032dba620d5`，174MB） |
+| 生产容器 | `securetrans-docker` 重建（`--env-file`、`TZ=Asia/Shanghai`、`SECURETRANS_DATA=/data`、`NAS_ROOT=/nas`、`PATH=/venv/bin:...`、`--user 973:972`、`unless-stopped`） |
+| 生产健康 | `version=v2.7.7 / stage=release / envRole=prod / status=ok / time=2026-11-28 11:53:12` |
+| 容器时区 | `Sat Nov 28 11:53:12 CST 2026`（`TZ` 生效；镜像内 `/etc/timezone` 仍为 `Etc/UTC`，以进程 TZ 为准） |
+| 生产冒烟 | **11/11 通过，exit 0**（含计数门禁 `==10`） |
+| 回滚资产 | 旧镜像 `localhost/securetrans:v2.7.3-feishu-r1` 保留；`/opt/securetrans/incoming` 历史 `.cur-*` / `.env.bak-*` 未删 |
+
+**说明**：镜像由 GitHub 云端 `docker build`（`infra/docker/Dockerfile.run`）产出，源码与 tag `v2.7.7` 一致，
+不再使用 v2.7.6 的"旧镜像 + `podman cp` 热更"形态，镜像 tag 与代码版本首次正式对齐（ADR-058）。

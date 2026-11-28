@@ -1,7 +1,7 @@
 # SecureTrans 版本结果汇总（PSF 阶段全量）
 
-> 阶段：PSF（Problem/Solution Fit，问题-方案匹配） | 汇总日期：2026-09-17
-> 范围：v1.5.0 → v2.7.3（当前 main=9056870，docs-only，未 bump）
+> 阶段：PSF（Problem/Solution Fit，问题-方案匹配） | 汇总日期：2026-11-28
+> 范围：v1.5.0 → v2.7.7（当前 tag=v2.7.7，生产运行中；测试域已拆除，ADR-057）
 > 依据：git tag 轨迹 + ADR 落点 + Release 记录；各版本核心内容见 docs/ADR.md 对应条目
 
 ## 一、一句话总结

@@ -1,6 +1,6 @@
 # SecureTrans — 轻量级跨网文件审批摆渡系统
 
-> 版本：v2.7.6 | 阶段：Release（正式发布）— RC 验收通过，生产运行观察期 1 周（2026-11-27 起）
+> 版本：v2.7.7 | 阶段：Release（正式发布）— v2.7.7 已上生产（2026-11-28），观察期 1 周
 > 技术栈：Flask 3.0 + Flask-Login + SQLite + os.rename 0拷贝摆渡
 > 开发模式：主干开发（Trunk-Based Development）+ 单分支 main + AI 辅助人机协同（AGENTS v2.0）
 > 部署：Rocky Linux 8.10 单网卡（10.10.30.8），**podman 容器 `securetrans-docker` 监听 8000**（ADR-043），Python 3.12 venv，容器 TZ=Asia/Shanghai；原生 gunicorn+systemd 保留为回退通道
@@ -190,11 +190,11 @@ SecureTrans/
 ## 发布与版本
 
 - **版本号单一来源**：`src/app.py` 的 `APP_VERSION`（前端 index.html 同步），文档内版本号统一
-- **发布阶段（.env APP_STAGE，显示 vX.Y.Z-stage）**：alpha=自测 → beta=内部测试 → rc=发布候选 → release=正式发布；`/api/health` 返回 `stage`，登录页/品牌副标题/页面显示 `vX.Y.Z-stage`，运维期可随时改 .env 切换阶段。**v2.7.6 起生产 APP_STAGE=release**
+- **发布阶段（.env APP_STAGE，显示 vX.Y.Z-stage）**：alpha=自测 → beta=内部测试 → rc=发布候选 → release=正式发布；`/api/health` 返回 `stage`，登录页/品牌副标题/页面显示 `vX.Y.Z-stage`，运维期可随时改 .env 切换阶段。**v2.7.6 起生产 APP_STAGE=release（当前 v2.7.7）**
 - **打包**：`bash infra/package.sh <版本>` → `packages/securetrans-<版本>.tar.gz`（含 offline-deps 离线 wheel）
 - **发布**：`powershell -File infra/release.ps1 -Version v<版本>` → Gitea Release（源码包 + 离线依赖包）
 - **Docker 双通道（v2.7.0 起，ADR-038/039）**：Gitea Release 第 5 资产 `securetrans-vX.Y.Z-image.tar.gz`（离线 `docker load` / `podman load`）；GitHub 走 GHCR（`ghcr.io/ai-age-justforfun/SecureTrans`，在线 pull）
-- **版本记录**：Git tag（`v2.7.6`）+ Gitea Release 资产 + SHA256 校验
+- **版本记录**：Git tag（`v2.7.7`）+ Gitea/GitHub Release 7 资产 + MD5/SHA256 校验
 - **变更记录**：文档内部版本号（如 PRD v2.2）独立演进，关键需求变更用 Git tag
 - **发布触发规则**：
   - **文档-only 变更**（README/AGENTS/docs/*.md）：commit + push main 即可，**不 bump 版本、不打包、不建 Release**——文档随仓库持续演进，代码发布时包内自动带入最新
@@ -240,7 +240,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 - [测试报告（510项全通过 + 生产实测）](docs/06-test-report.md)
 - [PSF阶段迭代小结](docs/07-psf-sprint4-retrospective.md)
 - [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
-- [版本结果汇总（v1.5.0→v2.7.6 全量）](docs/17-version-summary.md)
+- [版本结果汇总（v1.5.0→v2.7.7 全量）](docs/17-version-summary.md)
 - [PSF 阶段 Scrum 复盘（Inspect & Adapt 标准版）](docs/18-psf-retrospective.md)
 - [飞书通知网关：归档备份与 dryrun 全盘对照](docs/19-feishu-gateway-archive.md)
 - [GitHub 迁移方案（Active，v2.6.5 首验落地）](docs/14-github-migration.md)
@@ -316,7 +316,8 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 | 054 | 飞书通知=独立配置域（外挂式 channel）：`feishu_config` 表（DB 权威、`.env` 播种/回退），配置页独立卡片可配 9 项（开关/网关 IP·端口·路径·完整 URL/token/超时/入口/AppID）；App Secret 仍只存网关；保存即时生效；`NOTIFY_HOOKS` hook 化（业务 8 处调用点零改动，可并接钉钉/邮件）；`POST /api/admin/feishu-config/test` 可单测通知，配置页显示网关 /health 状态灯；测试基线 467→496 | v2.7.3 |
 | 055 | 飞书 App Secret 受控下发 + 部门补全：网关 `POST /admin/secret`（白名单 IP + token，先验凭据再原子写 `.env` 600 并热重建客户端）；业务侧只做内存转发不落库/不落盘/不回显（审计只记动作）；`deploy-gateway.sh` 支持 `--secret-file` 且升级沿用本机 `.env`（不依赖 AI）；待审批通知经飞书通讯录补"提交人部门 + 请部门负责人审批"（缺权限自动省略不阻塞）；`/health` 增 `app_id_masked/contact_readable`；测试基线 496→510 | v2.7.6 |
 | 056 | 通知可读性收口 + 生产时区：通知单号只显示短号 `#8位hex`（不引入流水号，A 方案）；部门取主部门（`is_primary_dept`）；`submission_status` 无审批人不再渲染"审批人：-"；容器时区 `Asia/Shanghai`（`-e TZ` 固化进 docker-deploy.sh，同时带 `PATH=/venv/bin:...`）；**外网下载可见性=提交人本人，有意设计不修改**；`/api/health` 回显 `resetPassword` 保留（reset 即回初始密码） | v2.7.6 |
-| 057 | **测试域拆除与流水线收敛（2026-11-28）**：只保留生产环境；WSL/act_runner/GitLab 实验线全部退役；Gitea=代码权威（`opencodegit`，旧账号 openwrtadmin 注销），唯一自动化流水线=GitHub Actions；镜像不在生产机构建（零出网/无基座），GitHub 云端 build→GHCR，Release `image.tar.gz` 待补；docs/15 移除 | v2.7.6 |
+| 057 | **测试域拆除与流水线收敛（2026-11-28）**：只保留生产环境；WSL/act_runner/GitLab 实验线全部退役；Gitea=代码权威（`opencodegit`，旧账号 openwrtadmin 注销），唯一自动化流水线=GitHub Actions；镜像不在生产机构建（零出网/无基座），GitHub 云端 build→GHCR，Release `image.tar.gz` v2.7.7 已补齐（ADR-058）；docs/15 移除 | v2.7.6 |
+| 058 | Release 第 5 资产 `image.tar.gz` 恢复（GitHub 云构建 `docker save` + 生产零出网 `podman load`）：资产 4→7、精确匹配纪律、生产禁 build；v2.7.7 实证 GitHub Release 7/7、生产镜像 tag 与代码版本首次对齐、冒烟 11/11 | v2.7.7 |
 
 > **使用方式**：决策冲突时以 docs/ADR.md 对应条目为准；新增决策只追加编号（ADR-0xx），不修改历史条目。
 > 最新落点摘要（ADR-031/032/033/034 核心）：合作方全量编辑+联系人必填；WSL 测试收敛为 dev+CI 两环境；生产只读冒烟=业界标准；
@@ -324,8 +325,8 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 > 审计闭环：已审批未下载超时归档逐单审计（system_archive_expired）、手动清理留痕（admin_cleanup_manual）、临时清理不审计（ADR-033）；
 > 有效期统一：提交未审批+审批未下载统一按"文件有效期"（default_expiry_days）超时归档，审计区分超时原因（ADR-034）。
 > 仓库治理（ADR-036 架构）：单一权威仓库（本地 Gitea，承载全部 git 操作与生产 CD）+ 备份仓库（GitHub 等，容灾/分发/独立验证）；每阶段聚焦主要矛盾、其余跟随调整形成动态平衡；备份仓永不接触生产；切换权威的触发条件见 docs/14。
-> 流水线现状（2026-11-28，ADR-057）：Gitea Actions 随 runner 退役，`.gitea/workflows` 已删除；**唯一自动化流水线=GitHub Actions**——CI-TDD（ubuntu 云端全量）→ RELEASE（云端构建 4 资产 + GHCR 镜像）→ CD-SIM（云端容器仿真+数据洁净门禁）；Gitea 保留代码权威与 Release 存档，由 `infra/release.ps1` 同步（docs/14）。
-> 镜像构建路径（ADR-057 收口，2026-11-28）：GitHub 云端 `docker build` → GHCR 分发（原 WSL 宿主 docker + act_runner 通道已退役，ADR-039/040 为历史）。**生产机零出网、无 python 基座镜像、无 wheelhouse，禁止在生产机构建**（实测 `ghcr.io` 不可达）；离线场景使用 Release `image.tar.gz` 资产（待补，docs/13 D7）。
+> 流水线现状（2026-11-28，ADR-057）：Gitea Actions 随 runner 退役，`.gitea/workflows` 已删除；**唯一自动化流水线=GitHub Actions**——CI-TDD（ubuntu 云端全量）→ RELEASE（云端构建 5 类 7 个资产 + GHCR 镜像）→ CD-SIM（云端容器仿真+数据洁净门禁）；Gitea 保留代码权威与 Release 存档，由 `infra/release.ps1` 同步（docs/14）。
+> 镜像构建路径（ADR-057 收口，2026-11-28）：GitHub 云端 `docker build` → GHCR 分发（原 WSL 宿主 docker + act_runner 通道已退役，ADR-039/040 为历史）。**生产机零出网、无 python 基座镜像、无 wheelhouse，禁止在生产机构建**（实测 `ghcr.io` 不可达）；离线场景使用 Release `image.tar.gz` 资产（v2.7.7 已补齐，ADR-058）。
 
 ## 许可证
 
@@ -335,4 +336,4 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 
 ---
 
-*SecureTrans v2.7.6（Release）| 2026-11-27*
+*SecureTrans v2.7.7（Release）| 2026-11-28*
