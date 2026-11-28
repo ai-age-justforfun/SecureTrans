@@ -1,3 +1,11 @@
+## ◎ v2.7.7 发布前回归（2026-11-28）
+- **范围**：发布资产补齐（`image.tar.gz`，ADR-058）+ 飞书网关归档/环境锁/配置模板入库；代码仅版本号变更（`APP_VERSION` v2.7.7）。
+- **全量 TDD（开发机 Windows，干净 data/nas）**：`510 / 510`，失败 0，通过率 100%（含二级审批 10g1/10g2/10g3、通知组 25–28）。
+- **版本一致性**：`src/app.py` 与 `src/static/index.html` 双源均为 v2.7.7。
+- **静态门禁**：`infra/docker-deploy.sh`、`infra/smoke.sh` `bash -n` 通过；`.github/workflows/release.yml` YAML 解析通过（8 个 step）。
+- **生产现状（部署前基线）**：容器 `securetrans-docker` 运行旧镜像 `localhost/securetrans:v2.7.3-feishu-r1` + 热更源码 v2.7.6；只读冒烟 11/11。
+- **飞书网关归档**：归档包 + venv 快照已上传 Gitea Release v2.7.7（id 442），下载回读 sha256 全部匹配；隔离 dryrun 对照见 `docs/19-feishu-gateway-archive.md`。
+
 ## ◎ 飞书 App Secret 受控下发 + 部门补全（ADR-055，2026-11-27）
 **总计 510 项测试（Windows dev，干净库）全部通过，通过率 100%。**
 
