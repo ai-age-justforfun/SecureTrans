@@ -1,6 +1,6 @@
 # SecureTrans 部署指南
 
-> 版本：v2.7.6 | 日期：2026-11-27（**容器形态为默认**，ADR-043/056）
+> 版本：v2.7.7 | 日期：2026-11-28（**容器形态为默认**，ADR-043/056/058）
 > **生产现状速览**：Rocky 8.10 / 10.10.30.8 / podman 容器 `securetrans-docker`（8000）
 > 数据卷：`/opt/securetrans/data:/data`、`/mnt/nas/securetrans:/nas`；`--user <数据属主 uid:gid>`
 > 必备环境：`-e TZ=Asia/Shanghai`、`-e SECURETRANS_DATA=/data`、`-e NAS_ROOT=/nas`、`-e PATH=/venv/bin:...`、`--env-file .env`
@@ -10,6 +10,7 @@
 > 旧版说明（v2.3.7 | 2026-09-11）（+ADR-023 文件名安全清理/AD 改密前端拦截）（ADR-017 测试/生产隔离 + ADR-018 CI/CD 分层 + ADR-019 CI 容器隔离与静态门禁）
 > 唯一部署文档：**现行只有生产环境**（10.10.30.8，容器形态）；开发机可跑 `DEPLOY_MODE=testing` 自测，代码完全复用（ADR-057）
 > 构建口径：**生产机零出网、无基座镜像/wheelhouse，禁止在产机构建镜像**；镜像来自 GitHub 云端构建（GHCR）或 Release `image.tar.gz` → `podman load`
+> 离线镜像资产（v2.7.7，ADR-058）：GitHub Release 含 `securetrans-<ver>-image.tar.gz`（+`.md5`/`.sha256`）；生产流程=`sha256sum -c` → `podman load` → `podman rm -f securetrans-docker` → `podman run`（保留 TZ/数据卷/PATH/--user）→ 冒烟 11/11
 > 双 OS 支持：Windows（waitress）/ Linux（gunicorn）；单/双网卡网络隔离
 
 ---

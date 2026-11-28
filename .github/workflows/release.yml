@@ -7,8 +7,8 @@
 #   - 完全在 GitHub 云环境构建（ubuntu-latest），不依赖本地环境/本地 Docker
 #   - 幂等：release 已存在则补齐/覆盖资产（--clobber），不存在则创建
 #   - 资产与 Gitea 对齐：securetrans-<v>.tar.gz + .md5 + .sha256 + securetrans-offline-deps.tar.gz
-#   - **RTM（v2.7.0）起：镜像分发走 GHCR**（ghcr.io/ai-age-justforfun/SecureTrans:<v>，
-#     GITHUB_TOKEN 认证零注册；GitHub 侧不传 image.tar.gz 资产——与 Gitea 第 5 资产（离线兜底）分工，ADR-038）
+#     + securetrans-<v>-image.tar.gz + .md5（第 5 资产，离线镜像兜底，ADR-058）
+#   - 镜像双通道：GHCR push（在线分发）+ image.tar.gz（零出网环境 podman load 离线兜底）
 #   - offline-deps 现场 pip download（linux x86_64 manylinux wheel，与生产部署兼容）
 # 约束：备份仓永不接触生产（ADR-021/036）；生产 CD 仍由 Gitea 权威仓负责。
 
@@ -73,31 +73,7 @@ jobs:
           sha256sum "securetrans-${V}.tar.gz" > "securetrans-${V}.tar.gz.sha256"
           ls -lh "securetrans-${V}.tar.gz"*
 
-      - name: Create/Update GitHub Release + upload assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          V="${{ steps.ver.outputs.version }}"
-          VN="${V#v}"
-          FILES=("securetrans-${VN}.tar.gz" "securetrans-${VN}.tar.gz.md5" "securetrans-${VN}.tar.gz.sha256" "packages/securetrans-offline-deps.tar.gz")
-          if gh release view "$V" >/dev/null 2>&1; then
-            echo "Release $V 已存在，补齐/覆盖资产"
-            gh release upload "$V" "${FILES[@]}" --clobber
-          else
-            echo "创建 Release $V"
-            gh release create "$V" "${FILES[@]}" \
-              --title "$V" \
-              --notes "SecureTrans 独立发布（GitHub 云构建）
-              - CI: push 全量 TDD（preflight + 静态 + TDD）
-              - Release: 云端构建 4 资产（主包 + md5 + sha256 + offline-deps）
-              - CD-SIM: ubuntu 云端 Docker 仿真验证（release published 自动触发）"
-          fi
-          echo "RELEASE $V: DONE"
-
-      - name: Build & Push Docker image to GHCR（RTM 起镜像分发走 registry，ADR-038）
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Build image + save offline tar.gz + push GHCR（第 5 资产，ADR-058）
         run: |
           set -euo pipefail
           V="${{ steps.ver.outputs.version }}"; VN="${V#v}"
@@ -107,9 +83,37 @@ jobs:
           IMG="ghcr.io/${GITHUB_REPOSITORY,,}"
           docker build -f infra/docker/Dockerfile.run -t "${IMG}:${VN}" .
           docker tag "${IMG}:${VN}" "${IMG}:latest"
+          # 离线兜底资产：docker save → gzip（生产零出网，podman load 直接用）
+          docker save "${IMG}:${VN}" | gzip -9 > "securetrans-${VN}-image.tar.gz"
+          md5sum "securetrans-${VN}-image.tar.gz" > "securetrans-${VN}-image.tar.gz.md5"
+          sha256sum "securetrans-${VN}-image.tar.gz" > "securetrans-${VN}-image.tar.gz.sha256"
+          ls -lh "securetrans-${VN}-image.tar.gz"*
           docker push "${IMG}:${VN}"
           docker push "${IMG}:latest"
           echo "GHCR push OK: ${IMG}:${VN} (+latest)"
+
+      - name: Create/Update GitHub Release + upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.ver.outputs.version }}"
+          VN="${V#v}"
+          FILES=("securetrans-${VN}.tar.gz" "securetrans-${VN}.tar.gz.md5" "securetrans-${VN}.tar.gz.sha256" "packages/securetrans-offline-deps.tar.gz" "securetrans-${VN}-image.tar.gz" "securetrans-${VN}-image.tar.gz.md5" "securetrans-${VN}-image.tar.gz.sha256")
+          if gh release view "$V" >/dev/null 2>&1; then
+            echo "Release $V 已存在，补齐/覆盖资产"
+            gh release upload "$V" "${FILES[@]}" --clobber
+          else
+            echo "创建 Release $V"
+            gh release create "$V" "${FILES[@]}" \
+              --title "$V" \
+              --notes "SecureTrans 独立发布（GitHub 云构建）
+              - CI: push 全量 TDD（preflight + 静态 + TDD）
+              - Release: 5 类资产（主包 + md5 + sha256 + offline-deps + image.tar.gz 及校验）
+              - 镜像双通道: GHCR（在线） + image.tar.gz（离线兜底，podman load）
+              - CD-SIM: ubuntu 云端 Docker 仿真验证（release published 自动触发）"
+          fi
+          echo "RELEASE $V: DONE"
 
       - name: Trigger CD-SIM (explicit dispatch, bypass GITHUB_TOKEN release-event limit)
         env:
