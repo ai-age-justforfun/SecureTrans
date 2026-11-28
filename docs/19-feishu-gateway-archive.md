@@ -68,7 +68,7 @@
 1. `notify.jsonl` 无轮转，长期运行会持续增长（建议 logrotate/按月切分，触发条件=单文件 >50MB 或 >90 天）；
 2. `/health` 回显 `allow_cidrs`（内网拓扑最小暴露），可选脱敏；
 3. `/notify` 未限制请求体大小（仅白名单源可调用，风险低）；
-4. `lark.Client` 只用于构建、实际发送走 `httpx`，SDK 依赖可评估裁剪（保持现状以免行为漂移）。
+4. `lark.Client` **承载真实消息发送**（`im.v1.message.create`），并非“只构建不用”——SDK 不可裁剪（曾误记为全部走 `httpx`，2026-11-28 已按代码订正）；token/通讯录仍走 `httpx`。
 
 ---
 
@@ -90,8 +90,33 @@
 - 回退：网关机保留 `notify_app.py.bak-20261127233230`（0.2.2 前版本）与 `.env.bak-20261127`，`systemctl restart securetrans-notify` 即回退；
 - 本次未改动线上任何文件，只在 `/opt/securetrans-notify/archive/` 增加归档与 `/tmp/gw-dryrun` 增加隔离实例（已停）。
 
+---
+
+---
+
 ## 7. Gitea Release 存档现状（v2.7.7，2026-11-28）
 
 - Release id `442` 共 **9 个资产**：7 个发布资产（主包 + md5 + sha256 + offline-deps + image.tar.gz + md5 + sha256）+ 2 个网关归档（`securetrans-feishu-gateway-0.2.2.tar.gz` 15,424B、`…-venv-py311.tar.gz` 25,390,827B）。
 - GitHub 对应 Release id `461281228`（同一 7 个发布资产，云端构建）；网关归档不进 GitHub，只存 Gitea。
 - 归档可复制性验证：本地下载回读 md5/sha256 **全部 OK**；网关侧原始文件仍在 `/opt/securetrans-notify/archive/`。
+
+---
+
+## 8. 飞书 SDK 版本评估与升级复盘入口（2026-11-28）
+
+| 项 | 事实 | 来源 |
+|----|------|------|
+| 线上锁定 | `lark-oapi == 1.7.3`（2026-08-19）；venv 快照同版本 | `infra/feishu-gateway/requirements-lock.txt` |
+| 最新稳定 | **1.9.0**（2026-11-25）；`v1.9.0` tag；wheel 7,712,542B，sha256 `0ca3bc13…83da9` | PyPI JSON / GitHub tags |
+| 2.x | 仅 `2.0.0.dev0~dev4`（2026-04 预发布），无正式 2.0.0 | PyPI 版本列表 |
+| 变更规模 | 17 commit / 19 文件，全在 `lark_oapi/` | GitHub compare `v1.7.3...v1.9.0` |
+| 变更域 | webhook 校验令牌、动态 webhook 凭据、WebSocket 连接参数、ISV ClientAssertion、OAuth audience | 同上 |
+| 依赖树 | 与 1.7.3 **完全一致**（requests / requests_toolbelt / pycryptodome / websockets / httpx） | PyPI `requires_dist` 三版对比 |
+| 本网关实际用法 | 仅 `lark.Client.builder()` + `client.im.v1.message.create()`；token、通讯录走 `httpx` | `notify_app.py:65-66, 264-285, 105-130` |
+| 决定 | **A 案：保持 1.7.3**，不改代码、不动 venv 快照 | 用户 2026-11-28 决策 |
+
+**升级触发条件（满足任一）**：①官方修复 `im.v1.message.create` 缺陷或有安全公告；②需要 ISV 认证/WebSocket/webhook 收事件；③正式 2.0.0 发布并有迁移指南。
+
+**升级复盘用的执行清单（与本次 dryrun 同口径）**：隔离实例 18090（独立 venv、`127.0.0.1`）→ 装新版 + 全量重锁 → 鉴权四路径（401/401/400/400）→ 上游不可达 502 → 真实投递 1 条（`message_id` + 部门补全）→ `pip freeze`/单元 sha256 对照 → 重打 venv 快照 → 更新 `docs/19`、`ENVIRONMENT.md`、Gitea Release 归档并回读校验。
+
+**为什么现在不升**：新版能力（webhook/WebSocket/ISV/OAuth）我们一个都没用；`im.v1.message.create` 面无变化，升级只增加“重打 30MB venv 快照 + 重新归档”的工作量与风险。观察期内稳定优先，版本可复现性已由锁定文件 + venv 快照保证。
