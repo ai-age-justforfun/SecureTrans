@@ -242,6 +242,7 @@ beta 功能验收已完成，进入 RC 验证（生产 18000 蓝绿容器部署�
 - [项目复盘总结（PSF 全链路）](docs/12-project-retrospective.md)
 - [版本结果汇总（v1.5.0→v2.7.6 全量）](docs/17-version-summary.md)
 - [PSF 阶段 Scrum 复盘（Inspect & Adapt 标准版）](docs/18-psf-retrospective.md)
+- [飞书通知网关：归档备份与 dryrun 全盘对照](docs/19-feishu-gateway-archive.md)
 - [GitHub 迁移方案（Active，v2.6.5 首验落地）](docs/14-github-migration.md)
 - [跨平台 CICD 指南（Gitea/GitHub 现行配置 + GitLab 通用参考；本项目流水线仅用 GitHub）](docs/CICD.md)
 - [用户使用手册（普通用户 + 管理员）](docs/16-user-manual.md)
